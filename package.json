@@ -1,0 +1,61 @@
+{
+  "name": "fivem-server-builder",
+  "version": "1.0.0",
+  "description": "Professional desktop application for creating, managing, and maintaining FiveM servers",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "npx concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
+    "dev:main": "npx tsc -p tsconfig.main.json && npx electron .",
+    "dev:renderer": "npx vite",
+    "build": "npx tsc -p tsconfig.main.json && npx vite build",
+    "start": "npx electron .",
+    "electron:dev": "npx concurrently -k \"npx vite\" \"npx tsc -p tsconfig.main.json -w\" \"npx wait-on http://localhost:5173 && npx electron .\""
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.17.0",
+    "archiver": "^6.0.1",
+    "axios": "^1.6.5",
+    "chokidar": "^3.5.3",
+    "electron-store": "^8.1.0",
+    "extract-zip": "^2.0.1",
+    "framer-motion": "^10.18.0",
+    "glob": "^10.3.10",
+    "lucide-react": "^0.303.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-router-dom": "^6.21.1",
+    "simple-git": "^3.22.0",
+    "tailwind-merge": "^2.2.0",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.2",
+    "@types/node": "^20.10.8",
+    "@types/react": "^18.2.47",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "postcss": "^8.4.33",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.fivem-server-builder",
+    "productName": "FiveM Server Builder",
+    "directories": {
+      "output": "releases"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

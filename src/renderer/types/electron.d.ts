@@ -1,0 +1,70 @@
+interface ElectronAPI {
+  minimize: () => Promise<void>;
+  maximize: () => Promise<void>;
+  close: () => Promise<void>;
+  openDirectory: () => Promise<string | null>;
+  openFile: (filters?: any) => Promise<string | null>;
+  openPath: (path: string) => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
+
+  server: {
+    getAll: () => Promise<any[]>;
+    get: (id: string) => Promise<any>;
+    create: (config: any) => Promise<any>;
+    update: (id: string, data: any) => Promise<any>;
+    delete: (id: string) => Promise<boolean>;
+    start: (id: string) => Promise<boolean>;
+    stop: (id: string) => Promise<boolean>;
+  };
+
+  resource: {
+    scan: (serverPath: string) => Promise<any[]>;
+    getInfo: (resourcePath: string) => Promise<any>;
+    toggle: (serverPath: string, name: string, enabled: boolean) => Promise<boolean>;
+    categorize: (resources: any[]) => Promise<Record<string, any[]>>;
+  };
+
+  health: {
+    scan: (serverPath: string) => Promise<any>;
+    fix: (serverPath: string, issue: any) => Promise<boolean>;
+  };
+
+  backup: {
+    create: (serverId: string, options?: any) => Promise<any>;
+    restore: (backupId: string) => Promise<boolean>;
+    list: (serverId: string) => Promise<any[]>;
+    delete: (backupId: string) => Promise<boolean>;
+  };
+
+  git: {
+    clone: (url: string, dest: string) => Promise<{ success: boolean; error?: string }>;
+    pull: (repoPath: string) => Promise<{ success: boolean; changes?: number; error?: string }>;
+    getStatus: (repoPath: string) => Promise<any>;
+  };
+
+  file: {
+    readDir: (dirPath: string) => Promise<any[]>;
+    readFile: (filePath: string) => Promise<{ content: string; encoding: string } | null>;
+    writeFile: (filePath: string, content: string) => Promise<boolean>;
+    rename: (oldPath: string, newPath: string) => Promise<boolean>;
+    createDir: (dirPath: string) => Promise<boolean>;
+    delete: (targetPath: string) => Promise<boolean>;
+    exists: (targetPath: string) => Promise<boolean>;
+  };
+
+  artifact: {
+    download: (version: string, dest: string) => Promise<{ success: boolean; error?: string }>;
+    getVersions: () => Promise<any[]>;
+    onProgress: (callback: (progress: any) => void) => void;
+  };
+
+  onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}
+
+export {};
