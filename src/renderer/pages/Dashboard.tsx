@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   Server,
@@ -17,6 +17,9 @@ import {
   Activity,
   ArrowRight,
   Zap,
+  Loader2,
+  X,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
@@ -63,15 +66,49 @@ export default function Dashboard() {
     }
   };
 
+  const [deleteTarget, setDeleteTarget] = useState<ServerType | null>(null);
+  const [deleteFiles, setDeleteFiles] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+
   const totalResources = servers.reduce((sum, s) => sum + s.resourceCount, 0);
   const runningServers = servers.filter(s => s.status === 'running').length;
 
   const handleDeleteServer = (e: React.MouseEvent, server: ServerType) => {
     e.stopPropagation();
-    if (window.confirm(`Delete "${server.name}"? This only removes it from the builder, not your files.`)) {
-      removeServer(server.id);
-      logAction('Server Removed', `Removed ${server.name} from builder`, 'warning');
-      toast.success(`${server.name} removed`);
+    setDeleteTarget(server);
+    setDeleteFiles(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    try {
+      // Delete from the backend
+      if (window.electronAPI) {
+        await window.electronAPI.server.delete(deleteTarget.id);
+
+        // Delete actual server files from disk if requested
+        if (deleteFiles && deleteTarget.installPath) {
+          try {
+            await window.electronAPI.file.delete(deleteTarget.installPath);
+          } catch (err) {
+            console.error('Failed to delete server files:', err);
+          }
+        }
+      }
+
+      // Remove from local store
+      removeServer(deleteTarget.id);
+
+      const action = deleteFiles ? 'permanently deleted (files removed)' : 'removed from builder (files kept)';
+      logAction('Server Deleted', `${deleteTarget.name} ${action}`, 'warning');
+      toast.success(`${deleteTarget.name} deleted`);
+    } catch (err: any) {
+      toast.error(`Failed to delete: ${err.message}`);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -211,6 +248,119 @@ export default function Dashboard() {
           </div>
         </motion.div>
       )}
+
+      {/* ── Delete Confirmation Modal ─────────────────────────────────── */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => !deleting && setDeleteTarget(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-surface-900 border border-surface-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+            >
+              {/* Header */}
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={22} className="text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Delete Server</h3>
+                  <p className="text-sm text-surface-400 mt-0.5">
+                    Are you sure you want to delete <span className="text-white font-medium">"{deleteTarget.name}"</span>?
+                  </p>
+                </div>
+                <button
+                  onClick={() => !deleting && setDeleteTarget(null)}
+                  className="p-1 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all ml-auto"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Delete files option */}
+              <div className="bg-surface-800/60 border border-surface-700/50 rounded-xl p-4 mb-5 space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer group" onClick={() => setDeleteFiles(true)}>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
+                    deleteFiles ? 'border-red-500 bg-red-500' : 'border-surface-500'
+                  }`}>
+                    {deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Delete everything</p>
+                    <p className="text-xs text-surface-400 mt-0.5">
+                      Remove from builder <span className="text-red-400 font-medium">AND delete all server files</span> from your computer
+                    </p>
+                    {deleteTarget.installPath && (
+                      <p className="text-[10px] text-surface-500 font-mono mt-1 truncate">{deleteTarget.installPath}</p>
+                    )}
+                  </div>
+                </label>
+
+                <div className="border-t border-surface-700/50" />
+
+                <label className="flex items-start gap-3 cursor-pointer group" onClick={() => setDeleteFiles(false)}>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
+                    !deleteFiles ? 'border-primary-500 bg-primary-500' : 'border-surface-500'
+                  }`}>
+                    {!deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">Remove from builder only</p>
+                    <p className="text-xs text-surface-400 mt-0.5">
+                      Keep the server files on your computer, just remove it from this app
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Warning */}
+              {deleteFiles && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-5"
+                >
+                  <p className="text-xs text-red-300 font-medium flex items-center gap-2">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    This will permanently delete all server files, resources, and configurations. This cannot be undone.
+                  </p>
+                </motion.div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => !deleting && setDeleteTarget(null)}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-surface-800 text-surface-300 hover:bg-surface-700 transition-all disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleting}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-all disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                  {deleting ? 'Deleting...' : deleteFiles ? 'Delete Everything' : 'Remove'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
