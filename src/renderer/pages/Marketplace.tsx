@@ -258,23 +258,23 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   {
     id: 'qb-garages', name: 'qb-garages', description: 'QBCore garage system with vehicle storage, impound lot, and public/job parking.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-garages', category: 'Vehicles', stars: 130, installed: false, dependencies: ['qb-core'], replaces: ['esx_garage', 'jg-advancedgarages'], installFolder: '[vehicles]',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-garages', category: 'Vehicles', stars: 130, installed: false, dependencies: ['qb-core'], replaces: ['esx_garage', 'jg-advancedgarages'], installFolder: '[vehiclescripts]',
   },
   {
     id: 'qb-vehicleshop', name: 'qb-vehicleshop', description: 'QBCore vehicle dealership with test drives, financing, and employee management.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-vehicleshop', category: 'Vehicles', stars: 110, installed: false, dependencies: ['qb-core'], replaces: ['esx_vehicleshop'], installFolder: '[vehicles]',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-vehicleshop', category: 'Vehicles', stars: 110, installed: false, dependencies: ['qb-core'], replaces: ['esx_vehicleshop'], installFolder: '[vehiclescripts]',
   },
   {
     id: 'qb-vehiclekeys', name: 'qb-vehiclekeys', description: 'QBCore vehicle key system — lockpicking, hotwiring, key sharing, and engine toggle.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-vehiclekeys', category: 'Vehicles', stars: 90, installed: false, dependencies: ['qb-core'], installFolder: '[vehicles]',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-vehiclekeys', category: 'Vehicles', stars: 90, installed: false, dependencies: ['qb-core'], installFolder: '[vehiclescripts]',
   },
   {
     id: 'esx_vehicleshop', name: 'esx_vehicleshop', description: 'ESX vehicle dealer with buy/sell, test drive, and resale system.',
-    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_vehicleshop', category: 'Vehicles', stars: 75, installed: false, dependencies: ['es_extended'], replaces: ['qb-vehicleshop'], installFolder: '[vehicles]',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_vehicleshop', category: 'Vehicles', stars: 75, installed: false, dependencies: ['es_extended'], replaces: ['qb-vehicleshop'], installFolder: '[vehiclescripts]',
   },
   {
     id: 'wasabi_carlock', name: 'wasabi_carlock', description: 'Standalone vehicle lock system — lock/unlock, alarm, hotwire, and lockpick integration.',
-    author: 'wasaborern', repo: 'https://github.com/wasaborern/wasabi_carlock', category: 'Vehicles', stars: 60, installed: false, installFolder: '[vehicles]',
+    author: 'wasaborern', repo: 'https://github.com/wasaborern/wasabi_carlock', category: 'Vehicles', stars: 60, installed: false, installFolder: '[vehiclescripts]',
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -618,19 +618,19 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   {
     id: 'jg-advancedgarages', name: 'jg-advancedgarages', description: 'Advanced garage with vehicle preview, impound, transfer, parking spots, and clean UI.',
-    author: 'JoeSzymkowiczFiveworx', repo: 'https://github.com/JoeSzymkowiczFiveworx/jg-advancedgarages', category: 'Vehicles', stars: 180, installed: false, dependencies: ['ox_lib'], replaces: ['qb-garages'], installFolder: '[vehicles]',
+    author: 'JoeSzymkowiczFiveworx', repo: 'https://github.com/JoeSzymkowiczFiveworx/jg-advancedgarages', category: 'Vehicles', stars: 180, installed: false, dependencies: ['ox_lib'], replaces: ['qb-garages'], installFolder: '[vehiclescripts]',
   },
   {
     id: 'renewed-vehiclekeys', name: 'Renewed-Vehiclekeys', description: 'Modern vehicle key system — lockpick, hotwire, give keys, alarm system.',
-    author: 'Renewed-Scripts', repo: 'https://github.com/Renewed-Scripts/Renewed-Vehiclekeys', category: 'Vehicles', stars: 130, installed: false, dependencies: ['ox_lib'], replaces: ['qb-vehiclekeys'], installFolder: '[vehicles]',
+    author: 'Renewed-Scripts', repo: 'https://github.com/Renewed-Scripts/Renewed-Vehiclekeys', category: 'Vehicles', stars: 130, installed: false, dependencies: ['ox_lib'], replaces: ['qb-vehiclekeys'], installFolder: '[vehiclescripts]',
   },
   {
     id: 'brz-vehiclehandling', name: 'brz-vehiclehandling', description: 'Realistic vehicle handling — tire pressure, brake fade, turbo lag, and suspension physics.',
-    author: 'Starter-Scripts', repo: 'https://github.com/bryzz-fivem/brz-vehiclehandling', category: 'Vehicles', stars: 45, installed: false, installFolder: '[vehicles]',
+    author: 'Starter-Scripts', repo: 'https://github.com/bryzz-fivem/brz-vehiclehandling', category: 'Vehicles', stars: 45, installed: false, installFolder: '[vehiclescripts]',
   },
   {
     id: 'qb-carwash', name: 'qb-carwash', description: 'QBCore car wash — drive in, pay, watch your car get cleaned with animations.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-carwash', category: 'Vehicles', stars: 30, installed: false, dependencies: ['qb-core'], installFolder: '[vehicles]',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-carwash', category: 'Vehicles', stars: 30, installed: false, dependencies: ['qb-core'], installFolder: '[vehiclescripts]',
   },
 
   // ═══════════════════════════════════════════════════════════════════════════

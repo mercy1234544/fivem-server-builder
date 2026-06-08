@@ -53,7 +53,7 @@ const ESX_RESOURCES: ResourceToClone[] = [
   { name: 'esx_ambulancejob', repo: 'https://github.com/esx-framework/esx_ambulancejob', folder: '[jobs]' },
   { name: 'esx_mechanicjob', repo: 'https://github.com/esx-framework/esx_mechanicjob', folder: '[jobs]' },
   { name: 'esx_basicneeds', repo: 'https://github.com/esx-framework/esx_basicneeds', folder: '[standalone]' },
-  { name: 'esx_vehicleshop', repo: 'https://github.com/esx-framework/esx_vehicleshop', folder: '[vehicles]' },
+  { name: 'esx_vehicleshop', repo: 'https://github.com/esx-framework/esx_vehicleshop', folder: '[vehiclescripts]' },
   { name: 'esx_property', repo: 'https://github.com/esx-framework/esx_property', folder: '[housing]' },
 ];
 
@@ -66,9 +66,9 @@ const QBCORE_RESOURCES: ResourceToClone[] = [
   { name: 'qb-ambulancejob', repo: 'https://github.com/qbcore-framework/qb-ambulancejob', folder: '[jobs]' },
   { name: 'qb-mechanicjob', repo: 'https://github.com/qbcore-framework/qb-mechanicjob', folder: '[jobs]' },
   { name: 'qb-smallresources', repo: 'https://github.com/qbcore-framework/qb-smallresources', folder: '[standalone]' },
-  { name: 'qb-vehicleshop', repo: 'https://github.com/qbcore-framework/qb-vehicleshop', folder: '[vehicles]' },
-  { name: 'qb-vehiclekeys', repo: 'https://github.com/qbcore-framework/qb-vehiclekeys', folder: '[vehicles]' },
-  { name: 'qb-garages', repo: 'https://github.com/qbcore-framework/qb-garages', folder: '[vehicles]' },
+  { name: 'qb-vehicleshop', repo: 'https://github.com/qbcore-framework/qb-vehicleshop', folder: '[vehiclescripts]' },
+  { name: 'qb-vehiclekeys', repo: 'https://github.com/qbcore-framework/qb-vehiclekeys', folder: '[vehiclescripts]' },
+  { name: 'qb-garages', repo: 'https://github.com/qbcore-framework/qb-garages', folder: '[vehiclescripts]' },
   { name: 'qb-houses', repo: 'https://github.com/qbcore-framework/qb-houses', folder: '[housing]' },
   { name: 'qb-inventory', repo: 'https://github.com/qbcore-framework/qb-inventory', folder: '[inventory]' },
   { name: 'qb-shops', repo: 'https://github.com/qbcore-framework/qb-shops', folder: '[economy]' },
@@ -326,7 +326,7 @@ export class ServerManager {
     const folderOrder = [
       '[core]', '[framework]', '[spawn]', '[character]', '[voice]',
       '[hud]', '[ui]', '[inventory]', '[economy]', '[phone]',
-      '[jobs]', '[vehicles]', '[housing]', '[criminal]', '[utility]',
+      '[jobs]', '[vehiclescripts]', '[vehicles]', '[housing]', '[criminal]', '[utility]',
       '[admin]', '[environment]', '[maps]', '[standalone]', '[custom]',
     ];
 

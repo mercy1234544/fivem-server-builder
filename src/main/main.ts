@@ -434,7 +434,7 @@ async function analyzeResource(resourcePath: string): Promise<AnalysisResult> {
   else if (detectedType === 'hud') suggestedFolder = '[hud]';
   else if (detectedType === 'housing') suggestedFolder = '[housing]';
   else if (detectedType === 'clothing' || detectedType === 'multichar') suggestedFolder = '[character]';
-  else if (detectedType === 'garage' || detectedType === 'vehicleshop') suggestedFolder = '[vehicles]';
+  else if (detectedType === 'garage' || detectedType === 'vehicleshop') suggestedFolder = '[vehiclescripts]';
   else if (detectedType === 'banking') suggestedFolder = '[economy]';
   else if (detectedType === 'admin') suggestedFolder = '[admin]';
   else if (detectedType === 'weather') suggestedFolder = '[environment]';
