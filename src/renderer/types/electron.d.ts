@@ -78,6 +78,8 @@ interface ElectronAPI {
   artifact: {
     download: (version: string, dest: string) => Promise<{ success: boolean; error?: string }>;
     getVersions: () => Promise<any[]>;
+    getInstalled: (serverPath: string) => Promise<string | null>;
+    update: (opts: { serverPath: string; version: string }) => Promise<{ success: boolean; error?: string }>;
     onProgress: (callback: (progress: any) => void) => void;
   };
 

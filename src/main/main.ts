@@ -184,6 +184,45 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('artifact:getVersions', () => artifactDownloader.getAvailableVersions());
 
+  // Check installed artifact build number by reading FXServer.exe version or cache
+  ipcMain.handle('artifact:getInstalled', async (_, serverPath: string) => {
+    try {
+      // Check for a version marker we save during install
+      const markerPath = path.join(serverPath, '.artifact-version');
+      if (fs.existsSync(markerPath)) {
+        return fs.readFileSync(markerPath, 'utf-8').trim();
+      }
+      // Fallback: check if FXServer.exe exists at all
+      if (fs.existsSync(path.join(serverPath, 'FXServer.exe'))) {
+        return 'unknown';
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Update artifacts for an existing server (re-download and extract over existing)
+  ipcMain.handle('artifact:update', async (_, opts: { serverPath: string; version: string }) => {
+    try {
+      const result = await artifactDownloader.download(opts.version, opts.serverPath);
+      if (result.success) {
+        // Save version marker for future update checks
+        const versions = await artifactDownloader.getAvailableVersions();
+        const picked = versions.find(v =>
+          v.version === opts.version ||
+          (opts.version === 'recommended' && v.recommended) ||
+          (opts.version === 'latest' && !v.recommended)
+        );
+        const buildNum = picked?.version || opts.version;
+        fs.writeFileSync(path.join(opts.serverPath, '.artifact-version'), buildNum, 'utf-8');
+      }
+      return result;
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // Resource Import — drag-and-drop folders/ZIPs with smart conflict detection
   // ═══════════════════════════════════════════════════════════════════════════
@@ -220,19 +259,23 @@ function registerIpcHandlers() {
     const resourcesDir = path.join(serverPath, 'resources');
     if (!fs.existsSync(resourcesDir)) return [];
     const installed: string[] = [];
-    const scanDir = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory()) {
+    const scanDir = (dir: string, depth: number) => {
+      if (depth > 5) return; // safety limit
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
           const sub = path.join(dir, entry.name);
           if (fs.existsSync(path.join(sub, 'fxmanifest.lua')) || fs.existsSync(path.join(sub, '__resource.lua'))) {
             installed.push(entry.name);
-          } else {
-            scanDir(sub); // check inside category folders like [mlo], [jobs], etc.
+          }
+          // Always recurse into bracket folders — they can contain sub-brackets or resources
+          if (entry.name.startsWith('[')) {
+            scanDir(sub, depth + 1);
           }
         }
-      }
+      } catch {}
     };
-    scanDir(resourcesDir);
+    scanDir(resourcesDir, 0);
     return installed;
   });
 }
@@ -427,16 +470,35 @@ function findManifest(dir: string): string | null {
   const legPath = path.join(dir, '__resource.lua');
   if (fs.existsSync(fxPath)) return fxPath;
   if (fs.existsSync(legPath)) return legPath;
-  // Check one level deep (ZIP might have a subfolder)
+  // Check deeper (ZIP might have subfolder(s))
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
-      const sub = path.join(dir, entry.name, 'fxmanifest.lua');
-      const subLeg = path.join(dir, entry.name, '__resource.lua');
-      if (fs.existsSync(sub)) return sub;
-      if (fs.existsSync(subLeg)) return subLeg;
+      const sub = path.join(dir, entry.name);
+      const found = findManifest(sub);
+      if (found) return found;
     }
   }
   return null;
+}
+
+// Find ALL resource manifests in a directory (for multi-resource ZIPs/packs)
+function findAllManifests(dir: string, depth = 0): { name: string; path: string }[] {
+  if (depth > 5) return [];
+  const results: { name: string; path: string }[] = [];
+  const fxPath = path.join(dir, 'fxmanifest.lua');
+  const legPath = path.join(dir, '__resource.lua');
+  if (fs.existsSync(fxPath) || fs.existsSync(legPath)) {
+    results.push({ name: path.basename(dir), path: dir });
+    return results; // Don't recurse further into a resource
+  }
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        results.push(...findAllManifests(path.join(dir, entry.name), depth + 1));
+      }
+    }
+  } catch {}
+  return results;
 }
 
 async function importResource(opts: {
@@ -474,18 +536,62 @@ async function importResource(opts: {
       fs.mkdirSync(tempDir, { recursive: true });
       await extractZip(opts.sourcePath, { dir: tempDir });
 
-      // Find the actual resource folder inside the extracted content
-      const manifest = findManifest(tempDir);
-      const sourceDir = manifest ? path.dirname(manifest) : tempDir;
+      // Check if ZIP contains multiple resources (e.g., MLO pack)
+      const allResources = findAllManifests(tempDir);
 
-      // Copy to destination
-      if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
-      copyDirRecursiveSync(sourceDir, destDir);
+      if (allResources.length > 1) {
+        // Multi-resource pack — import each one into the target folder
+        for (const res of allResources) {
+          const resDest = path.join(targetDir, res.name);
+          if (fs.existsSync(resDest)) fs.rmSync(resDest, { recursive: true, force: true });
+          copyDirRecursiveSync(res.path, resDest);
+        }
+        // resourceName for server.cfg is just the first one; all get ensure lines
+        const cfgPath = path.join(opts.serverPath, 'server.cfg');
+        if (fs.existsSync(cfgPath)) {
+          let cfg = fs.readFileSync(cfgPath, 'utf-8');
+          for (const res of allResources) {
+            if (!cfg.match(new RegExp(`^\\s*ensure\\s+${res.name}\\s*$`, 'm'))) {
+              cfg = cfg.trimEnd() + `\nensure ${res.name}\n`;
+            }
+          }
+          fs.writeFileSync(cfgPath, cfg, 'utf-8');
+        }
+      } else {
+        // Single resource — find it and copy
+        const manifest = findManifest(tempDir);
+        const sourceDir = manifest ? path.dirname(manifest) : tempDir;
+        if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
+        copyDirRecursiveSync(sourceDir, destDir);
+      }
+
       fs.rmSync(tempDir, { recursive: true, force: true });
     } else {
-      // Copy folder
-      if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
-      copyDirRecursiveSync(opts.sourcePath, destDir);
+      // It's a folder — check if it's a pack with multiple resources inside
+      const allResources = findAllManifests(opts.sourcePath);
+
+      if (allResources.length > 1) {
+        // Multi-resource folder — import each one
+        for (const res of allResources) {
+          const resDest = path.join(targetDir, res.name);
+          if (fs.existsSync(resDest)) fs.rmSync(resDest, { recursive: true, force: true });
+          copyDirRecursiveSync(res.path, resDest);
+        }
+        const cfgPath = path.join(opts.serverPath, 'server.cfg');
+        if (fs.existsSync(cfgPath)) {
+          let cfg = fs.readFileSync(cfgPath, 'utf-8');
+          for (const res of allResources) {
+            if (!cfg.match(new RegExp(`^\\s*ensure\\s+${res.name}\\s*$`, 'm'))) {
+              cfg = cfg.trimEnd() + `\nensure ${res.name}\n`;
+            }
+          }
+          fs.writeFileSync(cfgPath, cfg, 'utf-8');
+        }
+      } else {
+        // Single resource — copy folder
+        if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
+        copyDirRecursiveSync(opts.sourcePath, destDir);
+      }
     }
 
     // Update server.cfg
@@ -517,19 +623,24 @@ async function importResource(opts: {
 }
 
 function findResourceDir(resourcesDir: string, name: string): string | null {
-  // Search recursively through category folders
-  for (const entry of fs.readdirSync(resourcesDir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      const sub = path.join(resourcesDir, entry.name);
-      if (entry.name === name) return sub;
-      // Check inside category brackets folders
-      if (entry.name.startsWith('[')) {
-        const inner = path.join(sub, name);
-        if (fs.existsSync(inner)) return inner;
+  // Search recursively through ALL category folders (supports deep nesting)
+  const search = (dir: string, depth: number): string | null => {
+    if (depth > 5) return null; // safety limit
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const sub = path.join(dir, entry.name);
+        if (entry.name.toLowerCase() === name.toLowerCase()) return sub;
+        // Recurse into bracket category folders
+        if (entry.name.startsWith('[')) {
+          const found = search(sub, depth + 1);
+          if (found) return found;
+        }
       }
-    }
-  }
-  return null;
+    } catch {}
+    return null;
+  };
+  return search(resourcesDir, 0);
 }
 
 function copyDirRecursiveSync(src: string, dest: string) {

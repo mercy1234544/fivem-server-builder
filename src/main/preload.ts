@@ -70,6 +70,8 @@ const electronAPI = {
   artifact: {
     download: (version: string, dest: string) => ipcRenderer.invoke('artifact:download', version, dest),
     getVersions: () => ipcRenderer.invoke('artifact:getVersions'),
+    getInstalled: (serverPath: string) => ipcRenderer.invoke('artifact:getInstalled', serverPath),
+    update: (opts: { serverPath: string; version: string }) => ipcRenderer.invoke('artifact:update', opts),
     onProgress: (callback: (progress: any) => void) => {
       ipcRenderer.on('artifact:progress', (_, progress) => callback(progress));
     },

@@ -221,6 +221,19 @@ export class ServerManager {
       throw new Error(`FiveM artifact download failed: ${artifactResult.error}`);
     } else {
       sendProgress('✓ FiveM artifacts installed (FXServer.exe, txAdmin, cache, citizen). Setting up resources...', 100, 100);
+      // Save artifact version marker for update tracking
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const versions = await artifactDownloader.getAvailableVersions();
+        const picked = versions.find((v: any) =>
+          v.version === config.artifactVersion ||
+          (config.artifactVersion === 'recommended' && v.recommended) ||
+          (!v.recommended && config.artifactVersion === 'latest')
+        );
+        const buildNum = picked?.version || config.artifactVersion;
+        fs.writeFileSync(path.join(config.installPath, '.artifact-version'), buildNum, 'utf-8');
+      } catch {}
     }
 
     artifactDownloader.removeAllListeners();
