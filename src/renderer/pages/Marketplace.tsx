@@ -300,8 +300,8 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
     author: 'Flaviocalixto', repo: 'https://github.com/Flaviocalixto/EasyAdmin', category: 'Admin', stars: 280, installed: false, installFolder: '[admin]',
   },
   {
-    id: 'qb-admin', name: 'qb-admin', description: 'QBCore admin menu with player management, vehicle spawning, teleport, and server tools.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-admin', category: 'Admin', stars: 90, installed: false, dependencies: ['qb-core'], installFolder: '[admin]',
+    id: 'qb-admin', name: 'qb-adminmenu', description: 'QBCore admin menu with player management, vehicle spawning, teleport, and server tools.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-adminmenu', category: 'Admin', stars: 90, installed: false, dependencies: ['qb-core'], installFolder: '[admin]',
   },
   {
     id: 'Starter_Admin', name: 'Starter_Admin', description: 'Simple admin panel with ban, kick, warn, teleport, and player info. Great for new servers.',
@@ -320,8 +320,8 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
     author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-doorlock', category: 'Utility', stars: 80, installed: false, dependencies: ['qb-core'], replaces: ['ox_doorlock'], installFolder: '[utility]',
   },
   {
-    id: 'qb-skillbar', name: 'qb-skillbar', description: 'QBCore skillbar minigame — timing-based skill check used for lockpicking, hacking, etc.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-skillbar', category: 'Utility', stars: 55, installed: false, installFolder: '[utility]',
+    id: 'qb-lock', name: 'qb-lock', description: 'QBCore lockpick minigame — skill-based lockpicking for vehicles and doors.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-lock', category: 'Utility', stars: 55, installed: false, installFolder: '[utility]',
   },
   {
     id: 'ps-dispatch', name: 'ps-dispatch', description: 'Project Sloth dispatch — 911 alerts for police/EMS with location, blips, and descriptions.',
@@ -332,16 +332,16 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
     author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/progressbar', category: 'Utility', stars: 70, installed: false, installFolder: '[utility]',
   },
   {
-    id: 'dpemotes', name: 'dpemotes', description: 'Massive emote menu with 400+ animations, shared emotes, prop emotes, and walk styles.',
-    author: 'dpemotes', repo: 'https://github.com/dpemotes/dpemotes', category: 'Utility', stars: 350, installed: false, installFolder: '[utility]',
+    id: 'rpemotes', name: 'rpemotes', description: 'Massive emote menu with 400+ animations, shared emotes, prop emotes, and walk styles.',
+    author: 'TayMcKenzieNZ', repo: 'https://github.com/TayMcKenzieNZ/rpemotes', category: 'Utility', stars: 350, installed: false, installFolder: '[utility]',
   },
   {
     id: 'scully_emotemenu', name: 'scully_emotemenu', description: 'Modern emote menu with search, favorites, walk styles, and prop management.',
-    author: 'Scully049', repo: 'https://github.com/Scully049/scully_emotemenu', category: 'Utility', stars: 220, installed: false, dependencies: ['ox_lib'], replaces: ['dpemotes'], installFolder: '[utility]',
+    author: 'Scully049', repo: 'https://github.com/Scully049/scully_emotemenu', category: 'Utility', stars: 220, installed: false, dependencies: ['ox_lib'], replaces: ['rpemotes'], installFolder: '[utility]',
   },
   {
     id: 'interact-sound', name: 'interact-sound', description: 'Play custom sound files client-side — used by many resources for notifications and effects.',
-    author: 'plunkettscoding', repo: 'https://github.com/plunkettscoding/interact-sound', category: 'Utility', stars: 60, installed: false, installFolder: '[utility]',
+    author: 'plunkettscoding', repo: 'https://github.com/MonkeyWhisper/interact-sound', category: 'Utility', stars: 60, installed: false, installFolder: '[utility]',
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -424,8 +424,8 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
     author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-bankrobbery', category: 'Criminal', stars: 120, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
   },
   {
-    id: 'qb-jail', name: 'qb-jail', description: 'QBCore jail system — prison with activities, sentence time, escape routes, and commissary.',
-    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-jail', category: 'Criminal', stars: 75, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+    id: 'qb-prison', name: 'qb-prison', description: 'QBCore prison system — jail with activities, sentence time, and commissary.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-prison', category: 'Criminal', stars: 75, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
   },
 
   // ═══════════════════════════════════════════════════════════════════════════

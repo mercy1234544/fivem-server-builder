@@ -78,12 +78,7 @@ const QBCORE_RESOURCES: ResourceToClone[] = [
   { name: 'qb-input', repo: 'https://github.com/qbcore-framework/qb-input', folder: '[ui]' },
   { name: 'qb-phone', repo: 'https://github.com/qbcore-framework/qb-phone', folder: '[phone]' },
   { name: 'qb-weathersync', repo: 'https://github.com/qbcore-framework/qb-weathersync', folder: '[environment]' },
-  { name: 'qb-admin', repo: 'https://github.com/qbcore-framework/qb-admin', folder: '[admin]' },
-  { name: 'qb-drugs', repo: 'https://github.com/qbcore-framework/qb-drugs', folder: '[criminal]' },
-  { name: 'qb-storerobbery', repo: 'https://github.com/qbcore-framework/qb-storerobbery', folder: '[criminal]' },
-  { name: 'qb-jail', repo: 'https://github.com/qbcore-framework/qb-jail', folder: '[criminal]' },
   { name: 'progressbar', repo: 'https://github.com/qbcore-framework/progressbar', folder: '[ui]' },
-  { name: 'qb-skillbar', repo: 'https://github.com/qbcore-framework/qb-skillbar', folder: '[ui]' },
 ];
 
 const SHARED_RESOURCES: ResourceToClone[] = [
@@ -91,8 +86,6 @@ const SHARED_RESOURCES: ResourceToClone[] = [
   { name: 'ox_target', repo: 'https://github.com/overextended/ox_target', folder: '[core]' },
   { name: 'ox_inventory', repo: 'https://github.com/overextended/ox_inventory', folder: '[inventory]' },
   { name: 'ox_doorlock', repo: 'https://github.com/overextended/ox_doorlock', folder: '[utility]' },
-  { name: 'dpemotes', repo: 'https://github.com/dpemotes/dpemotes', folder: '[utility]' },
-  { name: 'interact-sound', repo: 'https://github.com/plunkettscoding/interact-sound', folder: '[utility]' },
   { name: 'bob74_ipl', repo: 'https://github.com/Bob74/bob74_ipl', folder: '[maps]' },
 ];
 
