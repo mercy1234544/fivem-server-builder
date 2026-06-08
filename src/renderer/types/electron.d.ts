@@ -81,6 +81,43 @@ interface ElectronAPI {
     onProgress: (callback: (progress: any) => void) => void;
   };
 
+  txAdmin: {
+    open: (serverPath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  };
+
+  updates: {
+    check: (serverPath: string) => Promise<{
+      name: string;
+      path: string;
+      repoUrl: string;
+      version: string;
+      folder: string;
+      hasUpdate: boolean;
+      latestCommitDate: string;
+      installedDate: string;
+    }[]>;
+    update: (opts: { resourcePath: string; repoUrl: string; serverPath: string }) =>
+      Promise<{ success: boolean; error?: string }>;
+  };
+
+  vehicle: {
+    pick: () => Promise<string[]>;
+    analyze: (vehiclePath: string) => Promise<{
+      name: string;
+      isZip: boolean;
+      hasManifest: boolean;
+      hasStream: boolean;
+      metaFiles: string[];
+      streamFileCount: number;
+      vehicleCount: number;
+      needsManifest: boolean;
+    }>;
+    import: (opts: { sourcePath: string; serverPath: string; resourceName: string }) =>
+      Promise<{ success: boolean; error?: string; generatedManifest?: boolean }>;
+  };
+
+  onServerConsole: (callback: (data: { serverId: string; line: string }) => void) => () => void;
+
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => () => void;
 }
 

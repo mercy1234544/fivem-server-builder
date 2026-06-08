@@ -89,6 +89,33 @@ const electronAPI = {
     scanInstalled: (serverPath: string) => ipcRenderer.invoke('import:scanInstalled', serverPath),
   },
 
+  // txAdmin
+  txAdmin: {
+    open: (serverPath: string) => ipcRenderer.invoke('server:openTxAdmin', serverPath),
+  },
+
+  // Resource Updates
+  updates: {
+    check: (serverPath: string) => ipcRenderer.invoke('resource:checkUpdates', serverPath),
+    update: (opts: { resourcePath: string; repoUrl: string; serverPath: string }) =>
+      ipcRenderer.invoke('resource:update', opts),
+  },
+
+  // Vehicle Pack Manager
+  vehicle: {
+    pick: () => ipcRenderer.invoke('vehicle:pick'),
+    analyze: (vehiclePath: string) => ipcRenderer.invoke('vehicle:analyze', vehiclePath),
+    import: (opts: { sourcePath: string; serverPath: string; resourceName: string }) =>
+      ipcRenderer.invoke('vehicle:import', opts),
+  },
+
+  // Server console output
+  onServerConsole: (callback: (data: { serverId: string; line: string }) => void) => {
+    const handler = (_: any, data: any) => callback(data);
+    ipcRenderer.on('server:console', handler);
+    return () => { ipcRenderer.removeListener('server:console', handler); };
+  },
+
   // Build progress (server creation)
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => {
     const handler = (_: any, data: any) => callback(data);

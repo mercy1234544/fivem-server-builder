@@ -481,11 +481,35 @@ ${ensureLines}
       const proc = spawn(executable, ['+exec', 'server.cfg'], {
         cwd: server.installPath,
         detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
       this.processes.set(id, proc);
       server.status = 'running';
       this.saveServers();
+
+      // Capture stdout for console output
+      if (proc.stdout) {
+        proc.stdout.on('data', (data: Buffer) => {
+          const line = data.toString();
+          // Emit console output for the UI
+          const { BrowserWindow } = require('electron');
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win) {
+            win.webContents.send('server:console', { serverId: id, line });
+          }
+        });
+      }
+      if (proc.stderr) {
+        proc.stderr.on('data', (data: Buffer) => {
+          const line = data.toString();
+          const { BrowserWindow } = require('electron');
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win) {
+            win.webContents.send('server:console', { serverId: id, line: `[ERROR] ${line}` });
+          }
+        });
+      }
 
       proc.on('exit', () => {
         server.status = 'stopped';

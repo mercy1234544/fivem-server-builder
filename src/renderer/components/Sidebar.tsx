@@ -20,6 +20,8 @@ import {
   Zap,
   Wrench,
   Shield,
+  RefreshCw,
+  Car,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 
@@ -44,6 +46,8 @@ const navSections: NavSection[] = [
       { path: '/startup', label: 'Startup Order', icon: ListOrdered },
       { path: '/marketplace', label: 'Marketplace', icon: Store, accent: 'text-purple-400' },
       { path: '/import', label: 'Import', icon: Import, accent: 'text-cyan-400' },
+      { path: '/updater', label: 'Updater', icon: RefreshCw, accent: 'text-emerald-400' },
+      { path: '/vehicles', label: 'Vehicle Packs', icon: Car, accent: 'text-amber-400' },
     ],
   },
   {

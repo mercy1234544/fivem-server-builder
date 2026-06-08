@@ -14,6 +14,8 @@ import FileExplorer from './pages/FileExplorer';
 import ServerCfgEditor from './pages/ServerCfgEditor';
 import Marketplace from './pages/Marketplace';
 import ImportResources from './pages/ImportResources';
+import ResourceUpdater from './pages/ResourceUpdater';
+import VehiclePackManager from './pages/VehiclePackManager';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -45,6 +47,8 @@ export default function App() {
             <Route path="/editor" element={<ServerCfgEditor />} />
             <Route path="/marketplace" element={<Marketplace />} />
             <Route path="/import" element={<ImportResources />} />
+            <Route path="/updater" element={<ResourceUpdater />} />
+            <Route path="/vehicles" element={<VehiclePackManager />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </AnimatePresence>

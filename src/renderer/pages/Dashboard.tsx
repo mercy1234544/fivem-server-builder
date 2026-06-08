@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   TrendingUp,
   Sparkles,
+  Globe,
 } from 'lucide-react';
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
@@ -384,10 +385,16 @@ function ServerCard({ server, onSelect, onDelete, onToggle }: {
           {server.status === 'running' ? <Square size={11} /> : <Play size={11} />}
           {server.status === 'running' ? 'Stop' : 'Start'}
         </button>
-        <button onClick={(e) => e.stopPropagation()} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-white/[0.04] text-surface-300 hover:bg-white/[0.08] border border-white/[0.04] transition-all">
+        <button onClick={(e) => { e.stopPropagation(); window.electronAPI.openPath(server.installPath); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-white/[0.04] text-surface-300 hover:bg-white/[0.08] border border-white/[0.04] transition-all">
           <FolderOpen size={11} />
           Open
         </button>
+        {server.status === 'running' && (
+          <button onClick={(e) => { e.stopPropagation(); window.electronAPI.txAdmin.open(server.installPath).then(r => { if (r.url) toast.success('Opening txAdmin...'); }); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-primary-500/8 text-primary-400 hover:bg-primary-500/15 border border-primary-500/15 transition-all">
+            <Globe size={11} />
+            txAdmin
+          </button>
+        )}
         <button onClick={onDelete} className="p-2 rounded-xl text-surface-600 hover:text-red-400 hover:bg-red-500/8 border border-transparent hover:border-red-500/15 transition-all">
           <Trash2 size={13} />
         </button>

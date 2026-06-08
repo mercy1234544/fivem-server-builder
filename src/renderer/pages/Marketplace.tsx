@@ -470,6 +470,378 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ADDITIONAL FRAMEWORKS / CORE
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qbx_core', name: 'qbx_core', description: 'Qbox Framework — the next evolution of QBCore. Modern, optimized, actively maintained fork with ox_lib integration.',
+    author: 'Qbox-project', repo: 'https://github.com/Qbox-project/qbx_core', category: 'Framework', stars: 380, installed: false, dependencies: ['ox_lib', 'oxmysql'], replaces: ['qb-core', 'es_extended'], installFolder: '[framework]',
+  },
+  {
+    id: 'ox_fuel', name: 'ox_fuel', description: 'Overextended fuel system — realistic fuel consumption, gas stations, jerry cans, and siphoning.',
+    author: 'overextended', repo: 'https://github.com/overextended/ox_fuel', category: 'Core', stars: 120, installed: false, dependencies: ['ox_lib'], replaces: ['LegacyFuel', 'cdn-fuel'], installFolder: '[core]',
+  },
+  {
+    id: 'LegacyFuel', name: 'LegacyFuel', description: 'Classic fuel system for FiveM. Simple gas station refueling with fuel gauge.',
+    author: 'InZidiux', repo: 'https://github.com/InZidiux/LegacyFuel', category: 'Core', stars: 250, installed: false, replaces: ['ox_fuel', 'cdn-fuel'], installFolder: '[core]',
+  },
+  {
+    id: 'cdn-fuel', name: 'cdn-fuel', description: 'Modern fuel system with electric charging, fuel types, siphoning, and jerry cans.',
+    author: 'CodineDev', repo: 'https://github.com/CodineDev/cdn-fuel', category: 'Core', stars: 140, installed: false, dependencies: ['ox_lib'], replaces: ['LegacyFuel', 'ox_fuel'], installFolder: '[core]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE JOBS — CIVILIAN / LEGAL
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-newsjob', name: 'qb-newsjob', description: 'QBCore news/reporter job — camera, microphone, boom mic, news van, and live broadcasts.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-newsjob', category: 'Jobs', stars: 55, installed: false, dependencies: ['qb-core'], installFolder: '[jobs]',
+  },
+  {
+    id: 'qb-recyclejob', name: 'qb-recyclejob', description: 'QBCore recycling job — collect recyclables, process materials, earn money.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-recyclejob', category: 'Jobs', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[jobs]',
+  },
+  {
+    id: 'qb-garbagejob', name: 'qb-garbagejob', description: 'QBCore garbage truck job — drive routes, collect trash, earn payouts.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-garbagejob', category: 'Jobs', stars: 50, installed: false, dependencies: ['qb-core'], installFolder: '[jobs]',
+  },
+  {
+    id: 'qb-towjob', name: 'qb-towjob', description: 'QBCore tow truck job — flatbed towing, vehicle impound, and NPC callouts.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-towjob', category: 'Jobs', stars: 45, installed: false, dependencies: ['qb-core'], installFolder: '[jobs]',
+  },
+  {
+    id: 'esx_dmvschool', name: 'esx_dmvschool', description: 'ESX driving school — theory test and practical driving exam for license acquisition.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_dmvschool', category: 'Jobs', stars: 55, installed: false, dependencies: ['es_extended'], installFolder: '[jobs]',
+  },
+  {
+    id: 'pickle_mining', name: 'pickle_mining', description: 'Mining job — mine ores, smelt metals, sell refined materials. Great economy loop.',
+    author: 'PickleModifications', repo: 'https://github.com/PickleModifications/pickle_mining', category: 'Jobs', stars: 45, installed: false, installFolder: '[jobs]',
+  },
+  {
+    id: 'pickle_fishing', name: 'pickle_fishing', description: 'Fishing system — cast rod, catch fish, sell at market. Minigame-based with rare catches.',
+    author: 'PickleModifications', repo: 'https://github.com/PickleModifications/pickle_fishing', category: 'Jobs', stars: 40, installed: false, installFolder: '[jobs]',
+  },
+  {
+    id: 'pickle_hunting', name: 'pickle_hunting', description: 'Hunting system — track animals, hunt, skin, sell pelts. Realistic with zones.',
+    author: 'PickleModifications', repo: 'https://github.com/PickleModifications/pickle_hunting', category: 'Jobs', stars: 38, installed: false, installFolder: '[jobs]',
+  },
+  {
+    id: 'esx_godirtyjob', name: 'esx_godirtyjob', description: 'ESX street cleaning job — pick up trash around the city with a van for money.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_godirtyjob', category: 'Jobs', stars: 30, installed: false, dependencies: ['es_extended'], installFolder: '[jobs]',
+  },
+  {
+    id: 'qb-diving', name: 'qb-diving', description: 'QBCore scuba diving job — dive for treasure, coral, and underwater loot.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-diving', category: 'Jobs', stars: 30, installed: false, dependencies: ['qb-core'], installFolder: '[jobs]',
+  },
+  {
+    id: 'qb-vineyard', name: 'qb-vineyard', description: 'QBCore vineyard job — pick grapes, stomp wine, barrel aging, sell bottles.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-vineyard', category: 'Jobs', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[jobs]',
+  },
+  {
+    id: 'esx_firemanager', name: 'esx_firemanager', description: 'Fire department job — respond to fire calls, use hose, rescue civilians, fire truck.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_firemanager', category: 'Jobs', subcategory: 'EMS', stars: 40, installed: false, dependencies: ['es_extended'], installFolder: '[jobs]',
+  },
+  {
+    id: 'ps-realtor', name: 'ps-realtor', description: 'Project Sloth realtor job — sell properties to players, manage listings, earn commission.',
+    author: 'Project-Sloth', repo: 'https://github.com/Project-Sloth/ps-realtor', category: 'Jobs', stars: 45, installed: false, dependencies: ['ox_lib'], installFolder: '[jobs]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE CRIMINAL / HEISTS / DRUGS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-houserobbery', name: 'qb-houserobbery', description: 'QBCore house robbery — break into NPC houses, search drawers, steal valuables, fence loot.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-houserobbery', category: 'Criminal', stars: 90, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-jewelery', name: 'qb-jewelery', description: 'QBCore jewelry store heist — smash display cases, grab loot, escape before cops arrive.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-jewelery', category: 'Criminal', stars: 75, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-pawnshop', name: 'qb-pawnshop', description: 'QBCore pawn shop — sell stolen goods, fence jewelry, dispose of dirty money.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-pawnshop', category: 'Criminal', stars: 55, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-lapraces', name: 'qb-lapraces', description: 'QBCore illegal street racing — setup races, bet money, race for pinks.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-lapraces', category: 'Criminal', stars: 50, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-streetdealer', name: 'qb-streetdealer', description: 'QBCore street dealer — sell drugs to NPCs at random locations, risk police encounters.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-streetdealer', category: 'Criminal', stars: 45, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-weed', name: 'qb-weed', description: 'QBCore weed growing — plant, water, harvest, dry, package, and sell. Full drug cycle.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-weed', category: 'Criminal', stars: 60, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-methlab', name: 'qb-methlab', description: 'QBCore meth lab — cook meth with chemical ingredients, risk explosions, sell product.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-methlab', category: 'Criminal', stars: 55, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-cocaine', name: 'qb-cocaine', description: 'QBCore cocaine processing — harvest coca, process into coke, package, distribute.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-cocaine', category: 'Criminal', stars: 50, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-chopshop', name: 'qb-chopshop', description: 'QBCore chop shop — steal cars, deliver to chop shop, strip parts for cash.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-chopshop', category: 'Criminal', stars: 65, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-boosting', name: 'qb-boosting', description: 'QBCore vehicle boosting — steal marked vehicles, deliver for VIN scratch, earn crypto.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-boosting', category: 'Criminal', stars: 70, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'esx_drugs', name: 'esx_drugs', description: 'ESX drug system — grow, process, and sell weed, cocaine, meth, and opium.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_drugs', category: 'Criminal', stars: 65, installed: false, dependencies: ['es_extended'], installFolder: '[criminal]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE ECONOMY / SHOPS / BUSINESS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-atm', name: 'qb-atm', description: 'QBCore ATM robbery — hack ATMs for cash, risk police alert, cooldown timers.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-atm', category: 'Economy', stars: 40, installed: false, dependencies: ['qb-core'], installFolder: '[economy]',
+  },
+  {
+    id: 'qb-blackmarket', name: 'qb-blackmarket', description: 'QBCore black market — buy illegal weapons, items, and equipment from shady NPCs.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-blackmarket', category: 'Economy', stars: 45, installed: false, dependencies: ['qb-core'], installFolder: '[economy]',
+  },
+  {
+    id: 'esx_billing', name: 'esx_billing', description: 'ESX billing system — send invoices between players, society bills, and fine system.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_billing', category: 'Economy', stars: 55, installed: false, dependencies: ['es_extended'], installFolder: '[economy]',
+  },
+  {
+    id: 'okokMarketplace', name: 'okokMarketplace', description: 'OKOK player marketplace — list items for sale, browse and buy from other players.',
+    author: 'okok-scripts', repo: 'https://github.com/okok-scripts/okokMarketplace', category: 'Economy', stars: 40, installed: false, installFolder: '[economy]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE VEHICLES / GARAGE / FUEL
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'jg-advancedgarages', name: 'jg-advancedgarages', description: 'Advanced garage with vehicle preview, impound, transfer, parking spots, and clean UI.',
+    author: 'JoeSzymkowiczFiveworx', repo: 'https://github.com/JoeSzymkowiczFiveworx/jg-advancedgarages', category: 'Vehicles', stars: 180, installed: false, dependencies: ['ox_lib'], replaces: ['qb-garages'], installFolder: '[vehicles]',
+  },
+  {
+    id: 'renewed-vehiclekeys', name: 'Renewed-Vehiclekeys', description: 'Modern vehicle key system — lockpick, hotwire, give keys, alarm system.',
+    author: 'Renewed-Scripts', repo: 'https://github.com/Renewed-Scripts/Renewed-Vehiclekeys', category: 'Vehicles', stars: 130, installed: false, dependencies: ['ox_lib'], replaces: ['qb-vehiclekeys'], installFolder: '[vehicles]',
+  },
+  {
+    id: 'brz-vehiclehandling', name: 'brz-vehiclehandling', description: 'Realistic vehicle handling — tire pressure, brake fade, turbo lag, and suspension physics.',
+    author: 'Starter-Scripts', repo: 'https://github.com/bryzz-fivem/brz-vehiclehandling', category: 'Vehicles', stars: 45, installed: false, installFolder: '[vehicles]',
+  },
+  {
+    id: 'qb-carwash', name: 'qb-carwash', description: 'QBCore car wash — drive in, pay, watch your car get cleaned with animations.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-carwash', category: 'Vehicles', stars: 30, installed: false, dependencies: ['qb-core'], installFolder: '[vehicles]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE INVENTORY / CRAFTING
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-crafting', name: 'qb-crafting', description: 'QBCore crafting system — craft weapons, attachments, drugs, and items at workbenches.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-crafting', category: 'Inventory', stars: 65, installed: false, dependencies: ['qb-core'], installFolder: '[inventory]',
+  },
+  {
+    id: 'ps-inventory', name: 'ps-inventory', description: 'Project Sloth inventory — modern redesign of qb-inventory with improved UI and performance.',
+    author: 'Project-Sloth', repo: 'https://github.com/Project-Sloth/ps-inventory', category: 'Inventory', stars: 180, installed: false, dependencies: ['ox_lib'], replaces: ['qb-inventory', 'ox_inventory'], installFolder: '[inventory]',
+  },
+  {
+    id: 'core_inventory', name: 'core_inventory', description: 'Core Inventory — clean, performant inventory with crafting, shops, and stashes.',
+    author: 'core-framework', repo: 'https://github.com/core-framework/core_inventory', category: 'Inventory', stars: 70, installed: false, replaces: ['ox_inventory', 'qb-inventory'], installFolder: '[inventory]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE HOUSING / PROPERTIES
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'bcs_housing', name: 'bcs_housing', description: 'Shell-based housing with furniture placement, interior customization, and stash system.',
+    author: 'Starter-Scripts', repo: 'https://github.com/BCS-Scripts/bcs_housing', category: 'Housing', stars: 60, installed: false, replaces: ['qb-houses', 'ps-housing'], installFolder: '[housing]',
+  },
+  {
+    id: 'qb-apartments', name: 'qb-apartments', description: 'QBCore apartments — starter apartments with stash, wardrobe, and logout point.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-apartments', category: 'Housing', stars: 55, installed: false, dependencies: ['qb-core'], installFolder: '[housing]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE GANGS / FACTIONS / TURF
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'wasabi_gangs', name: 'wasabi_gangs', description: 'Gang management with turf wars, stash houses, gang vehicles, spray tags, and ranks.',
+    author: 'wasaborern', repo: 'https://github.com/wasaborern/wasabi_gangs', category: 'Gangs', stars: 80, installed: false, replaces: ['qb-gangs'], installFolder: '[gangs]',
+  },
+  {
+    id: 'qb-gangmenu', name: 'qb-gangmenu', description: 'QBCore gang menu — manage members, ranks, gang stash, and vehicle access.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-gangmenu', category: 'Gangs', stars: 40, installed: false, dependencies: ['qb-core'], installFolder: '[gangs]',
+  },
+  {
+    id: 'qb-spraypaint', name: 'qb-spraypaint', description: 'QBCore spray paint — tag territory with gang colors, mark turf, crew graffiti.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-spraypaint', category: 'Gangs', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[gangs]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE ENVIRONMENT / WEATHER / WORLD
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'vSync', name: 'vSync', description: 'Versatile time and weather sync — supports dynamic weather, time speed, and smooth transitions.',
+    author: 'VenomXNL', repo: 'https://github.com/VenomXNL/vSync', category: 'Environment', stars: 55, installed: false, replaces: ['qb-weathersync', 'cd_easytime'], installFolder: '[environment]',
+  },
+  {
+    id: 'realistic-damage', name: 'realistic-damage', description: 'Realistic vehicle and player damage — engine failure, tire blowouts, limping, and bleeding.',
+    author: 'N0Mercy', repo: 'https://github.com/N0Mercy/realistic-vehicle-damage', category: 'Environment', stars: 60, installed: false, installFolder: '[environment]',
+  },
+  {
+    id: 'qb-streetlights', name: 'qb-streetlights', description: 'Controllable street lights — blackout zones, shooting out lights, repair system.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-streetlights', category: 'Environment', stars: 25, installed: false, installFolder: '[environment]',
+  },
+  {
+    id: 'pma-nui', name: 'pma-nui', description: 'Cinematic NUI bars — add movie-style black bars for cutscenes and RP moments.',
+    author: 'AvarianKnight', repo: 'https://github.com/AvarianKnight/pma-nui', category: 'Environment', stars: 20, installed: false, installFolder: '[environment]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE UI / NOTIFICATIONS / MENUS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-radialmenu', name: 'qb-radialmenu', description: 'QBCore radial menu — hold Z for quick access to actions, vehicle controls, and emotes.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-radialmenu', category: 'UI', stars: 75, installed: false, dependencies: ['qb-core'], installFolder: '[ui]',
+  },
+  {
+    id: 'qb-scoreboard', name: 'qb-scoreboard', description: 'QBCore scoreboard — show online players, IDs, ping, and server info.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-scoreboard', category: 'UI', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[ui]',
+  },
+  {
+    id: 'okokTextUI', name: 'okokTextUI', description: 'OKOK Text UI — clean floating text prompts for interactions and contextual hints.',
+    author: 'okok-scripts', repo: 'https://github.com/okok-scripts/okokTextUI', category: 'UI', stars: 50, installed: false, installFolder: '[ui]',
+  },
+  {
+    id: 'qb-drawtext', name: 'qb-drawtext', description: 'QBCore draw text UI — on-screen text prompts for interactions, 3D text labels.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-drawtext', category: 'UI', stars: 40, installed: false, installFolder: '[ui]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE MLOs / MAPS / INTERIORS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'fivem-map-hipster', name: 'Hipster Barber MLO', description: 'Custom barber shop interior with hipster theme — chairs, mirrors, props, and lighting.',
+    author: 'community', repo: 'https://github.com/Starter-FiveM/hipster-barber-mlo', category: 'MLO', stars: 30, installed: false, installFolder: '[mlo]',
+  },
+  {
+    id: 'cfx-doorcontrol', name: 'cfx-doorcontrol', description: 'Native door control system — lock/unlock any door in the game without doorlock scripts.',
+    author: 'cfx', repo: 'https://github.com/citizenfx/cfx-server-data', category: 'MLO', stars: 150, installed: false, installFolder: '[maps]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE CHARACTER / APPEARANCE / CLOTHING
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-tattoos', name: 'qb-tattoos', description: 'QBCore tattoo shop — browse and apply tattoos by body part with preview and pricing.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-tattoos', category: 'Character', stars: 40, installed: false, dependencies: ['qb-core'], installFolder: '[character]',
+  },
+  {
+    id: 'qb-barber', name: 'qb-barber', description: 'QBCore barber shop — change hair style, color, beard, eyebrows, and face features.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-barber', category: 'Character', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[character]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE FUN / ACTIVITIES / ENTERTAINMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-casino', name: 'qb-casino', description: 'QBCore casino — blackjack, roulette, slot machines, and poker at Diamond Casino.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-casino', category: 'Fun', stars: 55, installed: false, dependencies: ['qb-core'], installFolder: '[fun]',
+  },
+  {
+    id: 'ps-bowling', name: 'ps-bowling', description: 'Project Sloth bowling — fully playable bowling alleys with scoring and multiplayer.',
+    author: 'Project-Sloth', repo: 'https://github.com/Project-Sloth/ps-bowling', category: 'Fun', stars: 45, installed: false, dependencies: ['ox_lib'], installFolder: '[fun]',
+  },
+  {
+    id: 'ps-golf', name: 'ps-golf', description: 'Project Sloth golf — playable golf course with clubs, scoring, and multiplayer rounds.',
+    author: 'Project-Sloth', repo: 'https://github.com/Project-Sloth/ps-golf', category: 'Fun', stars: 40, installed: false, dependencies: ['ox_lib'], installFolder: '[fun]',
+  },
+  {
+    id: 'qb-paintball', name: 'qb-paintball', description: 'QBCore paintball — team deathmatch arena with scoring, loadouts, and matchmaking.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-paintball', category: 'Fun', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[fun]',
+  },
+  {
+    id: 'doj-hunting', name: 'doj-hunting', description: 'Hunting system with animal tracking, weapons, skinning, and trophy mounts.',
+    author: 'DOJ-scripts', repo: 'https://github.com/DOJ-scripts/doj-hunting', category: 'Fun', stars: 30, installed: false, installFolder: '[fun]',
+  },
+  {
+    id: 'cinema', name: 'cinema', description: 'In-game cinema — watch synced YouTube videos on theater screens with other players.',
+    author: 'xander1998', repo: 'https://github.com/xander1998/fivem-cinema', category: 'Fun', stars: 50, installed: false, installFolder: '[fun]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE UTILITY / QOL / GAMEPLAY
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-deathscreen', name: 'qb-deathscreen', description: 'QBCore death screen — timer, respawn options, and EMS notification on death.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-deathscreen', category: 'Utility', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[utility]',
+  },
+  {
+    id: 'qb-loading', name: 'qb-loading', description: 'QBCore loading screen with server branding, rules, and changelog.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-loading', category: 'Utility', stars: 30, installed: false, installFolder: '[utility]',
+  },
+  {
+    id: 'qb-fitbit', name: 'qb-fitbit', description: 'QBCore fitness tracker — track walking, running, and swimming with health bonuses.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-fitbit', category: 'Utility', stars: 25, installed: false, dependencies: ['qb-core'], installFolder: '[utility]',
+  },
+  {
+    id: 'qb-commandbinding', name: 'qb-commandbinding', description: 'QBCore key binding — bind any command to a key for quick access.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-commandbinding', category: 'Utility', stars: 20, installed: false, installFolder: '[utility]',
+  },
+  {
+    id: 'qb-weapons', name: 'qb-weapons', description: 'QBCore weapon system — durability, serial numbers, attachments, and tint system.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-weapons', category: 'Utility', stars: 55, installed: false, dependencies: ['qb-core'], installFolder: '[utility]',
+  },
+  {
+    id: 'ps-camera', name: 'ps-camera', description: 'Project Sloth camera — take in-game photos, selfie mode, gallery, and social media upload.',
+    author: 'Project-Sloth', repo: 'https://github.com/Project-Sloth/ps-camera', category: 'Utility', stars: 40, installed: false, dependencies: ['ox_lib'], installFolder: '[utility]',
+  },
+  {
+    id: 'qb-weedplanting', name: 'qb-weedplanting', description: 'QBCore placeable weed plants — plant anywhere, water, fertilize, harvest, avoid police.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-weedplanting', category: 'Criminal', stars: 45, installed: false, dependencies: ['qb-core'], installFolder: '[criminal]',
+  },
+  {
+    id: 'qb-handcuffs', name: 'qb-handcuffs', description: 'QBCore handcuff system — cuff/uncuff players, escort, and pat down for police RP.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-handcuffs', category: 'Utility', stars: 30, installed: false, dependencies: ['qb-core'], installFolder: '[utility]',
+  },
+  {
+    id: 'wasabi_bridge', name: 'wasabi_bridge', description: 'Framework bridge — make resources work across QBCore, ESX, and Qbox without code changes.',
+    author: 'wasaborern', repo: 'https://github.com/wasaborern/wasabi_bridge', category: 'Core', stars: 90, installed: false, installFolder: '[core]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE SPAWN / MULTICHAR
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'esx_identity', name: 'esx_identity', description: 'ESX identity system — character name, date of birth, gender, height, and ID card.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_identity', category: 'Spawn', stars: 50, installed: false, dependencies: ['es_extended'], installFolder: '[spawn]',
+  },
+  {
+    id: 'ps-multicharacter', name: 'ps-multicharacter', description: 'Project Sloth multicharacter — modern character selection with 3D preview and animations.',
+    author: 'Project-Sloth', repo: 'https://github.com/Project-Sloth/ps-multicharacter', category: 'Spawn', stars: 60, installed: false, dependencies: ['ox_lib'], replaces: ['qb-multicharacter'], installFolder: '[spawn]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE SURVIVAL / NEEDS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qb-cooking', name: 'qb-cooking', description: 'QBCore cooking system — craft food and drinks at kitchens for hunger/thirst needs.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-cooking', category: 'Survival', stars: 35, installed: false, dependencies: ['qb-core'], installFolder: '[standalone]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MORE HUD
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'esx_hud', name: 'esx_hud', description: 'ESX HUD — health, armor, hunger, thirst, and job display for ESX servers.',
+    author: 'esx-framework', repo: 'https://github.com/esx-framework/esx_hud', category: 'HUD', stars: 40, installed: false, dependencies: ['es_extended'], replaces: ['qb-hud', 'ps-hud', 'ox_hud'], installFolder: '[hud]',
+  },
+  {
+    id: 'qb-minimap', name: 'qb-minimap', description: 'QBCore custom minimap — circle minimap with borders, compass heading, and street names.',
+    author: 'qbcore-framework', repo: 'https://github.com/qbcore-framework/qb-minimap', category: 'HUD', stars: 30, installed: false, installFolder: '[hud]',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // EXCLUSIVE / PREMIUM — Advances Collection
   // ═══════════════════════════════════════════════════════════════════════════
   {
@@ -556,16 +928,17 @@ export default function Marketplace() {
         // Update server.cfg — remove old ensures, add new one
         try {
           const cfgPath = `${activeServer.installPath}\\server.cfg`;
-          let cfg = await window.electronAPI.file.readFile(cfgPath);
-          // Remove replaced resource ensures
-          for (const replaced of replacedItems) {
-            cfg = cfg.replace(new RegExp(`^\\s*ensure\\s+${replaced.name}\\s*$`, 'gm'), '');
+          const cfgData = await window.electronAPI.file.readFile(cfgPath);
+          if (cfgData) {
+            let cfgText = cfgData.content;
+            for (const replaced of replacedItems) {
+              cfgText = cfgText.replace(new RegExp(`^\\s*ensure\\s+${replaced.name}\\s*$`, 'gm'), '');
+            }
+            if (!cfgText.includes(`ensure ${item.name}`)) {
+              cfgText = cfgText.trimEnd() + `\nensure ${item.name}\n`;
+            }
+            await window.electronAPI.file.writeFile(cfgPath, cfgText);
           }
-          // Add new ensure if not present
-          if (!cfg.includes(`ensure ${item.name}`)) {
-            cfg = cfg.trimEnd() + `\nensure ${item.name}\n`;
-          }
-          await window.electronAPI.file.writeFile(cfgPath, cfg);
         } catch {}
       } else {
         await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
@@ -603,9 +976,11 @@ export default function Marketplace() {
         // Remove from server.cfg
         try {
           const cfgPath = `${activeServer.installPath}\\server.cfg`;
-          let cfg = await window.electronAPI.file.readFile(cfgPath);
-          cfg = cfg.replace(new RegExp(`^\\s*ensure\\s+${item.name}\\s*$`, 'gm'), '');
-          await window.electronAPI.file.writeFile(cfgPath, cfg);
+          const cfgData = await window.electronAPI.file.readFile(cfgPath);
+          if (cfgData) {
+            const cfgText = cfgData.content.replace(new RegExp(`^\\s*ensure\\s+${item.name}\\s*$`, 'gm'), '');
+            await window.electronAPI.file.writeFile(cfgPath, cfgText);
+          }
         } catch {}
       } else {
         await new Promise(r => setTimeout(r, 600));

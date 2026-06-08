@@ -119,7 +119,7 @@ export default function ResourceOrganizer() {
                   <div key={name} className="flex items-center gap-2 text-sm text-amber-300 py-0.5">
                     <AlertTriangle size={12} className="text-amber-400" />
                     <span className="truncate">{name}</span>
-                    <Info size={10} className="text-amber-500 shrink-0" title="Vendor protected" />
+                    <span title="Vendor protected"><Info size={10} className="text-amber-500 shrink-0" /></span>
                   </div>
                 ))}
               </div>

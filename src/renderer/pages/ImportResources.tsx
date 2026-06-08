@@ -119,7 +119,7 @@ export default function ImportResources() {
           status: 'pending',
         }]);
       } catch (err: any) {
-        toast.error(`Failed to analyze: ${path.split('\\').pop() || p}`);
+        toast.error(`Failed to analyze: ${p.split('\\').pop() || p}`);
       }
     }
 

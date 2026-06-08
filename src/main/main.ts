@@ -9,6 +9,7 @@ import { HealthScanner } from './services/HealthScanner';
 import { GitManager } from './services/GitManager';
 import { FileManager } from './services/FileManager';
 import { ArtifactDownloader } from './services/ArtifactDownloader';
+import axios from 'axios';
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerManager;
@@ -98,6 +99,48 @@ function registerIpcHandlers() {
   ipcMain.handle('server:delete', (_, id) => serverManager.deleteServer(id));
   ipcMain.handle('server:start', (_, id) => serverManager.startServer(id));
   ipcMain.handle('server:stop', (_, id) => serverManager.stopServer(id));
+
+  // txAdmin — detect and open in browser after server starts
+  ipcMain.handle('server:openTxAdmin', async (_, serverPath: string) => {
+    // txAdmin default port is 40120, check server.cfg for custom port
+    let txPort = 40120;
+    const cfgPath = path.join(serverPath, 'server.cfg');
+    if (fs.existsSync(cfgPath)) {
+      const cfg = fs.readFileSync(cfgPath, 'utf-8');
+      const portMatch = cfg.match(/set\s+txAdminPort\s+(\d+)/);
+      if (portMatch) txPort = parseInt(portMatch[1]);
+    }
+    const url = `http://localhost:${txPort}`;
+    shell.openExternal(url);
+    return { url, port: txPort };
+  });
+
+  // Resource Update Checker — scan resources for available updates
+  ipcMain.handle('resource:checkUpdates', async (_, serverPath: string) => {
+    return checkResourceUpdates(serverPath);
+  });
+
+  // Resource Update — update a single resource
+  ipcMain.handle('resource:update', async (_, resourcePath: string) => {
+    return gitManager.pullUpdates(resourcePath);
+  });
+
+  // Vehicle Pack Import — analyze and import vehicle addon packs
+  ipcMain.handle('vehicle:analyze', async (_, vehiclePath: string) => {
+    return analyzeVehiclePack(vehiclePath);
+  });
+
+  ipcMain.handle('vehicle:import', async (_, opts: { sourcePath: string; serverPath: string; resourceName: string }) => {
+    return importVehiclePack(opts);
+  });
+
+  ipcMain.handle('vehicle:pick', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
+      filters: [{ name: 'Vehicle Pack (folder or ZIP)', extensions: ['zip'] }],
+    });
+    return result.filePaths || [];
+  });
 
   // Resource Management
   ipcMain.handle('resource:scan', (_, serverPath) => resourceScanner.scanResources(serverPath));
@@ -499,6 +542,242 @@ function copyDirRecursiveSync(src: string, dest: string) {
     } else {
       fs.copyFileSync(srcPath, destPath);
     }
+  }
+}
+
+// ─── Resource Update Checker ────────────────────────────────────────────────
+async function checkResourceUpdates(serverPath: string): Promise<any[]> {
+  const resourcesDir = path.join(serverPath, 'resources');
+  if (!fs.existsSync(resourcesDir)) return [];
+
+  const results: any[] = [];
+
+  const scanDir = async (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const sub = path.join(dir, entry.name);
+      const sourceFile = path.join(sub, '.fivem-builder-source');
+      const manifestFile = path.join(sub, 'fxmanifest.lua');
+
+      if (fs.existsSync(sourceFile)) {
+        const repoUrl = fs.readFileSync(sourceFile, 'utf-8').trim();
+        const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+        let latestCommitDate = '';
+        let hasUpdate = false;
+
+        if (match) {
+          const [, owner, repo] = match;
+          try {
+            const resp = await axios.get(
+              `https://api.github.com/repos/${owner}/${repo.replace(/\.git$/, '')}/commits?per_page=1`,
+              { timeout: 8000, headers: { 'User-Agent': 'FiveM-Server-Builder' } }
+            );
+            if (resp.data && resp.data[0]) {
+              latestCommitDate = resp.data[0].commit.committer.date;
+              // Check if resource was installed before this commit
+              const stats = fs.statSync(sourceFile);
+              hasUpdate = new Date(latestCommitDate) > stats.mtime;
+            }
+          } catch {}
+        }
+
+        // Parse manifest for version
+        let version = '';
+        if (fs.existsSync(manifestFile)) {
+          const content = fs.readFileSync(manifestFile, 'utf-8');
+          const vMatch = content.match(/version\s+['"](.*?)['"]/);
+          if (vMatch) version = vMatch[1];
+        }
+
+        // Get relative folder path
+        const relPath = path.relative(resourcesDir, sub);
+
+        results.push({
+          name: entry.name,
+          path: sub,
+          repoUrl,
+          version,
+          folder: relPath.includes(path.sep) ? relPath.split(path.sep)[0] : '',
+          hasUpdate,
+          latestCommitDate,
+          installedDate: fs.statSync(sourceFile).mtime.toISOString(),
+        });
+      } else if (entry.name.startsWith('[')) {
+        // Category folder — recurse into it
+        await scanDir(sub);
+      }
+    }
+  };
+
+  await scanDir(resourcesDir);
+  return results;
+}
+
+// ─── Vehicle Pack Analyzer ──────────────────────────────────────────────────
+async function analyzeVehiclePack(vehiclePath: string): Promise<any> {
+  const isZip = vehiclePath.toLowerCase().endsWith('.zip');
+  let scanDir = vehiclePath;
+  let tempDir = '';
+
+  if (isZip) {
+    const osMod = await import('os');
+    tempDir = path.join(osMod.tmpdir(), `fivem-vehicle-analyze-${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+    await extractZip(vehiclePath, { dir: tempDir });
+    // Check if extracted to a subfolder
+    const entries = fs.readdirSync(tempDir);
+    if (entries.length === 1 && fs.statSync(path.join(tempDir, entries[0])).isDirectory()) {
+      scanDir = path.join(tempDir, entries[0]);
+    } else {
+      scanDir = tempDir;
+    }
+  }
+
+  const resourceName = path.basename(vehiclePath, '.zip');
+
+  // Look for vehicle files
+  const hasManifest = fs.existsSync(path.join(scanDir, 'fxmanifest.lua')) || fs.existsSync(path.join(scanDir, '__resource.lua'));
+  const hasStream = fs.existsSync(path.join(scanDir, 'stream'));
+
+  // Scan for vehicle meta files
+  const metaFiles: string[] = [];
+  const streamFiles: string[] = [];
+
+  const scanForFiles = (dir: string, prefix = '') => {
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          scanForFiles(path.join(dir, entry.name), rel);
+        } else {
+          const lower = entry.name.toLowerCase();
+          if (lower.endsWith('.meta') || lower === 'vehicles.meta' || lower === 'handling.meta' || lower === 'carcols.meta' || lower === 'carvariations.meta') {
+            metaFiles.push(rel);
+          }
+          if (lower.endsWith('.yft') || lower.endsWith('.ytd') || lower.endsWith('.ydr')) {
+            streamFiles.push(rel);
+          }
+        }
+      }
+    } catch {}
+  };
+  scanForFiles(scanDir);
+
+  // Count vehicles by checking vehicles.meta
+  let vehicleCount = 0;
+  const vehiclesMeta = path.join(scanDir, 'vehicles.meta');
+  const streamVehiclesMeta = path.join(scanDir, 'stream', 'vehicles.meta');
+  const dataVehiclesMeta = path.join(scanDir, 'data', 'vehicles.meta');
+  for (const mpath of [vehiclesMeta, streamVehiclesMeta, dataVehiclesMeta]) {
+    if (fs.existsSync(mpath)) {
+      const content = fs.readFileSync(mpath, 'utf-8');
+      vehicleCount = (content.match(/<modelName>/gi) || []).length;
+      break;
+    }
+  }
+
+  if (tempDir) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  return {
+    name: resourceName,
+    isZip,
+    hasManifest,
+    hasStream,
+    metaFiles,
+    streamFileCount: streamFiles.length,
+    vehicleCount: vehicleCount || Math.max(1, Math.floor(streamFiles.filter(f => f.endsWith('.yft')).length / 2)),
+    needsManifest: !hasManifest && (metaFiles.length > 0 || streamFiles.length > 0),
+  };
+}
+
+async function importVehiclePack(opts: { sourcePath: string; serverPath: string; resourceName: string }): Promise<{ success: boolean; error?: string; generatedManifest?: boolean }> {
+  try {
+    const resourcesDir = path.join(opts.serverPath, 'resources');
+    const vehiclesDir = path.join(resourcesDir, '[vehicles]');
+    fs.mkdirSync(vehiclesDir, { recursive: true });
+
+    const destDir = path.join(vehiclesDir, opts.resourceName);
+    const isZip = opts.sourcePath.toLowerCase().endsWith('.zip');
+
+    if (isZip) {
+      const osMod = await import('os');
+      const tempDir = path.join(osMod.tmpdir(), `fivem-vehicle-import-${Date.now()}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+      await extractZip(opts.sourcePath, { dir: tempDir });
+
+      const entries = fs.readdirSync(tempDir);
+      const sourceDir = (entries.length === 1 && fs.statSync(path.join(tempDir, entries[0])).isDirectory())
+        ? path.join(tempDir, entries[0])
+        : tempDir;
+
+      if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
+      copyDirRecursiveSync(sourceDir, destDir);
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } else {
+      if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
+      copyDirRecursiveSync(opts.sourcePath, destDir);
+    }
+
+    // Generate fxmanifest.lua if missing
+    let generatedManifest = false;
+    const manifestPath = path.join(destDir, 'fxmanifest.lua');
+    const legacyPath = path.join(destDir, '__resource.lua');
+    if (!fs.existsSync(manifestPath) && !fs.existsSync(legacyPath)) {
+      // Scan for data files to build manifest
+      const dataFiles: string[] = [];
+      const scanData = (dir: string, prefix = '') => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            if (entry.name.toLowerCase() !== 'stream') scanData(path.join(dir, entry.name), rel);
+          } else if (entry.name.toLowerCase().endsWith('.meta')) {
+            dataFiles.push(rel);
+          }
+        }
+      };
+      scanData(destDir);
+
+      // Build manifest
+      let manifest = `fx_version 'cerulean'\ngame 'gta5'\n\nauthor '${opts.resourceName}'\ndescription 'Vehicle Pack — ${opts.resourceName}'\nversion '1.0.0'\n\n`;
+
+      if (dataFiles.length > 0) {
+        manifest += `files {\n`;
+        for (const f of dataFiles) {
+          manifest += `    '${f}',\n`;
+        }
+        manifest += `}\n\n`;
+
+        for (const f of dataFiles) {
+          const fname = path.basename(f).toLowerCase();
+          if (fname === 'vehicles.meta') manifest += `data_file 'VEHICLE_METADATA_FILE' '${f}'\n`;
+          else if (fname === 'handling.meta') manifest += `data_file 'HANDLING_FILE' '${f}'\n`;
+          else if (fname === 'carcols.meta') manifest += `data_file 'CARCOLS_FILE' '${f}'\n`;
+          else if (fname === 'carvariations.meta') manifest += `data_file 'VEHICLE_VARIATION_FILE' '${f}'\n`;
+          else if (fname === 'vehiclelayouts.meta') manifest += `data_file 'VEHICLE_LAYOUTS_FILE' '${f}'\n`;
+          else if (fname === 'dlctext.meta') manifest += `data_file 'DLC_ITYP_REQUEST' '${f}'\n`;
+          else if (fname === 'contentunlocks.meta') manifest += `data_file 'CONTENT_UNLOCKING_META_FILE' '${f}'\n`;
+        }
+      }
+
+      fs.writeFileSync(manifestPath, manifest, 'utf-8');
+      generatedManifest = true;
+    }
+
+    // Update server.cfg
+    const cfgPath = path.join(opts.serverPath, 'server.cfg');
+    if (fs.existsSync(cfgPath)) {
+      let cfg = fs.readFileSync(cfgPath, 'utf-8');
+      if (!cfg.match(new RegExp(`^\\s*ensure\\s+${opts.resourceName}\\s*$`, 'm'))) {
+        cfg = cfg.trimEnd() + `\nensure ${opts.resourceName}\n`;
+        fs.writeFileSync(cfgPath, cfg, 'utf-8');
+      }
+    }
+
+    return { success: true, generatedManifest };
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
 }
 
