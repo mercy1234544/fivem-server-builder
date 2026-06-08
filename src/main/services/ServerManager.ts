@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { BrowserWindow } from 'electron';
 import axios from 'axios';
 import extractZip from 'extract-zip';
+import { ArtifactDownloader } from './ArtifactDownloader';
 
 export interface ServerConfig {
   name: string;
@@ -180,7 +181,51 @@ export class ServerManager {
       updatedAt: new Date().toISOString(),
     };
 
-    // Build the list of resources to clone based on framework choice
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    const sendProgress = (message: string, current: number, total: number) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('server:buildProgress', { current, total, resource: '', message });
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 1: Create base directory
+    // ═══════════════════════════════════════════════════════════════════
+    if (!fs.existsSync(config.installPath)) {
+      fs.mkdirSync(config.installPath, { recursive: true });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 2: Download REAL FiveM server artifacts
+    // This gives us FXServer.exe, cache/, citizen/, txAdmin, all DLLs
+    // ═══════════════════════════════════════════════════════════════════
+    sendProgress('Downloading FiveM server artifacts...', 0, 100);
+
+    const artifactDownloader = new ArtifactDownloader();
+    artifactDownloader.on('progress', (progress: any) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('server:buildProgress', {
+          current: Math.round(progress.percent || 0),
+          total: 100,
+          resource: '',
+          message: progress.message || `Downloading artifacts: ${Math.round(progress.percent || 0)}%`,
+        });
+      }
+    });
+
+    const artifactResult = await artifactDownloader.download(config.artifactVersion, config.installPath);
+    if (!artifactResult.success) {
+      console.error('Artifact download failed:', artifactResult.error);
+      sendProgress(`Warning: Artifact download failed (${artifactResult.error}). Continuing with resources...`, 0, 100);
+    } else {
+      sendProgress('Artifacts installed! Setting up resources...', 100, 100);
+    }
+
+    artifactDownloader.removeAllListeners();
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 3: Build resource list based on framework choice
+    // ═══════════════════════════════════════════════════════════════════
     const resourcesToClone: ResourceToClone[] = [];
     const allFolders = new Set<string>();
 
@@ -194,7 +239,6 @@ export class ServerManager {
         resourcesToClone.push(...QBCORE_RESOURCES);
         resourcesToClone.push(...SHARED_RESOURCES);
       } else if (config.framework === 'custom') {
-        // Custom gets just core + shared, user picks the rest
         resourcesToClone.push(...SHARED_RESOURCES);
       }
     }
@@ -207,37 +251,29 @@ export class ServerManager {
       allFolders.add(res.folder);
     }
 
-    // Create directory structure
-    const dirs = [
-      config.installPath,
-      path.join(config.installPath, 'resources'),
-      ...Array.from(allFolders).map(f => path.join(config.installPath, 'resources', f)),
-    ];
-
-    for (const dir of dirs) {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+    // Create resource directory structure
+    const resourcesDir = path.join(config.installPath, 'resources');
+    if (!fs.existsSync(resourcesDir)) {
+      fs.mkdirSync(resourcesDir, { recursive: true });
+    }
+    for (const folder of allFolders) {
+      const folderPath = path.join(resourcesDir, folder);
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
       }
     }
 
-    // Clone all resources — send progress to renderer
-    const mainWindow = BrowserWindow.getAllWindows()[0];
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 4: Download all framework resources
+    // ═══════════════════════════════════════════════════════════════════
     let cloned = 0;
     const total = resourcesToClone.length;
 
     for (const res of resourcesToClone) {
-      const destDir = path.join(config.installPath, 'resources', res.folder, res.name);
+      const destDir = path.join(resourcesDir, res.folder, res.name);
       cloned++;
 
-      // Send progress update
-      if (mainWindow) {
-        mainWindow.webContents.send('server:buildProgress', {
-          current: cloned,
-          total,
-          resource: res.name,
-          message: `Cloning ${res.name} (${cloned}/${total})...`,
-        });
-      }
+      sendProgress(`Installing ${res.name} (${cloned}/${total})...`, cloned, total);
 
       // Skip if already exists
       if (fs.existsSync(destDir)) continue;
@@ -250,22 +286,20 @@ export class ServerManager {
       }
     }
 
-    // Generate server.cfg with all the ensure lines for cloned resources
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 5: Generate server.cfg
+    // ═══════════════════════════════════════════════════════════════════
+    sendProgress('Generating server.cfg...', total, total);
     const serverCfg = this.generateServerCfg(config, resourcesToClone);
     fs.writeFileSync(path.join(config.installPath, 'server.cfg'), serverCfg);
 
+    // ═══════════════════════════════════════════════════════════════════
+    // DONE
+    // ═══════════════════════════════════════════════════════════════════
     this.servers.set(id, server);
     this.saveServers();
 
-    if (mainWindow) {
-      mainWindow.webContents.send('server:buildProgress', {
-        current: total,
-        total,
-        resource: '',
-        message: 'Server build complete!',
-      });
-    }
-
+    sendProgress('Server build complete!', total, total);
     return server;
   }
 

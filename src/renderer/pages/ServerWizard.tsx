@@ -96,25 +96,40 @@ export default function ServerWizard() {
         setBuildProgress(5);
         server = await window.electronAPI.server.create(config);
       } else {
-        // Demo mode — simulate the build with fake progress
-        const resourceCounts: Record<string, number> = { esx: 19, qbcore: 35, custom: 9, blank: 0 };
-        const total = resourceCounts[config.framework] || 0;
+        // Demo mode — simulate the full build with artifact download + resources
         const demoNames = config.framework === 'qbcore'
-          ? ['oxmysql', 'ox_lib', 'qb-core', 'qb-multicharacter', 'qb-spawn', 'qb-clothing', 'qb-policejob', 'qb-ambulancejob', 'qb-inventory', 'qb-hud', 'qb-target', 'qb-phone', 'qb-banking', 'qb-vehicleshop', 'qb-garages', 'qb-houses', 'pma-voice', 'ox_target', 'ox_inventory', 'dpemotes']
+          ? ['oxmysql', 'ox_lib', 'qb-core', 'qb-multicharacter', 'qb-spawn', 'qb-clothing', 'qb-policejob', 'qb-ambulancejob', 'qb-inventory', 'qb-hud', 'qb-target', 'qb-phone', 'qb-banking', 'qb-vehicleshop', 'qb-garages', 'qb-houses', 'pma-voice', 'ox_target', 'ox_inventory']
           : config.framework === 'esx'
-          ? ['oxmysql', 'ox_lib', 'es_extended', 'esx_multicharacter', 'esx_identity', 'esx_skin', 'esx_policejob', 'esx_ambulancejob', 'esx_mechanicjob', 'esx_vehicleshop', 'pma-voice', 'ox_target', 'ox_inventory', 'dpemotes']
-          : ['oxmysql', 'ox_lib', 'pma-voice', 'ox_target', 'ox_inventory', 'dpemotes'];
+          ? ['oxmysql', 'ox_lib', 'es_extended', 'esx_multicharacter', 'esx_identity', 'esx_skin', 'esx_policejob', 'esx_ambulancejob', 'esx_mechanicjob', 'esx_vehicleshop', 'pma-voice', 'ox_target', 'ox_inventory']
+          : config.framework === 'custom'
+          ? ['oxmysql', 'ox_lib', 'pma-voice', 'ox_target', 'ox_inventory']
+          : [];
 
-        for (let i = 0; i < demoNames.length; i++) {
-          setBuildStep(`Cloning ${demoNames[i]} (${i + 1}/${demoNames.length})...`);
-          setBuildProgress(Math.round(((i + 1) / demoNames.length) * 100));
-          await new Promise(r => setTimeout(r, 300 + Math.random() * 300));
+        // Simulate artifact download
+        for (let pct = 0; pct <= 100; pct += 15) {
+          setBuildStep(`Downloading FiveM server artifacts: ${pct}%`);
+          setBuildProgress(Math.round(pct * 0.4)); // artifacts = first 40% of total progress
+          await new Promise(r => setTimeout(r, 200));
         }
+        setBuildStep('Extracting artifacts (FXServer.exe, cache, citizen, txAdmin)...');
+        setBuildProgress(45);
+        await new Promise(r => setTimeout(r, 500));
+
+        // Simulate resource downloads
+        for (let i = 0; i < demoNames.length; i++) {
+          setBuildStep(`Installing ${demoNames[i]} (${i + 1}/${demoNames.length})...`);
+          setBuildProgress(50 + Math.round(((i + 1) / demoNames.length) * 48)); // resources = 50-98%
+          await new Promise(r => setTimeout(r, 250 + Math.random() * 200));
+        }
+
+        setBuildStep('Generating server.cfg...');
+        setBuildProgress(99);
+        await new Promise(r => setTimeout(r, 300));
 
         server = {
           id: Date.now().toString(36) + Math.random().toString(36).substring(2, 8),
           ...config,
-          resourceCount: total,
+          resourceCount: demoNames.length,
           status: 'stopped' as const,
           lastBackup: null,
           createdAt: new Date().toISOString(),
