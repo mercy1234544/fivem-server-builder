@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, Square, X } from 'lucide-react';
+import { Minus, Square, X, Hexagon } from 'lucide-react';
 
 export default function TitleBar() {
   const handleMinimize = () => window.electronAPI?.minimize();
@@ -7,32 +7,45 @@ export default function TitleBar() {
   const handleClose = () => window.electronAPI?.close();
 
   return (
-    <div className="h-9 bg-surface-950 border-b border-surface-800 flex items-center justify-between select-none"
-         style={{ WebkitAppRegion: 'drag' } as any}>
-      <div className="flex items-center gap-2 pl-4">
-        <div className="w-4 h-4 rounded bg-primary-500 flex items-center justify-center">
-          <span className="text-[8px] font-bold text-white">F</span>
+    <div
+      className="h-10 bg-surface-950/80 backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between select-none relative z-50"
+      style={{ WebkitAppRegion: 'drag' } as any}
+    >
+      {/* App title */}
+      <div className="flex items-center gap-2.5 pl-4">
+        <div className="relative">
+          <div className="w-5 h-5 rounded-md bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-glow-sm">
+            <Hexagon size={11} className="text-white" strokeWidth={2.5} />
+          </div>
         </div>
-        <span className="text-xs font-medium text-surface-300">FiveM Server Builder</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-bold text-white/90 tracking-wide">FIVEM</span>
+          <span className="text-xs font-medium text-surface-400 tracking-wide">Server Builder</span>
+        </div>
+        <span className="text-[9px] px-1.5 py-0.5 bg-primary-500/10 border border-primary-500/20 rounded text-primary-400 font-medium ml-0.5">
+          BETA
+        </span>
       </div>
+
+      {/* Window controls */}
       <div className="flex" style={{ WebkitAppRegion: 'no-drag' } as any}>
         <button
           onClick={handleMinimize}
-          className="w-11 h-9 flex items-center justify-center hover:bg-surface-800 transition-colors"
+          className="w-12 h-10 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-white/[0.06] transition-all duration-150"
         >
-          <Minus size={14} className="text-surface-400" />
+          <Minus size={14} />
         </button>
         <button
           onClick={handleMaximize}
-          className="w-11 h-9 flex items-center justify-center hover:bg-surface-800 transition-colors"
+          className="w-12 h-10 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-white/[0.06] transition-all duration-150"
         >
-          <Square size={12} className="text-surface-400" />
+          <Square size={11} />
         </button>
         <button
           onClick={handleClose}
-          className="w-11 h-9 flex items-center justify-center hover:bg-red-600 transition-colors"
+          className="w-12 h-10 flex items-center justify-center text-surface-500 hover:text-white hover:bg-red-600/90 transition-all duration-150"
         >
-          <X size={14} className="text-surface-400 hover:text-white" />
+          <X size={14} />
         </button>
       </div>
     </div>

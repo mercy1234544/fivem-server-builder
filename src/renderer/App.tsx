@@ -13,6 +13,7 @@ import BackupManager from './pages/BackupManager';
 import FileExplorer from './pages/FileExplorer';
 import ServerCfgEditor from './pages/ServerCfgEditor';
 import Marketplace from './pages/Marketplace';
+import ImportResources from './pages/ImportResources';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/files" element={<FileExplorer />} />
             <Route path="/editor" element={<ServerCfgEditor />} />
             <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/import" element={<ImportResources />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </AnimatePresence>

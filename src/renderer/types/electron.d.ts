@@ -52,6 +52,29 @@ interface ElectronAPI {
     exists: (targetPath: string) => Promise<boolean>;
   };
 
+  import: {
+    pickResources: () => Promise<string[]>;
+    analyze: (resourcePath: string) => Promise<{
+      name: string;
+      description: string;
+      author: string;
+      version: string;
+      detectedType: string | null;
+      suggestedFolder: string;
+      isZip: boolean;
+      dependencies: string[];
+      conflicts: string[];
+    }>;
+    install: (opts: {
+      sourcePath: string;
+      serverPath: string;
+      targetFolder: string;
+      resourceName: string;
+      replaceExisting: string[];
+    }) => Promise<{ success: boolean; error?: string; replaced: string[] }>;
+    scanInstalled: (serverPath: string) => Promise<string[]>;
+  };
+
   artifact: {
     download: (version: string, dest: string) => Promise<{ success: boolean; error?: string }>;
     getVersions: () => Promise<any[]>;

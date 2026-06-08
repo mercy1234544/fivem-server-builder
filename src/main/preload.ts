@@ -75,6 +75,20 @@ const electronAPI = {
     },
   },
 
+  // Resource Import
+  import: {
+    pickResources: () => ipcRenderer.invoke('import:pickResources'),
+    analyze: (resourcePath: string) => ipcRenderer.invoke('import:analyze', resourcePath),
+    install: (opts: {
+      sourcePath: string;
+      serverPath: string;
+      targetFolder: string;
+      resourceName: string;
+      replaceExisting: string[];
+    }) => ipcRenderer.invoke('import:install', opts),
+    scanInstalled: (serverPath: string) => ipcRenderer.invoke('import:scanInstalled', serverPath),
+  },
+
   // Build progress (server creation)
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => {
     const handler = (_: any, data: any) => callback(data);

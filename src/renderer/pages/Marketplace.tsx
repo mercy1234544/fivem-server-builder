@@ -11,6 +11,8 @@ import {
   ArrowLeftRight,
   Trash2,
   ExternalLink,
+  Lock,
+  Crown,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 
@@ -28,6 +30,9 @@ interface MarketplaceItem {
   version?: string;
   replaces?: string[];
   installFolder?: string;
+  locked?: boolean;
+  accessUrl?: string;
+  premium?: boolean;
 }
 
 // ─── MASSIVE RESOURCE CATALOG ────────────────────────────────────────────────
@@ -463,6 +468,24 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
     id: 'cw-racingapp', name: 'cw-racingapp', description: 'Street racing app — create tracks, race with friends, leaderboards, and betting.',
     author: 'cw-scripts', repo: 'https://github.com/cw-scripts/cw-racingapp', category: 'Fun', stars: 160, installed: false, dependencies: ['ox_lib'], installFolder: '[fun]',
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXCLUSIVE / PREMIUM — Advances Collection
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    id: 'AdvancesAdmin', name: 'AdvancesAdmin', description: 'Premium role-based admin menu for Qbox servers with cyberpunk NUI. God mode, noclip, spectate, teleport, vehicle spawn, weather control, report system, and 30+ permission nodes across 4 staff tiers.',
+    author: 'Advances', repo: '', category: 'Exclusive', stars: 0, installed: false, version: '1.0.0',
+    dependencies: ['qbx_core', 'ox_lib'], installFolder: '[admin]',
+    locked: true, premium: true,
+    accessUrl: 'https://discord.gg/YOUR_DISCORD_INVITE',
+  },
+  {
+    id: 'AdvancesWeather', name: 'AdvancesWeather', description: 'Premium dynamic weather & environment dashboard for Qbox. Server-synced weather, snow mode, blackout, 11 disaster events (earthquakes, tornadoes, tsunamis), emergency broadcasts, glassmorphism UI, and live forecast.',
+    author: 'Advances', repo: '', category: 'Exclusive', stars: 0, installed: false, version: '1.0.0',
+    dependencies: ['qbx_core'], installFolder: '[environment]',
+    locked: true, premium: true,
+    accessUrl: 'https://discord.gg/YOUR_DISCORD_INVITE',
+  },
 ];
 
 const categoryColors: Record<string, string> = {
@@ -488,6 +511,7 @@ const categoryColors: Record<string, string> = {
   Environment: 'bg-green-600/20 text-green-200 border-green-600/30',
   Gangs: 'bg-red-600/20 text-red-200 border-red-600/30',
   Fun: 'bg-pink-600/20 text-pink-200 border-pink-600/30',
+  Exclusive: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
 };
 
 export default function Marketplace() {
@@ -665,12 +689,18 @@ export default function Marketplace() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: Math.min(i * 0.02, 0.5) }}
-            className="card flex flex-col group hover:border-surface-500/50"
+            className={`card flex flex-col group ${item.premium ? 'border-amber-500/30 hover:border-amber-400/50 hover:shadow-[0_0_20px_rgba(245,158,11,0.1)]' : 'hover:border-surface-500/50'}`}
           >
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-white truncate group-hover:text-primary-300 transition-colors">{item.name}</h3>
+                  {item.premium && (
+                    <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/40 rounded text-amber-300 shrink-0 font-semibold">
+                      <Crown size={8} />
+                      EXCLUSIVE
+                    </span>
+                  )}
                   {item.version && (
                     <span className="text-[10px] px-1.5 py-0.5 bg-surface-700 rounded text-surface-400 shrink-0">
                       v{item.version}
@@ -706,10 +736,27 @@ export default function Marketplace() {
 
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-700/50">
               <div className="flex items-center gap-1.5">
-                <Star size={12} className="text-amber-400" />
-                <span className="text-xs text-surface-400">{item.stars.toLocaleString()}</span>
+                {item.premium ? (
+                  <Crown size={12} className="text-amber-400" />
+                ) : (
+                  <Star size={12} className="text-amber-400" />
+                )}
+                <span className="text-xs text-surface-400">
+                  {item.premium ? 'Premium' : item.stars.toLocaleString()}
+                </span>
               </div>
-              {item.installed ? (
+              {item.locked ? (
+                <a
+                  href={item.accessUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded-lg text-xs font-medium text-amber-300 transition-all cursor-pointer"
+                >
+                  <Lock size={12} />
+                  Request Access
+                  <ExternalLink size={10} className="opacity-60" />
+                </a>
+              ) : item.installed ? (
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1 text-xs text-green-400 font-medium">
                     <CheckCircle2 size={14} />

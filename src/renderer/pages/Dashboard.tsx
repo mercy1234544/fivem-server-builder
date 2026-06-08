@@ -20,49 +20,36 @@ import {
   Loader2,
   X,
   AlertTriangle,
+  TrendingUp,
+  Sparkles,
 } from 'lucide-react';
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
-const statusColors = {
-  running: 'text-green-400 bg-green-400/10 border-green-500/30',
-  stopped: 'text-surface-400 bg-surface-400/10 border-surface-500/30',
-  error: 'text-red-400 bg-red-400/10 border-red-500/30',
-};
-
-const statusIcons = {
-  running: CheckCircle2,
-  stopped: Clock,
-  error: AlertCircle,
+const statusConfig = {
+  running: { color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-500/25', dot: 'glow-dot-green', label: 'Running' },
+  stopped: { color: 'text-surface-400', bg: 'bg-surface-400/10', border: 'border-surface-500/25', dot: 'glow-dot-amber', label: 'Stopped' },
+  error:   { color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-500/25', dot: 'glow-dot-red', label: 'Error' },
 };
 
 const containerVariants = {
   hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06 },
-  },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
 };
-
 const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0 },
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] } },
 };
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { servers, setServers, setActiveServer, actionLog, removeServer, logAction, updateServer } = useAppStore();
 
-  useEffect(() => {
-    loadServers();
-  }, []);
+  useEffect(() => { loadServers(); }, []);
 
   const loadServers = async () => {
     if (window.electronAPI) {
-      try {
-        const data = await window.electronAPI.server.getAll();
-        setServers(data);
-      } catch {}
+      try { const data = await window.electronAPI.server.getAll(); setServers(data); } catch {}
     }
   };
 
@@ -82,34 +69,19 @@ export default function Dashboard() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-
     try {
-      // Delete from the backend
       if (window.electronAPI) {
         await window.electronAPI.server.delete(deleteTarget.id);
-
-        // Delete actual server files from disk if requested
         if (deleteFiles && deleteTarget.installPath) {
-          try {
-            await window.electronAPI.file.delete(deleteTarget.installPath);
-          } catch (err) {
-            console.error('Failed to delete server files:', err);
-          }
+          try { await window.electronAPI.file.delete(deleteTarget.installPath); } catch {}
         }
       }
-
-      // Remove from local store
       removeServer(deleteTarget.id);
-
-      const action = deleteFiles ? 'permanently deleted (files removed)' : 'removed from builder (files kept)';
-      logAction('Server Deleted', `${deleteTarget.name} ${action}`, 'warning');
+      logAction('Server Deleted', `${deleteTarget.name} ${deleteFiles ? 'permanently deleted' : 'removed from builder'}`, 'warning');
       toast.success(`${deleteTarget.name} deleted`);
     } catch (err: any) {
       toast.error(`Failed to delete: ${err.message}`);
-    } finally {
-      setDeleting(false);
-      setDeleteTarget(null);
-    }
+    } finally { setDeleting(false); setDeleteTarget(null); }
   };
 
   const handleToggleServer = async (e: React.MouseEvent, server: ServerType) => {
@@ -117,87 +89,98 @@ export default function Dashboard() {
     if (server.status === 'running') {
       updateServer(server.id, { status: 'stopped' });
       logAction('Server Stopped', server.name, 'info');
-      toast.success(`${server.name} stopped`);
     } else {
       updateServer(server.id, { status: 'running' });
       logAction('Server Started', server.name, 'success');
-      toast.success(`${server.name} started`);
     }
   };
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="show"
-      className="space-y-6"
-    >
-      {/* Header */}
-      <motion.div variants={itemVariants} className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-surface-400 mt-1">Manage your FiveM servers</p>
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="p-6 space-y-6">
+      {/* ═══ Hero Header ═══ */}
+      <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl">
+        {/* Gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-600/20 via-surface-900/80 to-purple-600/10 rounded-2xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-500/10 via-transparent to-transparent" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-400/5 rounded-full blur-[80px]" />
+
+        <div className="relative z-10 flex items-center justify-between p-6 border border-white/[0.06] rounded-2xl">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles size={16} className="text-primary-400" />
+              <span className="text-xs font-medium text-primary-400 uppercase tracking-wide">Command Center</span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">Dashboard</h1>
+            <p className="text-sm text-surface-400 mt-1">Manage and monitor your FiveM servers</p>
+          </div>
+          <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2.5">
+            <Plus size={16} />
+            New Server
+          </button>
         </div>
-        <button
-          onClick={() => navigate('/create')}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus size={16} />
-          New Server
-        </button>
       </motion.div>
 
-      {/* Stats */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Server} label="Total Servers" value={servers.length} color="text-primary-400" bgColor="bg-primary-400/10" />
-        <StatCard icon={Play} label="Running" value={runningServers} color="text-green-400" bgColor="bg-green-400/10" />
-        <StatCard icon={Package} label="Total Resources" value={totalResources} color="text-purple-400" bgColor="bg-purple-400/10" />
-        <StatCard icon={HeartPulse} label="Health Issues" value={0} color="text-amber-400" bgColor="bg-amber-400/10" />
+      {/* ═══ Stats ═══ */}
+      <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon={Server} label="Total Servers" value={servers.length} gradient="from-primary-500/20 to-indigo-500/5" iconColor="text-primary-400" />
+        <StatCard icon={Zap} label="Running" value={runningServers} gradient="from-emerald-500/20 to-green-500/5" iconColor="text-emerald-400" />
+        <StatCard icon={Package} label="Resources" value={totalResources} gradient="from-purple-500/20 to-violet-500/5" iconColor="text-purple-400" />
+        <StatCard icon={HeartPulse} label="Health Issues" value={0} gradient="from-amber-500/20 to-yellow-500/5" iconColor="text-amber-400" />
       </motion.div>
 
-      {/* Quick Actions */}
+      {/* ═══ Quick Actions ═══ */}
       {servers.length > 0 && (
         <motion.div variants={itemVariants}>
-          <h2 className="text-sm font-semibold text-surface-400 uppercase tracking-wide mb-3">Quick Actions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <h2 className="text-xs font-semibold text-surface-500 uppercase tracking-[0.08em] mb-3">Quick Actions</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { label: 'Scan Resources', icon: Package, path: '/resources', color: 'text-purple-400' },
-              { label: 'Health Check', icon: HeartPulse, path: '/health', color: 'text-green-400' },
-              { label: 'Create Backup', icon: Archive, path: '/backups', color: 'text-amber-400' },
-              { label: 'Browse Files', icon: FolderOpen, path: '/files', color: 'text-blue-400' },
+              { label: 'Scan Resources', icon: Package, path: '/resources', gradient: 'from-purple-500/10 to-transparent', iconColor: 'text-purple-400' },
+              { label: 'Health Check', icon: HeartPulse, path: '/health', gradient: 'from-emerald-500/10 to-transparent', iconColor: 'text-emerald-400' },
+              { label: 'Create Backup', icon: Archive, path: '/backups', gradient: 'from-amber-500/10 to-transparent', iconColor: 'text-amber-400' },
+              { label: 'Browse Files', icon: FolderOpen, path: '/files', gradient: 'from-sky-500/10 to-transparent', iconColor: 'text-sky-400' },
             ].map((action) => (
               <button
                 key={action.path}
                 onClick={() => navigate(action.path)}
-                className="flex items-center gap-2.5 px-3 py-2.5 bg-surface-800/50 border border-surface-700/50 rounded-xl hover:bg-surface-800 hover:border-surface-600/50 transition-all group"
+                className="group relative overflow-hidden flex items-center gap-3 p-3 rounded-xl border border-white/[0.04] hover:border-white/[0.1] bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-300"
               >
-                <action.icon size={16} className={action.color} />
-                <span className="text-sm text-surface-300 group-hover:text-white transition-colors">{action.label}</span>
-                <ArrowRight size={12} className="text-surface-600 ml-auto group-hover:text-surface-400 transition-colors" />
+                <div className={`absolute inset-0 bg-gradient-to-r ${action.gradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
+                <div className="relative z-10 flex items-center gap-3 w-full">
+                  <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <action.icon size={15} className={action.iconColor} />
+                  </div>
+                  <span className="text-sm text-surface-300 group-hover:text-white transition-colors font-medium">{action.label}</span>
+                  <ArrowRight size={12} className="text-surface-600 ml-auto group-hover:text-surface-400 group-hover:translate-x-0.5 transition-all" />
+                </div>
               </button>
             ))}
           </div>
         </motion.div>
       )}
 
-      {/* Server List */}
-      <motion.div variants={itemVariants} className="space-y-3">
-        <h2 className="text-lg font-semibold text-white">Your Servers</h2>
+      {/* ═══ Server List ═══ */}
+      <motion.div variants={itemVariants} className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-white">Your Servers</h2>
+          {servers.length > 0 && (
+            <span className="text-xs text-surface-500">{servers.length} server{servers.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
 
         {servers.length === 0 ? (
-          <div className="card flex flex-col items-center justify-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-surface-800 flex items-center justify-center mb-4">
-              <Server size={28} className="text-surface-500" />
+          <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-surface-900/30">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 via-transparent to-purple-500/5" />
+            <div className="relative z-10 flex flex-col items-center justify-center py-20">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500/10 to-primary-500/5 border border-primary-500/20 flex items-center justify-center mb-5">
+                <Server size={32} className="text-primary-400/60" />
+              </div>
+              <p className="text-lg font-semibold text-surface-200 mb-1">No servers yet</p>
+              <p className="text-sm text-surface-500 mb-6">Create your first FiveM server to get started</p>
+              <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2">
+                <Plus size={16} />
+                Create Your First Server
+              </button>
             </div>
-            <p className="text-surface-300 font-medium mb-1">No servers yet</p>
-            <p className="text-xs text-surface-500 mb-5">Create your first FiveM server to get started</p>
-            <button
-              onClick={() => navigate('/create')}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Plus size={16} />
-              Create Your First Server
-            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -210,10 +193,7 @@ export default function Dashboard() {
               >
                 <ServerCard
                   server={server}
-                  onSelect={() => {
-                    setActiveServer(server.id);
-                    navigate('/resources');
-                  }}
+                  onSelect={() => { setActiveServer(server.id); navigate('/resources'); }}
                   onDelete={(e) => handleDeleteServer(e, server)}
                   onToggle={(e) => handleToggleServer(e, server)}
                 />
@@ -223,24 +203,23 @@ export default function Dashboard() {
         )}
       </motion.div>
 
-      {/* Recent Activity */}
+      {/* ═══ Recent Activity ═══ */}
       {actionLog.length > 0 && (
         <motion.div variants={itemVariants} className="space-y-3">
-          <h2 className="text-sm font-semibold text-surface-400 uppercase tracking-wide">Recent Activity</h2>
-          <div className="space-y-1">
+          <h2 className="text-xs font-semibold text-surface-500 uppercase tracking-[0.08em]">Recent Activity</h2>
+          <div className="card-flat space-y-0.5 p-2">
             {actionLog.slice(0, 5).map((log) => (
-              <div key={log.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-800/30 transition-colors">
-                <Activity size={14} className={
-                  log.severity === 'success' ? 'text-green-400' :
-                  log.severity === 'warning' ? 'text-amber-400' :
-                  log.severity === 'error' ? 'text-red-400' :
-                  'text-surface-400'
-                } />
+              <div key={log.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+                <div className={`w-1.5 h-1.5 rounded-full ${
+                  log.severity === 'success' ? 'bg-emerald-400' :
+                  log.severity === 'warning' ? 'bg-amber-400' :
+                  log.severity === 'error' ? 'bg-red-400' : 'bg-surface-500'
+                }`} />
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm text-surface-200">{log.action}</span>
+                  <span className="text-sm text-surface-200 font-medium">{log.action}</span>
                   <span className="text-xs text-surface-500 ml-2">{log.detail}</span>
                 </div>
-                <span className="text-[10px] text-surface-500 shrink-0">
+                <span className="text-[10px] text-surface-600 shrink-0 font-mono">
                   {new Date(log.timestamp).toLocaleTimeString()}
                 </span>
               </div>
@@ -249,111 +228,79 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* ── Delete Confirmation Modal ─────────────────────────────────── */}
+      {/* ═══ Delete Confirmation Modal ═══ */}
       <AnimatePresence>
         {deleteTarget && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
             onClick={() => !deleting && setDeleteTarget(null)}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 20 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-surface-900 border border-surface-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+              className="glass-panel p-6 max-w-md w-full mx-4"
             >
-              {/* Header */}
               <div className="flex items-start gap-4 mb-5">
-                <div className="w-12 h-12 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center shrink-0">
+                <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
                   <AlertTriangle size={22} className="text-red-400" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-lg font-bold text-white">Delete Server</h3>
                   <p className="text-sm text-surface-400 mt-0.5">
-                    Are you sure you want to delete <span className="text-white font-medium">"{deleteTarget.name}"</span>?
+                    Are you sure you want to delete <span className="text-white font-semibold">"{deleteTarget.name}"</span>?
                   </p>
                 </div>
-                <button
-                  onClick={() => !deleting && setDeleteTarget(null)}
-                  className="p-1 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800 transition-all ml-auto"
-                >
+                <button onClick={() => !deleting && setDeleteTarget(null)} className="p-1.5 rounded-lg text-surface-500 hover:text-white hover:bg-white/[0.06] transition-all">
                   <X size={16} />
                 </button>
               </div>
 
-              {/* Delete files option */}
-              <div className="bg-surface-800/60 border border-surface-700/50 rounded-xl p-4 mb-5 space-y-3">
-                <label className="flex items-start gap-3 cursor-pointer group" onClick={() => setDeleteFiles(true)}>
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-5 space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(true)}>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
-                    deleteFiles ? 'border-red-500 bg-red-500' : 'border-surface-500'
+                    deleteFiles ? 'border-red-400 bg-red-500' : 'border-surface-600'
                   }`}>
                     {deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-white">Delete everything</p>
-                    <p className="text-xs text-surface-400 mt-0.5">
-                      Remove from builder <span className="text-red-400 font-medium">AND delete all server files</span> from your computer
-                    </p>
-                    {deleteTarget.installPath && (
-                      <p className="text-[10px] text-surface-500 font-mono mt-1 truncate">{deleteTarget.installPath}</p>
-                    )}
+                    <p className="text-xs text-surface-400 mt-0.5">Remove from builder <span className="text-red-400 font-medium">AND delete all files</span></p>
+                    {deleteTarget.installPath && <p className="text-[10px] text-surface-600 font-mono mt-1 truncate">{deleteTarget.installPath}</p>}
                   </div>
                 </label>
-
-                <div className="border-t border-surface-700/50" />
-
-                <label className="flex items-start gap-3 cursor-pointer group" onClick={() => setDeleteFiles(false)}>
+                <div className="border-t border-white/[0.04]" />
+                <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(false)}>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
-                    !deleteFiles ? 'border-primary-500 bg-primary-500' : 'border-surface-500'
+                    !deleteFiles ? 'border-primary-400 bg-primary-500' : 'border-surface-600'
                   }`}>
                     {!deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-white">Remove from builder only</p>
-                    <p className="text-xs text-surface-400 mt-0.5">
-                      Keep the server files on your computer, just remove it from this app
-                    </p>
+                    <p className="text-xs text-surface-400 mt-0.5">Keep server files on your computer</p>
                   </div>
                 </label>
               </div>
 
-              {/* Warning */}
               {deleteFiles && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-5"
-                >
-                  <p className="text-xs text-red-300 font-medium flex items-center gap-2">
-                    <AlertTriangle size={14} className="shrink-0" />
-                    This will permanently delete all server files, resources, and configurations. This cannot be undone.
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="bg-red-500/8 border border-red-500/15 rounded-xl p-3 mb-5">
+                  <p className="text-xs text-red-300 flex items-center gap-2">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    This permanently deletes all server files, resources, and configs. Cannot be undone.
                   </p>
                 </motion.div>
               )}
 
-              {/* Buttons */}
               <div className="flex gap-3">
-                <button
-                  onClick={() => !deleting && setDeleteTarget(null)}
-                  disabled={deleting}
-                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-surface-800 text-surface-300 hover:bg-surface-700 transition-all disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-all disabled:opacity-50"
-                >
-                  {deleting ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}
+                <button onClick={() => !deleting && setDeleteTarget(null)} disabled={deleting} className="flex-1 btn-secondary">Cancel</button>
+                <button onClick={confirmDelete} disabled={deleting} className="flex-1 btn-danger flex items-center justify-center gap-2">
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                   {deleting ? 'Deleting...' : deleteFiles ? 'Delete Everything' : 'Remove'}
                 </button>
               </div>
@@ -365,99 +312,84 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ icon: Icon, label, value, color, bgColor }: {
-  icon: any; label: string; value: number; color: string; bgColor: string;
+/* ═══ Stat Card ═══ */
+function StatCard({ icon: Icon, label, value, gradient, iconColor }: {
+  icon: any; label: string; value: number; gradient: string; iconColor: string;
 }) {
   return (
-    <motion.div whileHover={{ scale: 1.02 }} className="card flex items-center gap-4">
-      <div className={`w-12 h-12 rounded-xl ${bgColor} flex items-center justify-center`}>
-        <Icon size={22} className={color} />
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-white">{value}</p>
-        <p className="text-xs text-surface-400">{label}</p>
+    <motion.div whileHover={{ scale: 1.02, y: -2 }} transition={{ duration: 0.2 }} className="relative overflow-hidden card group">
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-60 group-hover:opacity-100 transition-opacity`} />
+      <div className="relative z-10 flex items-center gap-4">
+        <div className="w-12 h-12 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center group-hover:scale-105 transition-transform">
+          <Icon size={20} className={iconColor} />
+        </div>
+        <div>
+          <p className="text-2xl font-extrabold text-white tracking-tight">{value}</p>
+          <p className="text-[11px] text-surface-400 font-medium">{label}</p>
+        </div>
       </div>
     </motion.div>
   );
 }
 
+/* ═══ Server Card ═══ */
 function ServerCard({ server, onSelect, onDelete, onToggle }: {
-  server: ServerType;
-  onSelect: () => void;
-  onDelete: (e: React.MouseEvent) => void;
-  onToggle: (e: React.MouseEvent) => void;
+  server: ServerType; onSelect: () => void; onDelete: (e: React.MouseEvent) => void; onToggle: (e: React.MouseEvent) => void;
 }) {
-  const StatusIcon = statusIcons[server.status as keyof typeof statusIcons];
-  const frameworkLabels: Record<string, string> = {
-    esx: 'ESX Legacy', qbcore: 'QBCore', custom: 'Custom', blank: 'Blank',
-  };
+  const status = statusConfig[server.status as keyof typeof statusConfig] || statusConfig.stopped;
+  const frameworkLabels: Record<string, string> = { esx: 'ESX Legacy', qbcore: 'QBCore', custom: 'Custom', blank: 'Blank' };
 
   return (
-    <div
-      className="card cursor-pointer group hover:border-primary-500/30 transition-all duration-200"
-      onClick={onSelect}
-    >
-      <div className="flex items-start justify-between mb-3">
+    <div className="card cursor-pointer group hover:border-primary-500/20" onClick={onSelect}>
+      {/* Server status glow */}
+      {server.status === 'running' && (
+        <div className="absolute -top-px left-4 right-4 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
+      )}
+
+      <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-600/30 to-primary-800/30 border border-primary-500/20 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500/15 to-primary-600/5 border border-primary-500/15 flex items-center justify-center group-hover:scale-105 transition-transform">
             <Server size={18} className="text-primary-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-white group-hover:text-primary-300 transition-colors">{server.name}</h3>
-            <p className="text-xs text-surface-400">
-              {frameworkLabels[server.framework] || server.framework} · {server.os}
-            </p>
+            <h3 className="font-bold text-white group-hover:text-primary-300 transition-colors">{server.name}</h3>
+            <p className="text-xs text-surface-500">{frameworkLabels[server.framework] || server.framework} &middot; {server.os}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${statusColors[server.status as keyof typeof statusColors]}`}>
-            <StatusIcon size={11} />
-            <span className="capitalize">{server.status}</span>
-          </div>
+        <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-medium ${status.bg} ${status.color} border ${status.border}`}>
+          <div className={status.dot} />
+          {status.label}
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 text-center mb-3">
-        <div className="bg-surface-800/60 rounded-lg py-2.5">
-          <p className="text-sm font-bold text-white">{server.resourceCount}</p>
-          <p className="text-[10px] text-surface-400">Resources</p>
-        </div>
-        <div className="bg-surface-800/60 rounded-lg py-2.5">
-          <p className="text-sm font-bold text-white truncate px-1">{server.artifactVersion || 'N/A'}</p>
-          <p className="text-[10px] text-surface-400">Artifacts</p>
-        </div>
-        <div className="bg-surface-800/60 rounded-lg py-2.5">
-          <p className="text-sm font-bold text-white">
-            {server.lastBackup ? new Date(server.lastBackup).toLocaleDateString() : 'Never'}
-          </p>
-          <p className="text-[10px] text-surface-400">Backup</p>
-        </div>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        {[
+          { label: 'Resources', value: server.resourceCount },
+          { label: 'Artifacts', value: server.artifactVersion || 'N/A' },
+          { label: 'Backup', value: server.lastBackup ? new Date(server.lastBackup).toLocaleDateString() : 'Never' },
+        ].map((stat) => (
+          <div key={stat.label} className="bg-white/[0.03] border border-white/[0.04] rounded-lg py-2.5 text-center">
+            <p className="text-sm font-bold text-white truncate px-1">{stat.value}</p>
+            <p className="text-[10px] text-surface-500">{stat.label}</p>
+          </div>
+        ))}
       </div>
 
-      <div className="flex items-center gap-2 pt-2 border-t border-surface-700/50">
-        <button
-          onClick={onToggle}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            server.status === 'running'
-              ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
-              : 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
-          }`}
-        >
-          {server.status === 'running' ? <Square size={12} /> : <Play size={12} />}
+      <div className="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
+        <button onClick={onToggle} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+          server.status === 'running'
+            ? 'bg-red-500/8 text-red-400 hover:bg-red-500/15 border border-red-500/15'
+            : 'bg-emerald-500/8 text-emerald-400 hover:bg-emerald-500/15 border border-emerald-500/15'
+        }`}>
+          {server.status === 'running' ? <Square size={11} /> : <Play size={11} />}
           {server.status === 'running' ? 'Stop' : 'Start'}
         </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); }}
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium bg-surface-700/50 text-surface-300 hover:bg-surface-700 transition-all"
-        >
-          <FolderOpen size={12} />
+        <button onClick={(e) => e.stopPropagation()} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-white/[0.04] text-surface-300 hover:bg-white/[0.08] border border-white/[0.04] transition-all">
+          <FolderOpen size={11} />
           Open
         </button>
-        <button
-          onClick={onDelete}
-          className="p-1.5 rounded-lg text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-        >
-          <Trash2 size={14} />
+        <button onClick={onDelete} className="p-2 rounded-xl text-surface-600 hover:text-red-400 hover:bg-red-500/8 border border-transparent hover:border-red-500/15 transition-all">
+          <Trash2 size={13} />
         </button>
       </div>
     </div>

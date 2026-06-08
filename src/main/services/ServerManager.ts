@@ -216,9 +216,11 @@ export class ServerManager {
     const artifactResult = await artifactDownloader.download(config.artifactVersion, config.installPath);
     if (!artifactResult.success) {
       console.error('Artifact download failed:', artifactResult.error);
-      sendProgress(`Warning: Artifact download failed (${artifactResult.error}). Continuing with resources...`, 0, 100);
+      sendProgress(`ERROR: Artifact download failed — ${artifactResult.error}`, 0, 100);
+      artifactDownloader.removeAllListeners();
+      throw new Error(`FiveM artifact download failed: ${artifactResult.error}`);
     } else {
-      sendProgress('Artifacts installed! Setting up resources...', 100, 100);
+      sendProgress('✓ FiveM artifacts installed (FXServer.exe, txAdmin, cache, citizen). Setting up resources...', 100, 100);
     }
 
     artifactDownloader.removeAllListeners();
@@ -247,6 +249,7 @@ export class ServerManager {
     allFolders.add('[core]');
     allFolders.add('[standalone]');
     allFolders.add('[custom]');
+    allFolders.add('[mlo]');
     for (const res of resourcesToClone) {
       allFolders.add(res.folder);
     }

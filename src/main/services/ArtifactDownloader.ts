@@ -8,6 +8,7 @@ export interface ArtifactVersion {
   version: string;
   url: string;
   recommended: boolean;
+  txAdminVersion?: string;
 }
 
 export interface DownloadProgress {
@@ -15,73 +16,54 @@ export interface DownloadProgress {
   downloaded: number;
   total: number;
   speed: number;
+  message?: string;
 }
 
 export class ArtifactDownloader extends EventEmitter {
-  // Official FiveM artifact URLs
-  private readonly ARTIFACTS_PAGE = 'https://runtime.fivem.net/artifacts/fivem/build_server_windows/master/';
-  private readonly RECOMMENDED_URL = 'https://changelogs-live.fivem.net/api/changelog/versions/win32/server';
+  private readonly VERSIONS_API = 'https://changelogs-live.fivem.net/api/changelog/versions/win32/server';
 
   /**
-   * Fetch available artifact versions from the FiveM CDN.
-   * Gets the recommended build number from the official API.
+   * Fetch available artifact versions from FiveM's official API.
+   * Returns full download URLs with hashes.
    */
   async getAvailableVersions(): Promise<ArtifactVersion[]> {
     const versions: ArtifactVersion[] = [];
 
     try {
-      // Get the recommended version from FiveM's API
-      const response = await axios.get(this.RECOMMENDED_URL, { timeout: 15000 });
-      const recommended = response.data?.recommended;
-      const latest = response.data?.latest;
-      const critical = response.data?.critical;
+      const response = await axios.get(this.VERSIONS_API, { timeout: 15000 });
+      const data = response.data;
 
-      if (recommended) {
+      // Recommended build (stable)
+      if (data.recommended_download) {
         versions.push({
-          version: recommended,
-          url: `${this.ARTIFACTS_PAGE}${recommended}/server.zip`,
+          version: data.recommended,
+          url: data.recommended_download,
           recommended: true,
+          txAdminVersion: data.recommended_txadmin,
         });
       }
 
-      if (latest && latest !== recommended) {
+      // Latest build (bleeding edge)
+      if (data.latest_download && data.latest !== data.recommended) {
         versions.push({
-          version: latest,
-          url: `${this.ARTIFACTS_PAGE}${latest}/server.zip`,
+          version: data.latest,
+          url: data.latest_download,
           recommended: false,
+          txAdminVersion: data.latest_txadmin,
         });
       }
 
-      if (critical && critical !== recommended && critical !== latest) {
+      // Critical/optional build
+      if (data.optional_download && data.optional !== data.recommended && data.optional !== data.latest) {
         versions.push({
-          version: critical,
-          url: `${this.ARTIFACTS_PAGE}${critical}/server.zip`,
+          version: data.optional,
+          url: data.optional_download,
           recommended: false,
+          txAdminVersion: data.optional_txadmin,
         });
       }
     } catch (err) {
       console.error('Failed to fetch artifact versions:', err);
-      // Fallback: try scraping the artifacts page for build links
-      try {
-        const pageResponse = await axios.get(this.ARTIFACTS_PAGE, { timeout: 15000 });
-        const html = pageResponse.data as string;
-        // Extract build links like "7290-abcdef123456/"
-        const buildPattern = /href="(\d+-[a-f0-9]+)\//g;
-        let match;
-        const builds: string[] = [];
-        while ((match = buildPattern.exec(html)) !== null && builds.length < 5) {
-          builds.push(match[1]);
-        }
-        // The last entry on the page is typically the latest
-        if (builds.length > 0) {
-          const latestBuild = builds[builds.length - 1];
-          versions.push({
-            version: latestBuild,
-            url: `${this.ARTIFACTS_PAGE}${latestBuild}/server.zip`,
-            recommended: true,
-          });
-        }
-      } catch {}
     }
 
     return versions;
@@ -97,53 +79,79 @@ export class ArtifactDownloader extends EventEmitter {
         fs.mkdirSync(destination, { recursive: true });
       }
 
-      // Get the download URL
+      // Resolve the download URL
       let url: string;
+
       if (version.startsWith('http')) {
+        // Direct URL passed
         url = version;
-      } else if (version === 'recommended' || version === 'latest') {
-        // Fetch the recommended version
-        const versions = await this.getAvailableVersions();
-        const target = versions.find(v => v.recommended) || versions[0];
-        if (!target) {
-          return { success: false, error: 'Could not find any artifact versions' };
-        }
-        url = target.url;
-        console.log(`Downloading ${target.version} artifacts from: ${url}`);
       } else {
-        // Assume it's a build number/hash
-        url = `${this.ARTIFACTS_PAGE}${version}/server.zip`;
+        // Fetch versions from API and pick the right one
+        this.emit('progress', { percent: 0, downloaded: 0, total: 0, speed: 0, message: 'Fetching latest artifact version...' });
+
+        const versions = await this.getAvailableVersions();
+
+        if (version === 'recommended' || version === 'latest-recommended') {
+          const target = versions.find(v => v.recommended);
+          if (!target) {
+            return { success: false, error: 'Could not find recommended artifact version from FiveM API' };
+          }
+          url = target.url;
+          console.log(`Using recommended artifacts: build ${target.version} (txAdmin ${target.txAdminVersion})`);
+        } else if (version === 'experimental' || version === 'latest-experimental') {
+          const target = versions.find(v => !v.recommended) || versions[0];
+          if (!target) {
+            return { success: false, error: 'Could not find experimental artifact version from FiveM API' };
+          }
+          url = target.url;
+          console.log(`Using experimental artifacts: build ${target.version} (txAdmin ${target.txAdminVersion})`);
+        } else {
+          // Try to find by version number
+          const target = versions.find(v => v.version === version);
+          if (target) {
+            url = target.url;
+          } else {
+            return { success: false, error: `Artifact version "${version}" not found. Available: ${versions.map(v => v.version).join(', ')}` };
+          }
+        }
       }
+
+      console.log(`Downloading FiveM artifacts from: ${url}`);
+      this.emit('progress', { percent: 1, downloaded: 0, total: 0, speed: 0, message: 'Starting artifact download...' });
 
       const tempFile = path.join(destination, 'server-artifact.zip');
 
-      // Download with progress
+      // Download with progress tracking
       await this.downloadWithProgress(url, tempFile);
 
-      this.emit('progress', { percent: 90, downloaded: 0, total: 0, speed: 0, message: 'Extracting artifacts...' });
-
       // Extract
+      this.emit('progress', { percent: 90, downloaded: 0, total: 0, speed: 0, message: 'Extracting server files (FXServer.exe, txAdmin, cache, citizen)...' });
+      console.log('Extracting artifacts...');
       await extractZip(tempFile, { dir: destination });
 
       // Clean up temp zip
       try { fs.unlinkSync(tempFile); } catch {}
 
-      this.emit('progress', { percent: 100, downloaded: 0, total: 0, speed: 0, message: 'Artifacts installed' });
+      // Verify key files exist
+      const hasServer = fs.existsSync(path.join(destination, 'FXServer.exe'));
+      console.log(`Extraction complete. FXServer.exe present: ${hasServer}`);
+
+      this.emit('progress', { percent: 100, downloaded: 0, total: 0, speed: 0, message: 'Artifacts installed successfully!' });
 
       return { success: true };
     } catch (error: any) {
+      console.error('Artifact download error:', error);
       return { success: false, error: error.message };
     }
   }
 
   private async downloadWithProgress(url: string, dest: string): Promise<void> {
-    // Use axios for the initial request to handle redirects properly
     const response = await axios({
       method: 'GET',
       url,
       responseType: 'stream',
-      timeout: 300000, // 5 minute timeout for large downloads
-      maxRedirects: 5,
+      timeout: 600000, // 10 minute timeout for large artifact downloads
+      maxRedirects: 10,
     });
 
     const totalSize = parseInt(String(response.headers['content-length'] || '0'), 10);
@@ -159,15 +167,15 @@ export class ArtifactDownloader extends EventEmitter {
         const now = Date.now();
         const elapsed = (now - lastTime) / 1000;
 
-        if (elapsed >= 0.3) {
+        if (elapsed >= 0.5) {
           const speed = (downloaded - lastDownloaded) / elapsed;
-          const percent = totalSize > 0 ? (downloaded / totalSize) * 85 : 0; // Cap at 85%, extraction is the last 15%
+          const percent = totalSize > 0 ? (downloaded / totalSize) * 85 : 0; // Cap at 85% — extraction is last 15%
           this.emit('progress', {
             percent,
             downloaded,
             total: totalSize,
             speed,
-            message: `Downloading artifacts: ${this.formatBytes(downloaded)} / ${this.formatBytes(totalSize)}`,
+            message: `Downloading artifacts: ${this.formatBytes(downloaded)} / ${this.formatBytes(totalSize)} (${this.formatBytes(speed)}/s)`,
           });
           lastTime = now;
           lastDownloaded = downloaded;
