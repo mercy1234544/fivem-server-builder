@@ -1,8 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { spawn, ChildProcess } from 'child_process';
 import crypto from 'crypto';
 import { BrowserWindow } from 'electron';
+import axios from 'axios';
+import extractZip from 'extract-zip';
 
 export interface ServerConfig {
   name: string;
@@ -247,11 +250,9 @@ export class ServerManager {
       if (fs.existsSync(destDir)) continue;
 
       try {
-        const simpleGit = require('simple-git');
-        const git = simpleGit();
-        await git.clone(res.repo, destDir, ['--depth', '1']);
+        await this.downloadAndExtractRepo(res.repo, destDir);
       } catch (err) {
-        console.error(`Failed to clone ${res.name}:`, err);
+        console.error(`Failed to download ${res.name}:`, err);
         // Continue with other resources even if one fails
       }
     }
@@ -349,6 +350,71 @@ ${ensureLines}
 # ─── Custom Resources ────────────────────────────────────────────────
 # Add your custom resources below
 `;
+  }
+
+  /**
+   * Download a GitHub repo as ZIP and extract to destination.
+   * No git needed, no auth prompts.
+   */
+  private async downloadAndExtractRepo(repoUrl: string, destination: string): Promise<void> {
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) throw new Error('Invalid GitHub URL');
+    const [, owner, repo] = match;
+    const repoName = repo.replace(/\.git$/, '');
+
+    // Try main branch, fall back to master
+    let zipUrl = `https://github.com/${owner}/${repoName}/archive/refs/heads/main.zip`;
+    let response;
+    try {
+      response = await axios.get(zipUrl, { responseType: 'arraybuffer', timeout: 60000 });
+    } catch {
+      zipUrl = `https://github.com/${owner}/${repoName}/archive/refs/heads/master.zip`;
+      response = await axios.get(zipUrl, { responseType: 'arraybuffer', timeout: 60000 });
+    }
+
+    const tempDir = os.tmpdir();
+    const zipPath = path.join(tempDir, `${repoName}-${Date.now()}.zip`);
+    fs.writeFileSync(zipPath, Buffer.from(response.data));
+
+    const extractDir = path.join(tempDir, `${repoName}-extract-${Date.now()}`);
+    fs.mkdirSync(extractDir, { recursive: true });
+    await extractZip(zipPath, { dir: extractDir });
+
+    // GitHub ZIPs have a single subfolder like "repo-main/"
+    const extracted = fs.readdirSync(extractDir);
+    const innerDir = extracted.length === 1
+      ? path.join(extractDir, extracted[0])
+      : extractDir;
+
+    if (!fs.existsSync(destination)) {
+      fs.mkdirSync(destination, { recursive: true });
+    }
+
+    // Copy all files to destination
+    this.copyDirRecursive(innerDir, destination);
+
+    // Save source URL for future updates
+    fs.writeFileSync(path.join(destination, '.fivem-builder-source'), repoUrl);
+
+    // Cleanup
+    try {
+      fs.unlinkSync(zipPath);
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    } catch {}
+  }
+
+  private copyDirRecursive(src: string, dest: string) {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        this.copyDirRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
   }
 
   async updateServer(id: string, data: Partial<Server>): Promise<Server | null> {
