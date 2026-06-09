@@ -104,7 +104,7 @@ interface ElectronAPI {
   };
 
   txAdmin: {
-    open: (serverPath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+    open: (serverPath: string) => Promise<{ url: string; port: number }>;
   };
 
   updates: {
