@@ -902,10 +902,21 @@ function setupAutoUpdater() {
   // Don't check for updates in dev mode
   if (process.env.NODE_ENV === 'development' || !app.isPackaged) return;
 
-  autoUpdater.autoDownload = false;
+  // Auto-download updates so users get them seamlessly
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  // Log everything for debugging
+  autoUpdater.logger = require('electron-log');
+  (autoUpdater.logger as any).transports.file.level = 'info';
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[AutoUpdater] Checking for updates...');
+    mainWindow?.webContents.send('updater:status', { status: 'checking' });
+  });
+
   autoUpdater.on('update-available', (info) => {
+    console.log(`[AutoUpdater] Update available: v${info.version}`);
     mainWindow?.webContents.send('updater:status', {
       status: 'available',
       version: info.version,
@@ -913,11 +924,13 @@ function setupAutoUpdater() {
     });
   });
 
-  autoUpdater.on('update-not-available', () => {
+  autoUpdater.on('update-not-available', (info) => {
+    console.log(`[AutoUpdater] Already up to date: v${info.version}`);
     mainWindow?.webContents.send('updater:status', { status: 'current' });
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    console.log(`[AutoUpdater] Downloading: ${Math.round(progress.percent)}%`);
     mainWindow?.webContents.send('updater:status', {
       status: 'downloading',
       percent: Math.round(progress.percent),
@@ -926,22 +939,34 @@ function setupAutoUpdater() {
     });
   });
 
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('updater:status', { status: 'ready' });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[AutoUpdater] Update downloaded: v${info.version} — ready to install`);
+    mainWindow?.webContents.send('updater:status', {
+      status: 'ready',
+      version: info.version,
+    });
   });
 
   autoUpdater.on('error', (err) => {
+    console.error('[AutoUpdater] Error:', err.message);
     mainWindow?.webContents.send('updater:status', {
       status: 'error',
       error: err.message,
     });
   });
 
-  // Check for updates every 30 minutes
-  autoUpdater.checkForUpdates().catch(() => {});
+  // Check immediately on startup (small delay to let window load)
+  setTimeout(() => {
+    console.log('[AutoUpdater] Initial update check...');
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('[AutoUpdater] Initial check failed:', err.message);
+    });
+  }, 3000);
+
+  // Then check every 15 minutes
   setInterval(() => {
     autoUpdater.checkForUpdates().catch(() => {});
-  }, 30 * 60 * 1000);
+  }, 15 * 60 * 1000);
 }
 
 app.whenReady().then(() => {
