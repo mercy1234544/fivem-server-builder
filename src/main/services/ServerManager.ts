@@ -536,13 +536,13 @@ export class ServerManager {
         server.status = 'running';
         this.saveServers();
         sendProgress('Waiting for txAdmin to start...', 99, 100);
-        const txReady = await this.waitForTxAdmin(40120, 60000);
+        const txReady = await this.waitForTxAdmin(40120, 120000);
         if (txReady) {
-          sendProgress('Server build complete! txAdmin is ready.', 100, 100);
+          sendProgress('Server build complete! Opening txAdmin...', 100, 100);
           const { shell } = require('electron');
           shell.openExternal('http://localhost:40120');
         } else {
-          sendProgress('Server build complete! txAdmin may still be loading — try localhost:40120', 100, 100);
+          sendProgress('Server build complete! Open txAdmin manually: localhost:40120', 100, 100);
         }
       } else {
         sendProgress(`Server build complete! Auto-start failed: ${startResult.error}`, 100, 100);
@@ -1213,16 +1213,6 @@ set onesync on
           mainWin.webContents.send('server:statusChange', { serverId: id, status: 'stopped' });
         }
       });
-
-      // If starting without server.cfg, open txAdmin once it's ready
-      if (!useServerCfg) {
-        this.waitForTxAdmin(40120, 60000).then(ready => {
-          if (ready) {
-            const { shell } = require('electron');
-            shell.openExternal('http://localhost:40120');
-          }
-        });
-      }
 
       return { success: true };
     } catch (err: any) {
