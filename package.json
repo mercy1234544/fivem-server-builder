@@ -8,6 +8,7 @@
     "dev:main": "npx tsc -p tsconfig.main.json && npx electron .",
     "dev:renderer": "npx vite",
     "build": "npx tsc -p tsconfig.main.json && npx vite build",
+    "build:exe": "npm run build && npx electron-builder --win",
     "start": "npx electron .",
     "electron:dev": "npx concurrently -k \"npx vite\" \"npx tsc -p tsconfig.main.json -w\" \"npx wait-on http://localhost:5173 && npx electron .\""
   },
@@ -51,8 +52,31 @@
     "directories": {
       "output": "releases"
     },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "dist/main/main.js"
+    },
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "forceCodeSigning": false,
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FiveM Server Builder"
     },
     "linux": {
       "target": "AppImage"
