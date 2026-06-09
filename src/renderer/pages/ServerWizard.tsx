@@ -30,10 +30,10 @@ const STEPS = [
 ];
 
 const FRAMEWORKS = [
-  { id: 'esx', name: 'ESX Legacy', description: 'Full server: framework, jobs (police/EMS/mechanic), inventory, housing, vehicles, voice, HUD & more — 17+ resources', icon: Globe, color: 'from-blue-600 to-blue-800', border: 'border-blue-500/30' },
-  { id: 'qbcore', name: 'QBCore', description: 'Full server: framework, 30+ resources — phone, inventory, jobs, banking, vehicles, housing, gangs, HUD & more', icon: Zap, color: 'from-purple-600 to-purple-800', border: 'border-purple-500/30' },
-  { id: 'custom', name: 'Custom Framework', description: 'Core libs + voice + utilities installed. Pick your own framework and resources from the Marketplace', icon: Box, color: 'from-amber-600 to-amber-800', border: 'border-amber-500/30' },
-  { id: 'blank', name: 'Blank Server', description: 'Start with a clean slate — no framework, just default FiveM resources. Full control.', icon: Server, color: 'from-surface-600 to-surface-800', border: 'border-surface-500/30' },
+  { id: 'esx', name: 'ESX Legacy', description: 'txAdmin will deploy ESX Legacy using the official recipe — framework, jobs, inventory, and all dependencies', icon: Globe, color: 'from-blue-600 to-blue-800', border: 'border-blue-500/30' },
+  { id: 'qbcore', name: 'QBCore', description: 'txAdmin will deploy QBCore using the official recipe — framework, phone, inventory, jobs, banking, and more', icon: Zap, color: 'from-purple-600 to-purple-800', border: 'border-purple-500/30' },
+  { id: 'custom', name: 'Custom Framework', description: 'Server artifacts only — use txAdmin to deploy any framework or recipe of your choice', icon: Box, color: 'from-amber-600 to-amber-800', border: 'border-amber-500/30' },
+  { id: 'blank', name: 'Blank Server', description: 'Server artifacts only — no framework. Full control, set everything up manually', icon: Server, color: 'from-surface-600 to-surface-800', border: 'border-surface-500/30' },
 ];
 
 export default function ServerWizard() {
@@ -91,46 +91,22 @@ export default function ServerWizard() {
     try {
       let server;
       if (window.electronAPI) {
-        // Real Electron build — backend clones all resources and sends progress events
-        setBuildStep('Creating directory structure...');
+        setBuildStep('Downloading FiveM server artifacts...');
         setBuildProgress(5);
         server = await window.electronAPI.server.create(config);
       } else {
-        // Demo mode — simulate the full build with artifact download + resources
-        const demoNames = config.framework === 'qbcore'
-          ? ['oxmysql', 'ox_lib', 'qb-core', 'qb-multicharacter', 'qb-spawn', 'qb-clothing', 'qb-policejob', 'qb-ambulancejob', 'qb-inventory', 'qb-hud', 'qb-target', 'qb-phone', 'qb-banking', 'qb-vehicleshop', 'qb-garages', 'qb-houses', 'pma-voice', 'ox_target', 'ox_inventory']
-          : config.framework === 'esx'
-          ? ['oxmysql', 'ox_lib', 'es_extended', 'esx_multicharacter', 'esx_identity', 'esx_skin', 'esx_policejob', 'esx_ambulancejob', 'esx_mechanicjob', 'esx_vehicleshop', 'pma-voice', 'ox_target', 'ox_inventory']
-          : config.framework === 'custom'
-          ? ['oxmysql', 'ox_lib', 'pma-voice', 'ox_target', 'ox_inventory']
-          : [];
-
-        // Simulate artifact download
-        for (let pct = 0; pct <= 100; pct += 15) {
+        // Demo mode — simulate artifact download only (txAdmin handles the rest)
+        for (let pct = 0; pct <= 100; pct += 10) {
           setBuildStep(`Downloading FiveM server artifacts: ${pct}%`);
-          setBuildProgress(Math.round(pct * 0.4)); // artifacts = first 40% of total progress
-          await new Promise(r => setTimeout(r, 200));
+          setBuildProgress(pct);
+          await new Promise(r => setTimeout(r, 300));
         }
-        setBuildStep('Extracting artifacts (FXServer.exe, cache, citizen, txAdmin)...');
-        setBuildProgress(45);
-        await new Promise(r => setTimeout(r, 500));
-
-        // Simulate resource downloads
-        for (let i = 0; i < demoNames.length; i++) {
-          setBuildStep(`Installing ${demoNames[i]} (${i + 1}/${demoNames.length})...`);
-          setBuildProgress(50 + Math.round(((i + 1) / demoNames.length) * 48)); // resources = 50-98%
-          await new Promise(r => setTimeout(r, 250 + Math.random() * 200));
-        }
-
-        setBuildStep('Generating server.cfg...');
-        setBuildProgress(99);
-        await new Promise(r => setTimeout(r, 300));
 
         server = {
           id: Date.now().toString(36) + Math.random().toString(36).substring(2, 8),
           ...config,
-          resourceCount: demoNames.length,
-          status: 'stopped' as const,
+          resourceCount: 0,
+          status: 'running' as const,
           lastBackup: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -138,7 +114,7 @@ export default function ServerWizard() {
       }
 
       addServer(server);
-      logAction('Server Created', `${config.name} (${config.framework}) — fully built with resources`, 'success');
+      logAction('Server Created', `${config.name} (${config.framework}) — txAdmin launching for framework deployment`, 'success');
       setBuildComplete(true);
       toast.success('Server created successfully!');
     } catch (error: any) {
@@ -176,9 +152,23 @@ export default function ServerWizard() {
           <Check size={36} className="text-green-400" />
         </motion.div>
         <h2 className="text-2xl font-bold text-white mb-2">Server Created!</h2>
-        <p className="text-surface-400 mb-8">
-          {config.name} is ready. Head to the dashboard to manage your server.
+        <p className="text-surface-400 mb-4">
+          {config.name} is ready. FXServer and txAdmin are starting up.
         </p>
+        {config.framework !== 'blank' && (
+          <div className="glass-panel p-4 mb-6 text-left max-w-md mx-auto">
+            <h3 className="text-sm font-semibold text-primary-400 mb-2">Next Step: Deploy Framework via txAdmin</h3>
+            <ol className="text-xs text-surface-300 space-y-1.5 list-decimal list-inside">
+              <li>txAdmin is opening at <span className="text-white font-mono">localhost:40120</span></li>
+              <li>Create a txAdmin account and link your Cfx.re account</li>
+              <li>Select <span className="text-white font-semibold">"Deploy a Recipe"</span> when prompted</li>
+              <li>Choose the <span className="text-white font-semibold">
+                {config.framework === 'qbcore' ? 'QBCore' : config.framework === 'esx' ? 'ESX Legacy' : 'recipe'}
+              </span> recipe</li>
+              <li>txAdmin will download all resources as proper release builds</li>
+            </ol>
+          </div>
+        )}
         <div className="flex gap-3 justify-center">
           <button onClick={() => navigate('/')} className="btn-primary flex items-center gap-2">
             Go to Dashboard
@@ -411,6 +401,17 @@ export default function ServerWizard() {
                   <SummaryRow label="Artifacts" value={config.artifactVersion === 'recommended' ? 'Latest Recommended' : config.artifactVersion === 'experimental' ? 'Latest Experimental' : 'Custom'} />
                   <SummaryRow label="Install Path" value={config.installPath || 'Not set'} mono />
                 </div>
+
+                {!building && (
+                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-xs text-blue-300">
+                      <span className="font-semibold">How it works:</span> We'll download FiveM server artifacts (FXServer + txAdmin), then auto-start the server.
+                      {config.framework !== 'blank' && (
+                        <> txAdmin will open in your browser where you can deploy the <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'esx' ? 'ESX Legacy' : ''}</span> framework using its official recipe — this ensures all resources are installed correctly as proper release builds.</>
+                      )}
+                    </p>
+                  </div>
+                )}
 
                 {building && (
                   <motion.div

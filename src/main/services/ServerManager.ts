@@ -36,57 +36,87 @@ interface ResourceToClone {
   name: string;
   repo: string;
   folder: string;
+  releaseUrl?: string; // Use GitHub Releases download instead of source code
 }
 
+// ─── Resources that MUST use release builds (have compiled UI/web components) ─
+// These will be downloaded from GitHub Releases, not source code
+//
 // ─── Essential resources every FiveM server needs ─────────────────────────────
 const CORE_RESOURCES: ResourceToClone[] = [
-  { name: 'oxmysql', repo: 'https://github.com/overextended/oxmysql', folder: '[core]' },
-  { name: 'ox_lib', repo: 'https://github.com/overextended/ox_lib', folder: '[core]' },
+  {
+    name: 'oxmysql',
+    repo: 'https://github.com/overextended/oxmysql',
+    folder: '[core]',
+    releaseUrl: 'https://github.com/overextended/oxmysql/releases/latest/download/oxmysql.zip',
+  },
+  {
+    name: 'ox_lib',
+    repo: 'https://github.com/overextended/ox_lib',
+    folder: '[core]',
+    releaseUrl: 'https://github.com/overextended/ox_lib/releases/latest/download/ox_lib.zip',
+  },
 ];
 
 const ESX_RESOURCES: ResourceToClone[] = [
-  { name: 'es_extended', repo: 'https://github.com/esx-framework/esx_core', folder: '[framework]' },
-  { name: 'esx_multicharacter', repo: 'https://github.com/esx-framework/esx_multicharacter', folder: '[spawn]' },
-  { name: 'esx_identity', repo: 'https://github.com/esx-framework/esx_identity', folder: '[spawn]' },
-  { name: 'esx_skin', repo: 'https://github.com/esx-framework/esx_skin', folder: '[character]' },
-  { name: 'esx_policejob', repo: 'https://github.com/esx-framework/esx_policejob', folder: '[jobs]' },
-  { name: 'esx_ambulancejob', repo: 'https://github.com/esx-framework/esx_ambulancejob', folder: '[jobs]' },
-  { name: 'esx_mechanicjob', repo: 'https://github.com/esx-framework/esx_mechanicjob', folder: '[jobs]' },
-  { name: 'esx_basicneeds', repo: 'https://github.com/esx-framework/esx_basicneeds', folder: '[standalone]' },
-  { name: 'esx_vehicleshop', repo: 'https://github.com/esx-framework/esx_vehicleshop', folder: '[vehiclescripts]' },
-  { name: 'esx_property', repo: 'https://github.com/esx-framework/esx_property', folder: '[housing]' },
+  { name: 'es_extended', repo: 'https://github.com/esx-framework/esx_core', folder: '[esx]' },
+  { name: 'esx_multicharacter', repo: 'https://github.com/esx-framework/esx_multicharacter', folder: '[esx]' },
+  { name: 'esx_identity', repo: 'https://github.com/esx-framework/esx_identity', folder: '[esx]' },
+  { name: 'esx_skin', repo: 'https://github.com/esx-framework/esx_skin', folder: '[esx]' },
+  { name: 'esx_policejob', repo: 'https://github.com/esx-framework/esx_policejob', folder: '[esx]' },
+  { name: 'esx_ambulancejob', repo: 'https://github.com/esx-framework/esx_ambulancejob', folder: '[esx]' },
+  { name: 'esx_mechanicjob', repo: 'https://github.com/esx-framework/esx_mechanicjob', folder: '[esx]' },
+  { name: 'esx_basicneeds', repo: 'https://github.com/esx-framework/esx_basicneeds', folder: '[esx]' },
+  { name: 'esx_vehicleshop', repo: 'https://github.com/esx-framework/esx_vehicleshop', folder: '[esx]' },
+  { name: 'esx_property', repo: 'https://github.com/esx-framework/esx_property', folder: '[esx]' },
 ];
 
 const QBCORE_RESOURCES: ResourceToClone[] = [
-  { name: 'qb-core', repo: 'https://github.com/qbcore-framework/qb-core', folder: '[framework]' },
-  { name: 'qb-multicharacter', repo: 'https://github.com/qbcore-framework/qb-multicharacter', folder: '[spawn]' },
-  { name: 'qb-spawn', repo: 'https://github.com/qbcore-framework/qb-spawn', folder: '[spawn]' },
-  { name: 'qb-clothing', repo: 'https://github.com/qbcore-framework/qb-clothing', folder: '[character]' },
-  { name: 'qb-policejob', repo: 'https://github.com/qbcore-framework/qb-policejob', folder: '[jobs]' },
-  { name: 'qb-ambulancejob', repo: 'https://github.com/qbcore-framework/qb-ambulancejob', folder: '[jobs]' },
-  { name: 'qb-mechanicjob', repo: 'https://github.com/qbcore-framework/qb-mechanicjob', folder: '[jobs]' },
-  { name: 'qb-smallresources', repo: 'https://github.com/qbcore-framework/qb-smallresources', folder: '[standalone]' },
-  { name: 'qb-vehicleshop', repo: 'https://github.com/qbcore-framework/qb-vehicleshop', folder: '[vehiclescripts]' },
-  { name: 'qb-vehiclekeys', repo: 'https://github.com/qbcore-framework/qb-vehiclekeys', folder: '[vehiclescripts]' },
-  { name: 'qb-garages', repo: 'https://github.com/qbcore-framework/qb-garages', folder: '[vehiclescripts]' },
-  { name: 'qb-houses', repo: 'https://github.com/qbcore-framework/qb-houses', folder: '[housing]' },
-  { name: 'qb-inventory', repo: 'https://github.com/qbcore-framework/qb-inventory', folder: '[inventory]' },
-  { name: 'qb-shops', repo: 'https://github.com/qbcore-framework/qb-shops', folder: '[economy]' },
-  { name: 'qb-banking', repo: 'https://github.com/qbcore-framework/qb-banking', folder: '[economy]' },
-  { name: 'qb-hud', repo: 'https://github.com/qbcore-framework/qb-hud', folder: '[hud]' },
-  { name: 'qb-target', repo: 'https://github.com/qbcore-framework/qb-target', folder: '[core]' },
-  { name: 'qb-menu', repo: 'https://github.com/qbcore-framework/qb-menu', folder: '[ui]' },
-  { name: 'qb-input', repo: 'https://github.com/qbcore-framework/qb-input', folder: '[ui]' },
-  { name: 'qb-phone', repo: 'https://github.com/qbcore-framework/qb-phone', folder: '[phone]' },
-  { name: 'qb-weathersync', repo: 'https://github.com/qbcore-framework/qb-weathersync', folder: '[environment]' },
-  { name: 'progressbar', repo: 'https://github.com/qbcore-framework/progressbar', folder: '[ui]' },
+  { name: 'qb-core', repo: 'https://github.com/qbcore-framework/qb-core', folder: '[qb]' },
+  { name: 'qb-multicharacter', repo: 'https://github.com/qbcore-framework/qb-multicharacter', folder: '[qb]' },
+  { name: 'qb-spawn', repo: 'https://github.com/qbcore-framework/qb-spawn', folder: '[qb]' },
+  { name: 'qb-clothing', repo: 'https://github.com/qbcore-framework/qb-clothing', folder: '[qb]' },
+  { name: 'qb-policejob', repo: 'https://github.com/qbcore-framework/qb-policejob', folder: '[qb]' },
+  { name: 'qb-ambulancejob', repo: 'https://github.com/qbcore-framework/qb-ambulancejob', folder: '[qb]' },
+  { name: 'qb-mechanicjob', repo: 'https://github.com/qbcore-framework/qb-mechanicjob', folder: '[qb]' },
+  { name: 'qb-smallresources', repo: 'https://github.com/qbcore-framework/qb-smallresources', folder: '[qb]' },
+  { name: 'qb-vehicleshop', repo: 'https://github.com/qbcore-framework/qb-vehicleshop', folder: '[qb]' },
+  { name: 'qb-vehiclekeys', repo: 'https://github.com/qbcore-framework/qb-vehiclekeys', folder: '[qb]' },
+  { name: 'qb-garages', repo: 'https://github.com/qbcore-framework/qb-garages', folder: '[qb]' },
+  { name: 'qb-houses', repo: 'https://github.com/qbcore-framework/qb-houses', folder: '[qb]' },
+  { name: 'qb-inventory', repo: 'https://github.com/qbcore-framework/qb-inventory', folder: '[qb]' },
+  { name: 'qb-shops', repo: 'https://github.com/qbcore-framework/qb-shops', folder: '[qb]' },
+  { name: 'qb-banking', repo: 'https://github.com/qbcore-framework/qb-banking', folder: '[qb]' },
+  { name: 'qb-hud', repo: 'https://github.com/qbcore-framework/qb-hud', folder: '[qb]' },
+  { name: 'qb-target', repo: 'https://github.com/qbcore-framework/qb-target', folder: '[qb]' },
+  { name: 'qb-menu', repo: 'https://github.com/qbcore-framework/qb-menu', folder: '[qb]' },
+  { name: 'qb-input', repo: 'https://github.com/qbcore-framework/qb-input', folder: '[qb]' },
+  { name: 'qb-phone', repo: 'https://github.com/qbcore-framework/qb-phone', folder: '[qb]' },
+  { name: 'qb-weathersync', repo: 'https://github.com/qbcore-framework/qb-weathersync', folder: '[qb]' },
+  { name: 'progressbar', repo: 'https://github.com/qbcore-framework/progressbar', folder: '[qb]' },
 ];
 
 const SHARED_RESOURCES: ResourceToClone[] = [
+  { name: 'PolyZone', repo: 'https://github.com/mkafrin/PolyZone', folder: '[core]' },
   { name: 'pma-voice', repo: 'https://github.com/AvarianKnight/pma-voice', folder: '[voice]' },
-  { name: 'ox_target', repo: 'https://github.com/overextended/ox_target', folder: '[core]' },
-  { name: 'ox_inventory', repo: 'https://github.com/overextended/ox_inventory', folder: '[inventory]' },
-  { name: 'ox_doorlock', repo: 'https://github.com/overextended/ox_doorlock', folder: '[utility]' },
+  {
+    name: 'ox_target',
+    repo: 'https://github.com/overextended/ox_target',
+    folder: '[core]',
+    releaseUrl: 'https://github.com/overextended/ox_target/releases/latest/download/ox_target.zip',
+  },
+  {
+    name: 'ox_inventory',
+    repo: 'https://github.com/overextended/ox_inventory',
+    folder: '[inventory]',
+    releaseUrl: 'https://github.com/overextended/ox_inventory/releases/latest/download/ox_inventory.zip',
+  },
+  {
+    name: 'ox_doorlock',
+    repo: 'https://github.com/overextended/ox_doorlock',
+    folder: '[utility]',
+    releaseUrl: 'https://github.com/overextended/ox_doorlock/releases/latest/download/ox_doorlock.zip',
+  },
   { name: 'bob74_ipl', repo: 'https://github.com/Bob74/bob74_ipl', folder: '[maps]' },
 ];
 
@@ -196,7 +226,7 @@ export class ServerManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 2: Download REAL FiveM server artifacts
+    // STEP 2: Download FiveM server artifacts
     // This gives us FXServer.exe, cache/, citizen/, txAdmin, all DLLs
     // ═══════════════════════════════════════════════════════════════════
     sendProgress('Downloading FiveM server artifacts...', 0, 100);
@@ -219,60 +249,35 @@ export class ServerManager {
       sendProgress(`ERROR: Artifact download failed — ${artifactResult.error}`, 0, 100);
       artifactDownloader.removeAllListeners();
       throw new Error(`FiveM artifact download failed: ${artifactResult.error}`);
-    } else {
-      sendProgress('✓ FiveM artifacts installed (FXServer.exe, txAdmin, cache, citizen). Setting up resources...', 100, 100);
-      // Save artifact version marker for update tracking
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const versions = await artifactDownloader.getAvailableVersions();
-        const picked = versions.find((v: any) =>
-          v.version === config.artifactVersion ||
-          (config.artifactVersion === 'recommended' && v.recommended) ||
-          (!v.recommended && config.artifactVersion === 'latest')
-        );
-        const buildNum = picked?.version || config.artifactVersion;
-        fs.writeFileSync(path.join(config.installPath, '.artifact-version'), buildNum, 'utf-8');
-      } catch {}
     }
+
+    sendProgress('✓ FiveM artifacts installed', 100, 100);
+
+    // Save artifact version marker
+    try {
+      const versions = await artifactDownloader.getAvailableVersions();
+      const picked = versions.find((v: any) =>
+        v.version === config.artifactVersion ||
+        (config.artifactVersion === 'recommended' && v.recommended) ||
+        (!v.recommended && config.artifactVersion === 'latest')
+      );
+      const buildNum = picked?.version || config.artifactVersion;
+      fs.writeFileSync(path.join(config.installPath, '.artifact-version'), buildNum, 'utf-8');
+    } catch {}
 
     artifactDownloader.removeAllListeners();
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 3: Build resource list based on framework choice
+    // STEP 3: Create resource folder structure for user's own resources
     // ═══════════════════════════════════════════════════════════════════
-    const resourcesToClone: ResourceToClone[] = [];
-    const allFolders = new Set<string>();
-
-    if (config.framework !== 'blank') {
-      resourcesToClone.push(...CORE_RESOURCES);
-
-      if (config.framework === 'esx') {
-        resourcesToClone.push(...ESX_RESOURCES);
-        resourcesToClone.push(...SHARED_RESOURCES);
-      } else if (config.framework === 'qbcore') {
-        resourcesToClone.push(...QBCORE_RESOURCES);
-        resourcesToClone.push(...SHARED_RESOURCES);
-      } else if (config.framework === 'custom') {
-        resourcesToClone.push(...SHARED_RESOURCES);
-      }
-    }
-
-    // Collect all folder names we need
-    allFolders.add('[core]');
-    allFolders.add('[standalone]');
-    allFolders.add('[custom]');
-    allFolders.add('[mlo]');
-    for (const res of resourcesToClone) {
-      allFolders.add(res.folder);
-    }
-
-    // Create resource directory structure
+    sendProgress('Creating resource folder structure...', 0, 5);
     const resourcesDir = path.join(config.installPath, 'resources');
     if (!fs.existsSync(resourcesDir)) {
       fs.mkdirSync(resourcesDir, { recursive: true });
     }
-    for (const folder of allFolders) {
+
+    const userFolders = ['[custom]', '[mlo]', '[vehicles]', '[vehiclescripts]', '[standalone]'];
+    for (const folder of userFolders) {
       const folderPath = path.join(resourcesDir, folder);
       if (!fs.existsSync(folderPath)) {
         fs.mkdirSync(folderPath, { recursive: true });
@@ -280,76 +285,58 @@ export class ServerManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 4: Download all framework resources
+    // STEP 4: Generate a basic server.cfg
+    // txAdmin will handle framework deployment — this cfg is just
+    // enough to boot the server and let txAdmin take over
     // ═══════════════════════════════════════════════════════════════════
-    let cloned = 0;
-    const total = resourcesToClone.length;
-
-    for (const res of resourcesToClone) {
-      const destDir = path.join(resourcesDir, res.folder, res.name);
-      cloned++;
-
-      sendProgress(`Installing ${res.name} (${cloned}/${total})...`, cloned, total);
-
-      // Skip if already exists
-      if (fs.existsSync(destDir)) continue;
-
-      try {
-        await this.downloadAndExtractRepo(res.repo, destDir);
-      } catch (err) {
-        console.error(`Failed to download ${res.name}:`, err);
-        // Continue with other resources even if one fails
-      }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // STEP 5: Generate server.cfg
-    // ═══════════════════════════════════════════════════════════════════
-    sendProgress('Generating server.cfg...', total, total);
-    const serverCfg = this.generateServerCfg(config, resourcesToClone);
+    sendProgress('Generating server.cfg...', 3, 5);
+    const serverCfg = this.generateServerCfg(config);
     fs.writeFileSync(path.join(config.installPath, 'server.cfg'), serverCfg);
 
     // ═══════════════════════════════════════════════════════════════════
-    // DONE
+    // STEP 5: Start the server so txAdmin launches
+    // txAdmin handles the REAL framework deployment — it uses official
+    // recipes to install QBCore/ESX with proper release builds,
+    // dependencies, and database setup
     // ═══════════════════════════════════════════════════════════════════
+    sendProgress('Server ready! Starting FXServer + txAdmin...', 4, 5);
+
     this.servers.set(id, server);
     this.saveServers();
 
-    sendProgress('Server build complete!', total, total);
+    // Auto-start the server so txAdmin launches
+    try {
+      const startResult = await this.startServer(id);
+      if (startResult.success) {
+        server.status = 'running';
+        this.saveServers();
+        sendProgress('✓ FXServer started — txAdmin is launching at http://localhost:40120', 5, 5);
+
+        // Open txAdmin in the browser after a short delay for it to boot
+        setTimeout(() => {
+          const { shell } = require('electron');
+          shell.openExternal('http://localhost:40120');
+        }, 5000);
+      } else {
+        sendProgress(`Server created but failed to auto-start: ${startResult.error}`, 5, 5);
+      }
+    } catch (err: any) {
+      sendProgress(`Server created but failed to auto-start: ${err.message}`, 5, 5);
+    }
+
+    sendProgress('Server build complete! Use txAdmin to deploy your framework.', 5, 5);
     return server;
   }
 
-  private generateServerCfg(config: ServerConfig, resources: ResourceToClone[] = []): string {
-    const dbName = config.name.toLowerCase().replace(/\s+/g, '_');
-
-    // Build ensure lines grouped by folder
-    const folderOrder = [
-      '[core]', '[framework]', '[spawn]', '[character]', '[voice]',
-      '[hud]', '[ui]', '[inventory]', '[economy]', '[phone]',
-      '[jobs]', '[vehiclescripts]', '[vehicles]', '[housing]', '[criminal]', '[utility]',
-      '[admin]', '[environment]', '[maps]', '[standalone]', '[custom]',
-    ];
-
-    const grouped = new Map<string, string[]>();
-    for (const res of resources) {
-      if (!grouped.has(res.folder)) grouped.set(res.folder, []);
-      grouped.get(res.folder)!.push(res.name);
-    }
-
-    let ensureLines = '';
-    for (const folder of folderOrder) {
-      const names = grouped.get(folder);
-      if (!names || names.length === 0) continue;
-      ensureLines += `\n# ${folder}\n`;
-      for (const name of names) {
-        ensureLines += `ensure ${name}\n`;
-      }
-    }
-
+  private generateServerCfg(config: ServerConfig): string {
     return `# ═══════════════════════════════════════════════════════════════════════
 # FiveM Server Configuration
 # Generated by FiveM Server Builder
 # Framework: ${config.framework.toUpperCase()}
+#
+# NOTE: txAdmin will handle framework deployment. Use the txAdmin web
+# panel at http://localhost:40120 to deploy QBCore, ESX, or other
+# frameworks using official recipes.
 # ═══════════════════════════════════════════════════════════════════════
 
 # ─── Server Info ──────────────────────────────────────────────────────
@@ -364,39 +351,71 @@ sets tags "default"
 # Get your license key from https://keymaster.fivem.net
 sv_licenseKey "changeme"
 
-# Steam Web API key (https://steamcommunity.com/dev/apikey)
-# set steam_webApiKey ""
-
 # ─── Connection ───────────────────────────────────────────────────────
 endpoint_add_tcp "0.0.0.0:30120"
 endpoint_add_udp "0.0.0.0:30120"
 
-# ─── Database ─────────────────────────────────────────────────────────
-set mysql_connection_string "mysql://root:password@localhost/${dbName}?charset=utf8mb4"
-
 # ─── OneSync ──────────────────────────────────────────────────────────
 set onesync on
-
-# ─── Default FiveM Resources ─────────────────────────────────────────
-ensure mapmanager
-ensure chat
-ensure spawnmanager
-ensure sessionmanager
-ensure basic-gamemode
-ensure hardcap
-ensure baseevents
-
-# ═══════════════════════════════════════════════════════════════════════
-# Server Resources
-# ═══════════════════════════════════════════════════════════════════════
-${ensureLines}
-# ─── Custom Resources ────────────────────────────────────────────────
-# Add your custom resources below
 `;
   }
 
   /**
-   * Download a GitHub repo as ZIP and extract to destination.
+   * Download a resource — either from a GitHub Release ZIP (pre-built) or source code.
+   */
+  private async downloadResource(res: ResourceToClone, destination: string): Promise<void> {
+    if (res.releaseUrl) {
+      await this.downloadAndExtractRelease(res.releaseUrl, destination, res.repo);
+    } else {
+      await this.downloadAndExtractRepo(res.repo, destination);
+    }
+  }
+
+  /**
+   * Download a pre-built release ZIP (e.g., ox_lib, oxmysql).
+   * These ZIPs contain the resource ready-to-use, unlike source code.
+   */
+  private async downloadAndExtractRelease(releaseUrl: string, destination: string, repoUrl: string): Promise<void> {
+    console.log(`[Download] Release build: ${releaseUrl}`);
+    const response = await axios.get(releaseUrl, {
+      responseType: 'arraybuffer',
+      timeout: 120000,
+      maxRedirects: 5,
+    });
+
+    const tempDir = os.tmpdir();
+    const zipPath = path.join(tempDir, `release-${Date.now()}.zip`);
+    fs.writeFileSync(zipPath, Buffer.from(response.data));
+
+    const extractDir = path.join(tempDir, `release-extract-${Date.now()}`);
+    fs.mkdirSync(extractDir, { recursive: true });
+    await extractZip(zipPath, { dir: extractDir });
+
+    // Release ZIPs may have a single subfolder or files directly
+    const extracted = fs.readdirSync(extractDir);
+    let innerDir = extractDir;
+    if (extracted.length === 1) {
+      const single = path.join(extractDir, extracted[0]);
+      if (fs.statSync(single).isDirectory()) {
+        innerDir = single;
+      }
+    }
+
+    if (!fs.existsSync(destination)) {
+      fs.mkdirSync(destination, { recursive: true });
+    }
+
+    this.copyDirRecursive(innerDir, destination);
+    fs.writeFileSync(path.join(destination, '.fivem-builder-source'), repoUrl);
+
+    try {
+      fs.unlinkSync(zipPath);
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    } catch {}
+  }
+
+  /**
+   * Download a GitHub repo as ZIP (source code) and extract to destination.
    * No git needed, no auth prompts.
    */
   private async downloadAndExtractRepo(repoUrl: string, destination: string): Promise<void> {
@@ -404,6 +423,8 @@ ${ensureLines}
     if (!match) throw new Error('Invalid GitHub URL');
     const [, owner, repo] = match;
     const repoName = repo.replace(/\.git$/, '');
+
+    console.log(`[Download] Source code: ${repoUrl}`);
 
     // Try main branch, fall back to master
     let zipUrl = `https://github.com/${owner}/${repoName}/archive/refs/heads/main.zip`;
