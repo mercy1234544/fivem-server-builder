@@ -285,16 +285,9 @@ export class ServerManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 4: Generate a basic server.cfg
-    // txAdmin will handle framework deployment — this cfg is just
-    // enough to boot the server and let txAdmin take over
-    // ═══════════════════════════════════════════════════════════════════
-    sendProgress('Generating server.cfg...', 3, 5);
-    const serverCfg = this.generateServerCfg(config);
-    fs.writeFileSync(path.join(config.installPath, 'server.cfg'), serverCfg);
-
-    // ═══════════════════════════════════════════════════════════════════
-    // STEP 5: Start the server so txAdmin launches
+    // STEP 4: Start the server so txAdmin launches
+    // Do NOT generate a server.cfg — txAdmin creates its own during
+    // the setup wizard (license key, recipe deployment, etc.)
     // txAdmin handles the REAL framework deployment — it uses official
     // recipes to install QBCore/ESX with proper release builds,
     // dependencies, and database setup
@@ -709,17 +702,16 @@ set onesync on
       return { success: false, error: `FXServer.exe not found at:\n${executable}\n\nUse the Resource Updater to download artifacts first.` };
     }
 
-    // Check for server.cfg
+    // If server.cfg exists, pass it to FXServer. Otherwise start bare
+    // so txAdmin can run its first-time setup wizard.
     const cfgPath = path.join(server.installPath, 'server.cfg');
-    if (!fs.existsSync(cfgPath)) {
-      console.error(`[StartServer] server.cfg not found at: ${cfgPath}`);
-      return { success: false, error: 'server.cfg not found. The server needs a config file to start.' };
-    }
+    const hasCfg = fs.existsSync(cfgPath);
+    const args = hasCfg ? ['+exec', 'server.cfg'] : [];
 
-    console.log(`[StartServer] Launching: ${executable} +exec server.cfg`);
+    console.log(`[StartServer] Launching: ${executable} ${args.join(' ') || '(no args — txAdmin first-time setup)'}`);
 
     try {
-      const proc = spawn(executable, ['+exec', 'server.cfg'], {
+      const proc = spawn(executable, args, {
         cwd: server.installPath,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: false,
