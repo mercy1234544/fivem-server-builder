@@ -1133,11 +1133,23 @@ set onesync on
       return { success: false, error: `FXServer.exe not found at:\n${executable}\n\nUse the Resource Updater to download artifacts first.` };
     }
 
-    // If server.cfg exists, pass it to FXServer. Otherwise start bare
-    // so txAdmin can run its first-time setup wizard.
+    // Check if server.cfg exists and has a valid license key.
+    // If it has "changeme", unresolved {{variables}}, or no license key at all,
+    // start without it so txAdmin runs its first-time setup wizard.
     const cfgPath = path.join(server.installPath, 'server.cfg');
-    const hasCfg = fs.existsSync(cfgPath);
-    const args = hasCfg ? ['+exec', 'server.cfg'] : [];
+    let useServerCfg = false;
+    if (fs.existsSync(cfgPath)) {
+      try {
+        const cfgContent = fs.readFileSync(cfgPath, 'utf-8');
+        const hasValidKey = /sv_licenseKey\s+"cfxk_/.test(cfgContent);
+        const hasTemplateVars = /\{\{/.test(cfgContent);
+        useServerCfg = hasValidKey && !hasTemplateVars;
+        if (!useServerCfg) {
+          console.log('[StartServer] server.cfg has invalid/missing license key or unresolved template vars — starting without it for txAdmin setup');
+        }
+      } catch {}
+    }
+    const args = useServerCfg ? ['+exec', 'server.cfg'] : [];
 
     console.log(`[StartServer] Launching: ${executable} ${args.join(' ') || '(no args — txAdmin first-time setup)'}`);
 
@@ -1201,6 +1213,16 @@ set onesync on
           mainWin.webContents.send('server:statusChange', { serverId: id, status: 'stopped' });
         }
       });
+
+      // If starting without server.cfg, open txAdmin once it's ready
+      if (!useServerCfg) {
+        this.waitForTxAdmin(40120, 60000).then(ready => {
+          if (ready) {
+            const { shell } = require('electron');
+            shell.openExternal('http://localhost:40120');
+          }
+        });
+      }
 
       return { success: true };
     } catch (err: any) {
