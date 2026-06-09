@@ -10,7 +10,7 @@ import { ArtifactDownloader } from './ArtifactDownloader';
 
 export interface ServerConfig {
   name: string;
-  framework: 'esx' | 'qbcore' | 'custom' | 'blank';
+  framework: 'esx' | 'qbcore' | 'qbox' | 'custom' | 'blank';
   os: 'windows' | 'linux';
   database: 'mariadb' | 'mysql';
   artifactVersion: string;
@@ -283,12 +283,15 @@ export class ServerManager {
       if (!fs.existsSync(fp)) fs.mkdirSync(fp, { recursive: true });
     }
 
-    if (config.framework === 'qbcore' || config.framework === 'esx') {
+    if (config.framework === 'qbcore' || config.framework === 'esx' || config.framework === 'qbox') {
       sendProgress('Fetching official framework recipe...', 0, 100);
 
-      const recipeUrl = config.framework === 'qbcore'
-        ? 'https://raw.githubusercontent.com/qbcore-framework/txAdminRecipe/main/qbcore.yaml'
-        : 'https://raw.githubusercontent.com/Avanae/esx-legacy-recipe/main/recipe.yaml';
+      const recipeUrls: Record<string, string> = {
+        qbcore: 'https://raw.githubusercontent.com/qbcore-framework/txAdminRecipe/main/qbcore.yaml',
+        qbox: 'https://raw.githubusercontent.com/Qbox-project/txAdminRecipe/main/qbox.yaml',
+        esx: 'https://raw.githubusercontent.com/Avanae/esx-legacy-recipe/main/recipe.yaml',
+      };
+      const recipeUrl = recipeUrls[config.framework];
 
       let recipeYaml: string;
       try {
@@ -364,8 +367,21 @@ export class ServerManager {
               }
               break;
             }
+            case 'copy_path': {
+              const src = path.join(config.installPath, task.src!);
+              const dest = path.join(config.installPath, task.dest!);
+              if (fs.existsSync(src)) {
+                const destDir = path.dirname(dest);
+                if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+                if (fs.statSync(src).isDirectory()) {
+                  this.copyDirRecursive(src, dest);
+                } else {
+                  fs.copyFileSync(src, dest);
+                }
+              }
+              break;
+            }
             case 'waste_time': {
-              // Throttle delay to avoid GitHub rate limiting, same as txAdmin
               const seconds = task.seconds || 5;
               await new Promise(r => setTimeout(r, seconds * 1000));
               break;
@@ -415,7 +431,8 @@ export class ServerManager {
       try {
         let cfg = fs.readFileSync(cfgPath, 'utf-8');
         cfg = cfg.replace(/\{\{serverName\}\}/g, config.name);
-        cfg = cfg.replace(/\{\{recipeName\}\}/g, config.framework === 'qbcore' ? 'QBCore' : 'ESX Legacy');
+        const frameworkNames: Record<string, string> = { qbcore: 'QBCore', qbox: 'Qbox', esx: 'ESX Legacy' };
+        cfg = cfg.replace(/\{\{recipeName\}\}/g, frameworkNames[config.framework] || config.framework);
         cfg = cfg.replace(/\{\{recipeAuthor\}\}/g, 'FiveM Server Builder');
         cfg = cfg.replace(/\{\{recipeDescription\}\}/g, `${config.name} — built with FiveM Server Builder`);
         cfg = cfg.replace(/\{\{maxClients\}\}/g, '48');

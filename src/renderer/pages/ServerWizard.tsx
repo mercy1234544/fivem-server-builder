@@ -30,10 +30,11 @@ const STEPS = [
 ];
 
 const FRAMEWORKS = [
-  { id: 'esx', name: 'ESX Legacy', description: 'txAdmin will deploy ESX Legacy using the official recipe — framework, jobs, inventory, and all dependencies', icon: Globe, color: 'from-blue-600 to-blue-800', border: 'border-blue-500/30' },
-  { id: 'qbcore', name: 'QBCore', description: 'txAdmin will deploy QBCore using the official recipe — framework, phone, inventory, jobs, banking, and more', icon: Zap, color: 'from-purple-600 to-purple-800', border: 'border-purple-500/30' },
-  { id: 'custom', name: 'Custom Framework', description: 'Server artifacts only — use txAdmin to deploy any framework or recipe of your choice', icon: Box, color: 'from-amber-600 to-amber-800', border: 'border-amber-500/30' },
-  { id: 'blank', name: 'Blank Server', description: 'Server artifacts only — no framework. Full control, set everything up manually', icon: Server, color: 'from-surface-600 to-surface-800', border: 'border-surface-500/30' },
+  { id: 'qbcore', name: 'QBCore', description: 'Official QBCore recipe — 50+ resources including phone, inventory, jobs, banking, housing, gangs & more', icon: Zap, color: 'from-purple-600 to-purple-800', border: 'border-purple-500/30' },
+  { id: 'qbox', name: 'Qbox', description: 'Modern QBCore successor — ox_lib, ox_inventory, ox_target, NPWD phone, 60+ resources with overextended stack', icon: Package, color: 'from-emerald-600 to-emerald-800', border: 'border-emerald-500/30' },
+  { id: 'esx', name: 'ESX Legacy', description: 'ESX Legacy recipe — framework, jobs, inventory, phone, HUD, voice, and all core dependencies', icon: Globe, color: 'from-blue-600 to-blue-800', border: 'border-blue-500/30' },
+  { id: 'custom', name: 'Custom', description: 'Default CFX resources + oxmysql only — add your own framework and resources', icon: Box, color: 'from-amber-600 to-amber-800', border: 'border-amber-500/30' },
+  { id: 'blank', name: 'Blank Server', description: 'Server artifacts only — no resources. Full control, set everything up manually', icon: Server, color: 'from-surface-600 to-surface-800', border: 'border-surface-500/30' },
 ];
 
 export default function ServerWizard() {
@@ -163,7 +164,7 @@ export default function ServerWizard() {
               <li>Create a txAdmin account and link your Cfx.re account</li>
               <li>Select <span className="text-white font-semibold">"Deploy a Recipe"</span> when prompted</li>
               <li>Choose the <span className="text-white font-semibold">
-                {config.framework === 'qbcore' ? 'QBCore' : config.framework === 'esx' ? 'ESX Legacy' : 'recipe'}
+                {config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : config.framework === 'esx' ? 'ESX Legacy' : 'recipe'}
               </span> recipe</li>
               <li>txAdmin will download all resources as proper release builds</li>
             </ol>
@@ -406,8 +407,8 @@ export default function ServerWizard() {
                   <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                     <p className="text-xs text-blue-300">
                       <span className="font-semibold">How it works:</span> We'll download FiveM server artifacts (FXServer + txAdmin), then auto-start the server.
-                      {config.framework !== 'blank' && (
-                        <> txAdmin will open in your browser where you can deploy the <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'esx' ? 'ESX Legacy' : ''}</span> framework using its official recipe — this ensures all resources are installed correctly as proper release builds.</>
+                      {(config.framework === 'qbcore' || config.framework === 'qbox' || config.framework === 'esx') && (
+                        <> All resources will be downloaded from the official <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : 'ESX Legacy'}</span> txAdmin recipe — proper release builds, correct folder structure.</>
                       )}
                     </p>
                   </div>
