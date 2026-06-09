@@ -357,7 +357,20 @@ export class ServerManager {
               if (fs.existsSync(src)) {
                 const destDir = path.dirname(dest);
                 if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-                fs.renameSync(src, dest);
+                // renameSync fails across drives on Windows — fall back to copy+delete
+                try {
+                  fs.renameSync(src, dest);
+                } catch {
+                  if (fs.statSync(src).isDirectory()) {
+                    this.copyDirRecursive(src, dest);
+                    fs.rmSync(src, { recursive: true, force: true });
+                  } else {
+                    fs.copyFileSync(src, dest);
+                    fs.unlinkSync(src);
+                  }
+                }
+              } else {
+                console.warn(`[Recipe] move_path: source not found: ${src}`);
               }
               break;
             }
@@ -390,8 +403,8 @@ export class ServerManager {
             // skip: connect_database, query_database, replace_string (user handles DB in txAdmin)
           }
         } catch (err: any) {
-          console.error(`[Recipe] Task failed (${task.action}): ${err.message}`);
-          // Continue with remaining tasks
+          console.error(`[Recipe] Task FAILED (${task.action}):`, task, err.message);
+          sendProgress(`Warning: ${task.action} failed for ${task.dest || task.src || task.url || ''} — ${err.message}`, completed, totalDownloads);
         }
       }
     } else if (config.framework === 'custom') {
@@ -418,6 +431,43 @@ export class ServerManager {
       }
     }
     // blank = no resources at all, just artifacts
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Verify critical resources were downloaded
+    // ═══════════════════════════════════════════════════════════════════
+    if (config.framework === 'qbcore' || config.framework === 'qbox' || config.framework === 'esx') {
+      const criticalChecks: Record<string, string[]> = {
+        qbox: [
+          'resources/[ox]/ox_lib/fxmanifest.lua',
+          'resources/[ox]/oxmysql/fxmanifest.lua',
+          'resources/[ox]/ox_target/fxmanifest.lua',
+          'resources/[ox]/ox_inventory/fxmanifest.lua',
+          'resources/[qbx]/qbx_core/fxmanifest.lua',
+        ],
+        qbcore: [
+          'resources/[standalone]/oxmysql/fxmanifest.lua',
+          'resources/[qb]/qb-core/fxmanifest.lua',
+        ],
+        esx: [
+          'resources/[legacy]/[esx]/es_extended/fxmanifest.lua',
+        ],
+      };
+      const checks = criticalChecks[config.framework] || [];
+      const missing: string[] = [];
+      for (const check of checks) {
+        const fullPath = path.join(config.installPath, check);
+        if (!fs.existsSync(fullPath)) {
+          missing.push(check);
+          console.error(`[Recipe] MISSING critical resource: ${check}`);
+        }
+      }
+      if (missing.length > 0) {
+        sendProgress(`WARNING: ${missing.length} critical resources missing — check logs`, 95, 100);
+        console.error('[Recipe] Missing resources:', missing);
+      } else {
+        console.log('[Recipe] All critical resources verified OK');
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // STEP 4: Generate server.cfg if the recipe didn't provide one
