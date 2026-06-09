@@ -470,6 +470,192 @@ ${ensureLines}
     return updated;
   }
 
+  /**
+   * Import an existing FiveM server from a folder on disk.
+   * Auto-detects framework, artifact version, resources, etc.
+   */
+  async importExistingServer(serverPath: string, name?: string): Promise<{
+    success: boolean;
+    server?: Server;
+    error?: string;
+    detected?: {
+      framework: string;
+      artifactVersion: string;
+      resourceCount: number;
+      hasServerCfg: boolean;
+      hasFXServer: boolean;
+    };
+  }> {
+    try {
+      if (!fs.existsSync(serverPath)) {
+        return { success: false, error: 'Directory does not exist' };
+      }
+
+      // Check if this server is already imported
+      for (const [, existing] of this.servers) {
+        const existingNorm = path.resolve(existing.installPath).toLowerCase();
+        const newNorm = path.resolve(serverPath).toLowerCase();
+        if (existingNorm === newNorm) {
+          return { success: false, error: `This server is already imported as "${existing.name}"` };
+        }
+      }
+
+      // ── Detect FXServer.exe ──
+      const hasFXServer = fs.existsSync(path.join(serverPath, 'FXServer.exe'))
+        || fs.existsSync(path.join(serverPath, 'run.sh'));
+
+      // ── Detect server.cfg ──
+      const hasServerCfg = fs.existsSync(path.join(serverPath, 'server.cfg'));
+
+      // ── Detect artifact version ──
+      let artifactVersion = 'unknown';
+      const versionMarker = path.join(serverPath, '.artifact-version');
+      if (fs.existsSync(versionMarker)) {
+        artifactVersion = fs.readFileSync(versionMarker, 'utf-8').trim();
+      }
+
+      // ── Detect framework from resources ──
+      let framework = 'custom';
+      const resourcesDir = path.join(serverPath, 'resources');
+      if (fs.existsSync(resourcesDir)) {
+        // Check for QBCore
+        if (this.findResourceRecursive(resourcesDir, 'qb-core')) {
+          framework = 'qbcore';
+        } else if (this.findResourceRecursive(resourcesDir, 'es_extended')) {
+          framework = 'esx';
+        }
+      }
+
+      // ── Detect server name from server.cfg ──
+      let detectedName = name || path.basename(serverPath);
+      if (hasServerCfg && !name) {
+        try {
+          const cfg = fs.readFileSync(path.join(serverPath, 'server.cfg'), 'utf-8');
+          const hostnameMatch = cfg.match(/sv_hostname\s+"([^"]+)"/);
+          if (hostnameMatch) {
+            detectedName = hostnameMatch[1];
+          }
+        } catch {}
+      }
+
+      // ── Count resources ──
+      let resourceCount = 0;
+      if (fs.existsSync(resourcesDir)) {
+        resourceCount = this.countResources(resourcesDir);
+      }
+
+      // ── Detect OS ──
+      const detectedOS = fs.existsSync(path.join(serverPath, 'FXServer.exe')) ? 'windows' : 'linux';
+
+      // ── Create server entry ──
+      const id = this.generateId();
+      const server: Server = {
+        id,
+        name: detectedName,
+        framework,
+        os: detectedOS,
+        database: 'mysql',
+        artifactVersion,
+        installPath: serverPath,
+        resourceCount,
+        status: 'stopped',
+        lastBackup: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      this.servers.set(id, server);
+      this.saveServers();
+
+      return {
+        success: true,
+        server,
+        detected: {
+          framework,
+          artifactVersion,
+          resourceCount,
+          hasServerCfg,
+          hasFXServer,
+        },
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Scan an existing server folder WITHOUT importing — just detect what's there.
+   */
+  async scanExistingServer(serverPath: string): Promise<{
+    framework: string;
+    artifactVersion: string;
+    resourceCount: number;
+    hasServerCfg: boolean;
+    hasFXServer: boolean;
+    serverName: string;
+  }> {
+    const hasFXServer = fs.existsSync(path.join(serverPath, 'FXServer.exe'))
+      || fs.existsSync(path.join(serverPath, 'run.sh'));
+
+    const hasServerCfg = fs.existsSync(path.join(serverPath, 'server.cfg'));
+
+    let artifactVersion = 'unknown';
+    const versionMarker = path.join(serverPath, '.artifact-version');
+    if (fs.existsSync(versionMarker)) {
+      artifactVersion = fs.readFileSync(versionMarker, 'utf-8').trim();
+    }
+
+    let framework = 'custom';
+    const resourcesDir = path.join(serverPath, 'resources');
+    if (fs.existsSync(resourcesDir)) {
+      if (this.findResourceRecursive(resourcesDir, 'qb-core')) {
+        framework = 'qbcore';
+      } else if (this.findResourceRecursive(resourcesDir, 'es_extended')) {
+        framework = 'esx';
+      }
+    }
+
+    let serverName = path.basename(serverPath);
+    if (hasServerCfg) {
+      try {
+        const cfg = fs.readFileSync(path.join(serverPath, 'server.cfg'), 'utf-8');
+        const hostnameMatch = cfg.match(/sv_hostname\s+"([^"]+)"/);
+        if (hostnameMatch) serverName = hostnameMatch[1];
+      } catch {}
+    }
+
+    let resourceCount = 0;
+    if (fs.existsSync(resourcesDir)) {
+      resourceCount = this.countResources(resourcesDir);
+    }
+
+    return { framework, artifactVersion, resourceCount, hasServerCfg, hasFXServer, serverName };
+  }
+
+  /**
+   * Recursively search for a resource directory by name.
+   */
+  private findResourceRecursive(dir: string, resourceName: string, depth = 0): boolean {
+    if (depth > 4) return false;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name === resourceName) {
+          const manifestPath = path.join(dir, entry.name, 'fxmanifest.lua');
+          const resourcePath = path.join(dir, entry.name, '__resource.lua');
+          if (fs.existsSync(manifestPath) || fs.existsSync(resourcePath)) {
+            return true;
+          }
+        }
+        if (this.findResourceRecursive(path.join(dir, entry.name), resourceName, depth + 1)) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   async deleteServer(id: string): Promise<boolean> {
     const deleted = this.servers.delete(id);
     if (deleted) this.saveServers();
@@ -479,6 +665,12 @@ ${ensureLines}
   async startServer(id: string): Promise<boolean> {
     const server = this.servers.get(id);
     if (!server) return false;
+
+    // Kill existing process if any
+    if (this.processes.has(id)) {
+      try { this.processes.get(id)!.kill(); } catch {}
+      this.processes.delete(id);
+    }
 
     const executable = server.os === 'windows'
       ? path.join(server.installPath, 'FXServer.exe')
@@ -493,45 +685,64 @@ ${ensureLines}
     try {
       const proc = spawn(executable, ['+exec', 'server.cfg'], {
         cwd: server.installPath,
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: false,
       });
+
+      // Check if process spawned successfully
+      if (!proc || !proc.pid) {
+        server.status = 'error';
+        this.saveServers();
+        return false;
+      }
 
       this.processes.set(id, proc);
       server.status = 'running';
       this.saveServers();
 
+      const mainWin = BrowserWindow.getAllWindows()[0];
+
       // Capture stdout for console output
       if (proc.stdout) {
         proc.stdout.on('data', (data: Buffer) => {
           const line = data.toString();
-          // Emit console output for the UI
-          const { BrowserWindow } = require('electron');
-          const win = BrowserWindow.getAllWindows()[0];
-          if (win) {
-            win.webContents.send('server:console', { serverId: id, line });
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('server:console', { serverId: id, line });
           }
         });
       }
       if (proc.stderr) {
         proc.stderr.on('data', (data: Buffer) => {
           const line = data.toString();
-          const { BrowserWindow } = require('electron');
-          const win = BrowserWindow.getAllWindows()[0];
-          if (win) {
-            win.webContents.send('server:console', { serverId: id, line: `[ERROR] ${line}` });
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('server:console', { serverId: id, line: `[ERROR] ${line}` });
           }
         });
       }
 
-      proc.on('exit', () => {
+      proc.on('error', (err) => {
+        console.error(`FXServer process error for ${server.name}:`, err);
+        server.status = 'error';
+        this.processes.delete(id);
+        this.saveServers();
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('server:statusChange', { serverId: id, status: 'error' });
+        }
+      });
+
+      proc.on('exit', (code, signal) => {
+        console.log(`FXServer exited for ${server.name}: code=${code}, signal=${signal}`);
         server.status = 'stopped';
         this.processes.delete(id);
         this.saveServers();
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('server:statusChange', { serverId: id, status: 'stopped' });
+        }
       });
 
       return true;
-    } catch {
+    } catch (err) {
+      console.error('Failed to start FXServer:', err);
       server.status = 'error';
       this.saveServers();
       return false;
@@ -540,12 +751,20 @@ ${ensureLines}
 
   async stopServer(id: string): Promise<boolean> {
     const proc = this.processes.get(id);
-    if (!proc) return false;
-
-    proc.kill();
-    this.processes.delete(id);
-
     const server = this.servers.get(id);
+
+    if (proc) {
+      try {
+        // On Windows, use taskkill to properly terminate the process tree
+        if (process.platform === 'win32' && proc.pid) {
+          spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' });
+        } else {
+          proc.kill('SIGTERM');
+        }
+      } catch {}
+      this.processes.delete(id);
+    }
+
     if (server) {
       server.status = 'stopped';
       this.saveServers();

@@ -23,6 +23,8 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke('server:delete', id),
     start: (id: string) => ipcRenderer.invoke('server:start', id),
     stop: (id: string) => ipcRenderer.invoke('server:stop', id),
+    import: (serverPath: string, name?: string) => ipcRenderer.invoke('server:import', serverPath, name),
+    scan: (serverPath: string) => ipcRenderer.invoke('server:scan', serverPath),
   },
 
   // Resources
@@ -116,6 +118,13 @@ const electronAPI = {
     const handler = (_: any, data: any) => callback(data);
     ipcRenderer.on('server:console', handler);
     return () => { ipcRenderer.removeListener('server:console', handler); };
+  },
+
+  // Server status change (process exited, errored, etc.)
+  onServerStatusChange: (callback: (data: { serverId: string; status: string }) => void) => {
+    const handler = (_: any, data: any) => callback(data);
+    ipcRenderer.on('server:statusChange', handler);
+    return () => { ipcRenderer.removeListener('server:statusChange', handler); };
   },
 
   // App Updater

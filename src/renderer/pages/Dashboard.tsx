@@ -23,6 +23,11 @@ import {
   TrendingUp,
   Sparkles,
   Globe,
+  Download,
+  HardDrive,
+  Search,
+  FileText,
+  Cpu,
 } from 'lucide-react';
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
@@ -48,6 +53,20 @@ export default function Dashboard() {
 
   useEffect(() => { loadServers(); }, []);
 
+  // Listen for server status changes from the backend (process exit/error)
+  useEffect(() => {
+    if (!window.electronAPI?.onServerStatusChange) return;
+    const cleanup = window.electronAPI.onServerStatusChange((data) => {
+      updateServer(data.serverId, { status: data.status as any });
+      if (data.status === 'stopped') {
+        toast('Server process exited', { icon: '⏹️' });
+      } else if (data.status === 'error') {
+        toast.error('Server process crashed');
+      }
+    });
+    return cleanup;
+  }, []);
+
   const loadServers = async () => {
     if (window.electronAPI) {
       try { const data = await window.electronAPI.server.getAll(); setServers(data); } catch {}
@@ -57,6 +76,62 @@ export default function Dashboard() {
   const [deleteTarget, setDeleteTarget] = useState<ServerType | null>(null);
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [deleting, setDeleting] = useState(false);
+
+  // Import existing server state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPath, setImportPath] = useState('');
+  const [importName, setImportName] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<{
+    framework: string;
+    artifactVersion: string;
+    resourceCount: number;
+    hasServerCfg: boolean;
+    hasFXServer: boolean;
+    serverName: string;
+  } | null>(null);
+
+  const handleBrowseImport = async () => {
+    if (!window.electronAPI) return;
+    const dir = await window.electronAPI.openDirectory();
+    if (!dir) return;
+    setImportPath(dir);
+    setScanResult(null);
+    setScanning(true);
+    try {
+      const result = await window.electronAPI.server.scan(dir);
+      setScanResult(result);
+      setImportName(result.serverName);
+    } catch (err: any) {
+      toast.error('Failed to scan folder');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleImportServer = async () => {
+    if (!window.electronAPI || !importPath) return;
+    setImporting(true);
+    try {
+      const result = await window.electronAPI.server.import(importPath, importName || undefined);
+      if (result.success && result.server) {
+        await loadServers();
+        logAction('Server Imported', `${result.server.name} (${result.detected?.framework || 'custom'})`, 'success');
+        toast.success(`Imported "${result.server.name}" successfully!`);
+        setShowImportModal(false);
+        setImportPath('');
+        setImportName('');
+        setScanResult(null);
+      } else {
+        toast.error(result.error || 'Failed to import server');
+      }
+    } catch (err: any) {
+      toast.error(`Import failed: ${err.message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const totalResources = servers.reduce((sum, s) => sum + s.resourceCount, 0);
   const runningServers = servers.filter(s => s.status === 'running').length;
@@ -87,12 +162,38 @@ export default function Dashboard() {
 
   const handleToggleServer = async (e: React.MouseEvent, server: ServerType) => {
     e.stopPropagation();
+    if (!window.electronAPI) return;
+
     if (server.status === 'running') {
-      updateServer(server.id, { status: 'stopped' });
-      logAction('Server Stopped', server.name, 'info');
+      try {
+        const stopped = await window.electronAPI.server.stop(server.id);
+        if (stopped) {
+          updateServer(server.id, { status: 'stopped' });
+          logAction('Server Stopped', server.name, 'info');
+          toast.success(`${server.name} stopped`);
+        } else {
+          toast.error('Failed to stop server');
+        }
+      } catch (err: any) {
+        toast.error(`Error stopping server: ${err.message}`);
+      }
     } else {
+      // Optimistically show starting state
       updateServer(server.id, { status: 'running' });
-      logAction('Server Started', server.name, 'success');
+      try {
+        const started = await window.electronAPI.server.start(server.id);
+        if (started) {
+          logAction('Server Started', server.name, 'success');
+          toast.success(`${server.name} started!`);
+        } else {
+          updateServer(server.id, { status: 'error' });
+          logAction('Server Start Failed', `${server.name} — FXServer.exe not found or failed to launch`, 'error');
+          toast.error('Failed to start server. Check that FXServer.exe exists.');
+        }
+      } catch (err: any) {
+        updateServer(server.id, { status: 'error' });
+        toast.error(`Error starting server: ${err.message}`);
+      }
     }
   };
 
@@ -114,10 +215,16 @@ export default function Dashboard() {
             <h1 className="text-3xl font-extrabold text-white tracking-tight">Dashboard</h1>
             <p className="text-sm text-surface-400 mt-1">Manage and monitor your FiveM servers</p>
           </div>
-          <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2.5">
-            <Plus size={16} />
-            New Server
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/[0.06] text-surface-300 hover:bg-white/[0.1] hover:text-white border border-white/[0.08] hover:border-white/[0.15] transition-all">
+              <Download size={16} />
+              Import Server
+            </button>
+            <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2.5">
+              <Plus size={16} />
+              New Server
+            </button>
+          </div>
         </div>
       </motion.div>
 
@@ -176,11 +283,17 @@ export default function Dashboard() {
                 <Server size={32} className="text-primary-400/60" />
               </div>
               <p className="text-lg font-semibold text-surface-200 mb-1">No servers yet</p>
-              <p className="text-sm text-surface-500 mb-6">Create your first FiveM server to get started</p>
-              <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2">
-                <Plus size={16} />
-                Create Your First Server
-              </button>
+              <p className="text-sm text-surface-500 mb-6">Create a new server or import one you already have</p>
+              <div className="flex items-center gap-3">
+                <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2">
+                  <Plus size={16} />
+                  Create New Server
+                </button>
+                <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/[0.06] text-surface-300 hover:bg-white/[0.1] hover:text-white border border-white/[0.08] hover:border-white/[0.15] transition-all">
+                  <Download size={16} />
+                  Import Existing
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -228,6 +341,162 @@ export default function Dashboard() {
           </div>
         </motion.div>
       )}
+
+      {/* ═══ Import Server Modal ═══ */}
+      <AnimatePresence>
+        {showImportModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
+            onClick={() => !importing && (setShowImportModal(false), setScanResult(null), setImportPath(''))}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-panel p-6 max-w-lg w-full mx-4"
+            >
+              {/* Header */}
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center shrink-0">
+                  <HardDrive size={22} className="text-primary-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-white">Import Existing Server</h3>
+                  <p className="text-sm text-surface-400 mt-0.5">
+                    Select your existing FiveM server folder
+                  </p>
+                </div>
+                <button onClick={() => !importing && (setShowImportModal(false), setScanResult(null), setImportPath(''))} className="p-1.5 rounded-lg text-surface-500 hover:text-white hover:bg-white/[0.06] transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Folder Picker */}
+              <div className="mb-5">
+                <label className="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2 block">Server Folder</label>
+                <div className="flex gap-2">
+                  <div className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-surface-300 truncate font-mono">
+                    {importPath || 'No folder selected...'}
+                  </div>
+                  <button
+                    onClick={handleBrowseImport}
+                    disabled={importing}
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 border border-primary-500/20 transition-all"
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scanning indicator */}
+              {scanning && (
+                <div className="flex items-center gap-3 mb-5 p-4 rounded-xl bg-primary-500/5 border border-primary-500/10">
+                  <Loader2 size={18} className="text-primary-400 animate-spin" />
+                  <span className="text-sm text-primary-300">Scanning server folder...</span>
+                </div>
+              )}
+
+              {/* Scan results */}
+              {scanResult && !scanning && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-5 space-y-4"
+                >
+                  {/* Server Name Input */}
+                  <div>
+                    <label className="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2 block">Server Name</label>
+                    <input
+                      type="text"
+                      value={importName}
+                      onChange={(e) => setImportName(e.target.value)}
+                      className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder-surface-600 focus:outline-none focus:border-primary-500/40 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                      placeholder="Server name..."
+                    />
+                  </div>
+
+                  {/* Detection Results */}
+                  <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-3">
+                    <h4 className="text-xs font-semibold text-surface-400 uppercase tracking-wider flex items-center gap-2">
+                      <Search size={12} />
+                      Detected Configuration
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <DetectionItem
+                        icon={Cpu}
+                        label="Framework"
+                        value={scanResult.framework === 'qbcore' ? 'QBCore' : scanResult.framework === 'esx' ? 'ESX Legacy' : 'Custom'}
+                        color={scanResult.framework === 'qbcore' ? 'text-blue-400' : scanResult.framework === 'esx' ? 'text-orange-400' : 'text-surface-400'}
+                      />
+                      <DetectionItem
+                        icon={Package}
+                        label="Resources"
+                        value={`${scanResult.resourceCount} found`}
+                        color="text-purple-400"
+                      />
+                      <DetectionItem
+                        icon={HardDrive}
+                        label="Artifacts"
+                        value={scanResult.artifactVersion === 'unknown' ? 'Not detected' : `Build ${scanResult.artifactVersion}`}
+                        color={scanResult.artifactVersion === 'unknown' ? 'text-amber-400' : 'text-emerald-400'}
+                      />
+                      <DetectionItem
+                        icon={FileText}
+                        label="server.cfg"
+                        value={scanResult.hasServerCfg ? 'Found' : 'Missing'}
+                        color={scanResult.hasServerCfg ? 'text-emerald-400' : 'text-red-400'}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warnings */}
+                  {!scanResult.hasFXServer && (
+                    <div className="bg-amber-500/8 border border-amber-500/15 rounded-xl p-3">
+                      <p className="text-xs text-amber-300 flex items-center gap-2">
+                        <AlertTriangle size={13} className="shrink-0" />
+                        No FXServer executable found. You may need to download artifacts.
+                      </p>
+                    </div>
+                  )}
+
+                  {!scanResult.hasServerCfg && (
+                    <div className="bg-amber-500/8 border border-amber-500/15 rounded-xl p-3">
+                      <p className="text-xs text-amber-300 flex items-center gap-2">
+                        <AlertTriangle size={13} className="shrink-0" />
+                        No server.cfg found. You'll need to create one or use the Health Scanner.
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => !importing && (setShowImportModal(false), setScanResult(null), setImportPath(''))}
+                  disabled={importing}
+                  className="flex-1 btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportServer}
+                  disabled={importing || !importPath || !scanResult}
+                  className="flex-1 btn-primary flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {importing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  {importing ? 'Importing...' : 'Import Server'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══ Delete Confirmation Modal ═══ */}
       <AnimatePresence>
@@ -330,6 +599,21 @@ function StatCard({ icon: Icon, label, value, gradient, iconColor }: {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+/* ═══ Detection Item ═══ */
+function DetectionItem({ icon: Icon, label, value, color }: {
+  icon: any; label: string; value: string; color: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 bg-white/[0.02] rounded-lg p-2.5">
+      <Icon size={14} className={color} />
+      <div className="min-w-0">
+        <p className="text-[10px] text-surface-500 uppercase tracking-wider">{label}</p>
+        <p className={`text-xs font-semibold ${color} truncate`}>{value}</p>
+      </div>
+    </div>
   );
 }
 

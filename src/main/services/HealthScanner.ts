@@ -210,18 +210,40 @@ export class HealthScanner {
 
   private extractScriptPaths(content: string, directive: string): string[] {
     const paths: string[] = [];
+
+    // Strip Lua line comments (-- ...) before parsing to avoid false positives
+    const stripped = content.split('\n').map(line => {
+      // Remove inline comments: everything after -- that's not inside a string
+      // Simple approach: remove lines that are purely comments, and strip trailing comments
+      const trimmed = line.trim();
+      if (trimmed.startsWith('--')) return ''; // full-line comment
+      // For inline comments, be conservative — just return the line as-is
+      return line;
+    }).join('\n');
+
     const singlePattern = new RegExp(`${directive}s?\\s+['"]([^'"]+)['"]`, 'g');
-    const blockPattern = new RegExp(`${directive}s?\\s*\\{([^}]+)\\}`, 'g');
+    const blockPattern = new RegExp(`${directive}s?\\s*\\{([^}]+)\\}`, 'gs');
 
     let match;
-    while ((match = singlePattern.exec(content)) !== null) {
-      paths.push(match[1]);
+    while ((match = singlePattern.exec(stripped)) !== null) {
+      const p = match[1].trim();
+      if (p && !p.startsWith('--') && p.length > 1) {
+        paths.push(p);
+      }
     }
-    while ((match = blockPattern.exec(content)) !== null) {
+    while ((match = blockPattern.exec(stripped)) !== null) {
       const blockContent = match[1];
+      // Extract quoted strings from the block
       const items = blockContent.matchAll(/['"]([^'"]+)['"]/g);
       for (const item of items) {
-        paths.push(item[1]);
+        const p = item[1].trim();
+        // Skip empty, comment-like, or garbage entries
+        if (!p || p.length <= 1) continue;
+        if (p.startsWith('--')) continue;
+        if (p === ',' || p === ' ') continue;
+        // Must look like a file path (has an extension or is a glob)
+        if (!p.includes('.') && !p.includes('*') && !p.includes('@')) continue;
+        paths.push(p);
       }
     }
     return paths;

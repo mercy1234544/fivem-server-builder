@@ -100,6 +100,10 @@ function registerIpcHandlers() {
   ipcMain.handle('server:delete', (_, id) => serverManager.deleteServer(id));
   ipcMain.handle('server:start', (_, id) => serverManager.startServer(id));
   ipcMain.handle('server:stop', (_, id) => serverManager.stopServer(id));
+  ipcMain.handle('server:import', (_, serverPath: string, name?: string) =>
+    serverManager.importExistingServer(serverPath, name));
+  ipcMain.handle('server:scan', (_, serverPath: string) =>
+    serverManager.scanExistingServer(serverPath));
 
   // txAdmin — detect and open in browser after server starts
   ipcMain.handle('server:openTxAdmin', async (_, serverPath: string) => {

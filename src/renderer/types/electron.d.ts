@@ -15,6 +15,26 @@ interface ElectronAPI {
     delete: (id: string) => Promise<boolean>;
     start: (id: string) => Promise<boolean>;
     stop: (id: string) => Promise<boolean>;
+    import: (serverPath: string, name?: string) => Promise<{
+      success: boolean;
+      server?: any;
+      error?: string;
+      detected?: {
+        framework: string;
+        artifactVersion: string;
+        resourceCount: number;
+        hasServerCfg: boolean;
+        hasFXServer: boolean;
+      };
+    }>;
+    scan: (serverPath: string) => Promise<{
+      framework: string;
+      artifactVersion: string;
+      resourceCount: number;
+      hasServerCfg: boolean;
+      hasFXServer: boolean;
+      serverName: string;
+    }>;
   };
 
   resource: {
@@ -132,6 +152,7 @@ interface ElectronAPI {
   };
 
   onServerConsole: (callback: (data: { serverId: string; line: string }) => void) => () => void;
+  onServerStatusChange: (callback: (data: { serverId: string; status: string }) => void) => () => void;
 
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => () => void;
 }
