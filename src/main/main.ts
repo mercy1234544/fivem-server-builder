@@ -98,7 +98,10 @@ function registerIpcHandlers() {
   ipcMain.handle('server:create', (_, config) => serverManager.createServer(config));
   ipcMain.handle('server:update', (_, id, data) => serverManager.updateServer(id, data));
   ipcMain.handle('server:delete', (_, id) => serverManager.deleteServer(id));
-  ipcMain.handle('server:start', (_, id) => serverManager.startServer(id));
+  ipcMain.handle('server:start', async (_, id) => {
+    const result = await serverManager.startServer(id);
+    return result;
+  });
   ipcMain.handle('server:stop', (_, id) => serverManager.stopServer(id));
   ipcMain.handle('server:import', (_, serverPath: string, name?: string) =>
     serverManager.importExistingServer(serverPath, name));

@@ -662,9 +662,14 @@ ${ensureLines}
     return deleted;
   }
 
-  async startServer(id: string): Promise<boolean> {
+  async startServer(id: string): Promise<{ success: boolean; error?: string }> {
     const server = this.servers.get(id);
-    if (!server) return false;
+    if (!server) {
+      console.error(`[StartServer] No server found with id: ${id}`);
+      return { success: false, error: `Server not found (id: ${id}). Try removing and re-importing it.` };
+    }
+
+    console.log(`[StartServer] Starting "${server.name}" at ${server.installPath}`);
 
     // Kill existing process if any
     if (this.processes.has(id)) {
@@ -677,10 +682,20 @@ ${ensureLines}
       : path.join(server.installPath, 'run.sh');
 
     if (!fs.existsSync(executable)) {
+      console.error(`[StartServer] FXServer.exe not found at: ${executable}`);
       server.status = 'error';
       this.saveServers();
-      return false;
+      return { success: false, error: `FXServer.exe not found at:\n${executable}\n\nUse the Resource Updater to download artifacts first.` };
     }
+
+    // Check for server.cfg
+    const cfgPath = path.join(server.installPath, 'server.cfg');
+    if (!fs.existsSync(cfgPath)) {
+      console.error(`[StartServer] server.cfg not found at: ${cfgPath}`);
+      return { success: false, error: 'server.cfg not found. The server needs a config file to start.' };
+    }
+
+    console.log(`[StartServer] Launching: ${executable} +exec server.cfg`);
 
     try {
       const proc = spawn(executable, ['+exec', 'server.cfg'], {
@@ -691,10 +706,13 @@ ${ensureLines}
 
       // Check if process spawned successfully
       if (!proc || !proc.pid) {
+        console.error('[StartServer] Failed to spawn process — no PID');
         server.status = 'error';
         this.saveServers();
-        return false;
+        return { success: false, error: 'Failed to launch FXServer process.' };
       }
+
+      console.log(`[StartServer] FXServer launched with PID: ${proc.pid}`);
 
       this.processes.set(id, proc);
       server.status = 'running';
@@ -740,12 +758,12 @@ ${ensureLines}
         }
       });
 
-      return true;
-    } catch (err) {
+      return { success: true };
+    } catch (err: any) {
       console.error('Failed to start FXServer:', err);
       server.status = 'error';
       this.saveServers();
-      return false;
+      return { success: false, error: `Launch error: ${err.message}` };
     }
   }
 

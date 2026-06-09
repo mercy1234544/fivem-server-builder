@@ -13,7 +13,7 @@ interface ElectronAPI {
     create: (config: any) => Promise<any>;
     update: (id: string, data: any) => Promise<any>;
     delete: (id: string) => Promise<boolean>;
-    start: (id: string) => Promise<boolean>;
+    start: (id: string) => Promise<{ success: boolean; error?: string }>;
     stop: (id: string) => Promise<boolean>;
     import: (serverPath: string, name?: string) => Promise<{
       success: boolean;

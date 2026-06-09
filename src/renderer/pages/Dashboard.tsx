@@ -69,7 +69,13 @@ export default function Dashboard() {
 
   const loadServers = async () => {
     if (window.electronAPI) {
-      try { const data = await window.electronAPI.server.getAll(); setServers(data); } catch {}
+      try {
+        const data = await window.electronAPI.server.getAll();
+        // Always sync with backend — backend is the source of truth
+        setServers(data);
+      } catch (err) {
+        console.error('Failed to load servers from backend:', err);
+      }
     }
   };
 
@@ -181,14 +187,14 @@ export default function Dashboard() {
       // Optimistically show starting state
       updateServer(server.id, { status: 'running' });
       try {
-        const started = await window.electronAPI.server.start(server.id);
-        if (started) {
+        const result = await window.electronAPI.server.start(server.id);
+        if (result.success) {
           logAction('Server Started', server.name, 'success');
           toast.success(`${server.name} started!`);
         } else {
           updateServer(server.id, { status: 'error' });
-          logAction('Server Start Failed', `${server.name} — FXServer.exe not found or failed to launch`, 'error');
-          toast.error('Failed to start server. Check that FXServer.exe exists.');
+          logAction('Server Start Failed', result.error || 'Unknown error', 'error');
+          toast.error(result.error || 'Failed to start server');
         }
       } catch (err: any) {
         updateServer(server.id, { status: 'error' });
