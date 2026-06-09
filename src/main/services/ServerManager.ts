@@ -480,11 +480,16 @@ export class ServerManager {
       if (startResult.success) {
         server.status = 'running';
         this.saveServers();
-        sendProgress('✓ Server started — txAdmin launching at http://localhost:40120', 100, 100);
-        setTimeout(() => {
+        sendProgress('Waiting for txAdmin to start...', 99, 100);
+        // Poll until txAdmin is responding before opening the browser
+        const txReady = await this.waitForTxAdmin(40120, 60000);
+        if (txReady) {
+          sendProgress('✓ txAdmin is ready at http://localhost:40120', 100, 100);
           const { shell } = require('electron');
           shell.openExternal('http://localhost:40120');
-        }, 5000);
+        } else {
+          sendProgress('Server started but txAdmin may still be loading — try http://localhost:40120', 100, 100);
+        }
       } else {
         sendProgress(`Server created but failed to auto-start: ${startResult.error}`, 100, 100);
       }
@@ -647,6 +652,20 @@ set onesync on
         fs.copyFileSync(srcPath, destPath);
       }
     }
+  }
+
+  private async waitForTxAdmin(port: number, timeoutMs: number): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        await axios.get(`http://localhost:${port}`, { timeout: 2000 });
+        return true;
+      } catch (err: any) {
+        if (err.response) return true; // Got a response (even 401/403 means txAdmin is up)
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    return false;
   }
 
   private parseRecipeTasks(yaml: string): Array<Record<string, any>> {
