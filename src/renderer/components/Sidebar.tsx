@@ -22,6 +22,7 @@ import {
   Shield,
   RefreshCw,
   Car,
+  Terminal,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 
@@ -53,6 +54,7 @@ const navSections: NavSection[] = [
   {
     label: 'Server',
     items: [
+      { path: '/console', label: 'Console', icon: Terminal, accent: 'text-green-400' },
       { path: '/health', label: 'Health Scanner', icon: HeartPulse, accent: 'text-emerald-400' },
       { path: '/backups', label: 'Backups', icon: Archive },
       { path: '/files', label: 'File Explorer', icon: FolderOpen },

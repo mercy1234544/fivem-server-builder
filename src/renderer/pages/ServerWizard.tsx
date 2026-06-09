@@ -155,22 +155,8 @@ export default function ServerWizard() {
         </motion.div>
         <h2 className="text-2xl font-bold text-white mb-2">Server Created!</h2>
         <p className="text-surface-400 mb-4">
-          {config.name} is ready. FXServer and txAdmin are starting up.
+          {config.name} is ready with all resources installed. Start it from the Dashboard.
         </p>
-        {config.framework !== 'blank' && (
-          <div className="glass-panel p-4 mb-6 text-left max-w-md mx-auto">
-            <h3 className="text-sm font-semibold text-primary-400 mb-2">Next Step: Deploy Framework via txAdmin</h3>
-            <ol className="text-xs text-surface-300 space-y-1.5 list-decimal list-inside">
-              <li>txAdmin is opening at <span className="text-white font-mono">localhost:40120</span></li>
-              <li>Create a txAdmin account and link your Cfx.re account</li>
-              <li>Select <span className="text-white font-semibold">"Deploy a Recipe"</span> when prompted</li>
-              <li>Choose the <span className="text-white font-semibold">
-                {config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : config.framework === 'esx' ? 'ESX Legacy' : 'recipe'}
-              </span> recipe</li>
-              <li>txAdmin will download all resources as proper release builds</li>
-            </ol>
-          </div>
-        )}
         <div className="flex gap-3 justify-center">
           <button onClick={() => navigate('/')} className="btn-primary flex items-center gap-2">
             Go to Dashboard
@@ -421,10 +407,11 @@ export default function ServerWizard() {
                 {!building && (
                   <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                     <p className="text-xs text-blue-300">
-                      <span className="font-semibold">How it works:</span> We'll download FiveM server artifacts (FXServer + txAdmin), then auto-start the server.
-                      {(config.framework === 'qbcore' || config.framework === 'qbox' || config.framework === 'esx') && (
-                        <> All resources will be downloaded from the official <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : 'ESX Legacy'}</span> txAdmin recipe — proper release builds, correct folder structure.</>
-                      )}
+                      <span className="font-semibold">How it works:</span> We'll download FiveM server artifacts and
+                      {(config.framework === 'qbcore' || config.framework === 'qbox' || config.framework === 'esx')
+                        ? <> install all <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : 'ESX Legacy'}</span> resources from the official recipe — proper release builds, correct folder structure, ready to play.</>
+                        : <> set up the server files. You can add resources from the Marketplace or import your own.</>
+                      }
                     </p>
                   </div>
                 )}

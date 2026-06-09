@@ -473,31 +473,7 @@ export class ServerManager {
     this.servers.set(id, server);
     this.saveServers();
 
-    // Auto-start the server so txAdmin launches
-    sendProgress('Starting FXServer + txAdmin...', 98, 100);
-    try {
-      const startResult = await this.startServer(id);
-      if (startResult.success) {
-        server.status = 'running';
-        this.saveServers();
-        sendProgress('Waiting for txAdmin to start...', 99, 100);
-        // Poll until txAdmin is responding before opening the browser
-        const txReady = await this.waitForTxAdmin(40120, 60000);
-        if (txReady) {
-          sendProgress('✓ txAdmin is ready at http://localhost:40120', 100, 100);
-          const { shell } = require('electron');
-          shell.openExternal('http://localhost:40120');
-        } else {
-          sendProgress('Server started but txAdmin may still be loading — try http://localhost:40120', 100, 100);
-        }
-      } else {
-        sendProgress(`Server created but failed to auto-start: ${startResult.error}`, 100, 100);
-      }
-    } catch (err: any) {
-      sendProgress(`Server created but failed to auto-start: ${err.message}`, 100, 100);
-    }
-
-    sendProgress('Server build complete!', 100, 100);
+    sendProgress('Server build complete! Start it from the Dashboard.', 100, 100);
     return server;
   }
 
