@@ -1,6 +1,7 @@
 import React from 'react';
 import Sidebar from './Sidebar';
 import TitleBar from './TitleBar';
+import UpdateBanner from './UpdateBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -19,6 +20,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Content */}
       <div className="relative z-10 flex flex-col h-full">
         <TitleBar />
+        <UpdateBanner />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar />
           <main className="flex-1 overflow-y-auto">

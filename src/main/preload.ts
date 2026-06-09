@@ -118,6 +118,19 @@ const electronAPI = {
     return () => { ipcRenderer.removeListener('server:console', handler); };
   },
 
+  // App Updater
+  appUpdater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    getVersion: () => ipcRenderer.invoke('updater:getVersion'),
+    onStatus: (callback: (data: any) => void) => {
+      const handler = (_: any, data: any) => callback(data);
+      ipcRenderer.on('updater:status', handler);
+      return () => { ipcRenderer.removeListener('updater:status', handler); };
+    },
+  },
+
   // Build progress (server creation)
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => {
     const handler = (_: any, data: any) => callback(data);

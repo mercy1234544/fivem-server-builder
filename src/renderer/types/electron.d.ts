@@ -118,6 +118,19 @@ interface ElectronAPI {
       Promise<{ success: boolean; error?: string; generatedManifest?: boolean }>;
   };
 
+  appUpdater: {
+    check: () => Promise<any>;
+    download: () => Promise<{ success: boolean; error?: string }>;
+    install: () => Promise<void>;
+    getVersion: () => Promise<string>;
+    onStatus: (callback: (data: {
+      status: 'available' | 'current' | 'downloading' | 'ready' | 'error';
+      version?: string;
+      percent?: number;
+      error?: string;
+    }) => void) => () => void;
+  };
+
   onServerConsole: (callback: (data: { serverId: string; line: string }) => void) => () => void;
 
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => () => void;

@@ -10,6 +10,7 @@ import { GitManager } from './services/GitManager';
 import { FileManager } from './services/FileManager';
 import { ArtifactDownloader } from './services/ArtifactDownloader';
 import axios from 'axios';
+import { autoUpdater } from 'electron-updater';
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerManager;
@@ -33,7 +34,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    icon: path.join(__dirname, '../../public/icon.svg'),
+    icon: path.join(__dirname, '../../src/assets/icon.ico'),
   });
 
   if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
@@ -892,10 +893,87 @@ async function importVehiclePack(opts: { sourcePath: string; serverPath: string;
   }
 }
 
+// ─── Auto Updater Setup ─────────────────────────────────────────────────────
+function setupAutoUpdater() {
+  // Don't check for updates in dev mode
+  if (process.env.NODE_ENV === 'development' || !app.isPackaged) return;
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('updater:status', {
+      status: 'available',
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    mainWindow?.webContents.send('updater:status', { status: 'current' });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('updater:status', {
+      status: 'downloading',
+      percent: Math.round(progress.percent),
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    mainWindow?.webContents.send('updater:status', { status: 'ready' });
+  });
+
+  autoUpdater.on('error', (err) => {
+    mainWindow?.webContents.send('updater:status', {
+      status: 'error',
+      error: err.message,
+    });
+  });
+
+  // Check for updates every 30 minutes
+  autoUpdater.checkForUpdates().catch(() => {});
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 30 * 60 * 1000);
+}
+
 app.whenReady().then(() => {
   initializeServices();
   registerIpcHandlers();
   createWindow();
+
+  // Auto-update IPC handlers
+  ipcMain.handle('updater:check', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return result?.updateInfo || null;
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('updater:download', async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('updater:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  ipcMain.handle('updater:getVersion', () => {
+    return app.getVersion();
+  });
+
+  // Start auto-updater
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
