@@ -268,56 +268,213 @@ export class ServerManager {
     artifactDownloader.removeAllListeners();
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 3: Create resource folder structure for user's own resources
+    // STEP 3: Execute framework recipe (QBCore/ESX) or create blank
+    // Downloads all resources using the same official txAdmin recipe
+    // URLs — proper release builds, correct folder structure
     // ═══════════════════════════════════════════════════════════════════
-    sendProgress('Creating resource folder structure...', 0, 5);
     const resourcesDir = path.join(config.installPath, 'resources');
     if (!fs.existsSync(resourcesDir)) {
       fs.mkdirSync(resourcesDir, { recursive: true });
     }
 
-    const userFolders = ['[custom]', '[mlo]', '[vehicles]', '[vehiclescripts]', '[standalone]'];
-    for (const folder of userFolders) {
-      const folderPath = path.join(resourcesDir, folder);
-      if (!fs.existsSync(folderPath)) {
-        fs.mkdirSync(folderPath, { recursive: true });
+    // Create user folders for custom additions regardless of framework
+    for (const folder of ['[custom]', '[mlo]', '[vehicles]', '[vehiclescripts]']) {
+      const fp = path.join(resourcesDir, folder);
+      if (!fs.existsSync(fp)) fs.mkdirSync(fp, { recursive: true });
+    }
+
+    if (config.framework === 'qbcore' || config.framework === 'esx') {
+      sendProgress('Fetching official framework recipe...', 0, 100);
+
+      const recipeUrl = config.framework === 'qbcore'
+        ? 'https://raw.githubusercontent.com/qbcore-framework/txAdminRecipe/main/qbcore.yaml'
+        : 'https://raw.githubusercontent.com/Avanae/esx-legacy-recipe/main/recipe.yaml';
+
+      let recipeYaml: string;
+      try {
+        const resp = await axios.get(recipeUrl, { timeout: 30000 });
+        recipeYaml = resp.data;
+      } catch (err: any) {
+        throw new Error(`Failed to fetch recipe: ${err.message}`);
       }
+
+      const tasks = this.parseRecipeTasks(recipeYaml);
+      const downloadTasks = tasks.filter(t =>
+        t.action === 'download_github' || t.action === 'download_file'
+      );
+      const totalDownloads = downloadTasks.length;
+      let completed = 0;
+
+      for (const task of tasks) {
+        try {
+          switch (task.action) {
+            case 'download_github': {
+              completed++;
+              const destName = (task.dest || '').split('/').pop() || task.src?.split('/').pop() || 'resource';
+              sendProgress(
+                `Downloading ${destName} (${completed}/${totalDownloads})...`,
+                Math.round((completed / totalDownloads) * 100),
+                100
+              );
+              const dest = path.join(config.installPath, task.dest || './resources');
+              const ref = task.ref || 'main';
+              await this.downloadGithubResource(task.src!, dest, ref, task.subpath);
+              break;
+            }
+            case 'download_file': {
+              completed++;
+              const fileName = (task.url || '').split('/').pop() || 'file';
+              sendProgress(
+                `Downloading ${fileName} (${completed}/${totalDownloads})...`,
+                Math.round((completed / totalDownloads) * 100),
+                100
+              );
+              const fileDest = path.join(config.installPath, task.path || task.dest || './tmp/file');
+              const dir = path.dirname(fileDest);
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              const resp = await axios.get(task.url!, {
+                responseType: 'arraybuffer',
+                timeout: 120000,
+                maxRedirects: 5,
+              });
+              fs.writeFileSync(fileDest, Buffer.from(resp.data));
+              break;
+            }
+            case 'unzip': {
+              const src = path.join(config.installPath, task.src!);
+              const dest = path.join(config.installPath, task.dest!);
+              if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+              if (fs.existsSync(src)) await extractZip(src, { dir: dest });
+              break;
+            }
+            case 'move_path': {
+              const src = path.join(config.installPath, task.src!);
+              const dest = path.join(config.installPath, task.dest!);
+              if (fs.existsSync(src)) {
+                const destDir = path.dirname(dest);
+                if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+                fs.renameSync(src, dest);
+              }
+              break;
+            }
+            case 'remove_path': {
+              const target = path.join(config.installPath, task.path || task.src || '');
+              if (fs.existsSync(target)) {
+                fs.rmSync(target, { recursive: true, force: true });
+              }
+              break;
+            }
+            case 'waste_time': {
+              // Throttle delay to avoid GitHub rate limiting, same as txAdmin
+              const seconds = task.seconds || 5;
+              await new Promise(r => setTimeout(r, seconds * 1000));
+              break;
+            }
+            // skip: connect_database, query_database, replace_string (user handles DB in txAdmin)
+          }
+        } catch (err: any) {
+          console.error(`[Recipe] Task failed (${task.action}): ${err.message}`);
+          // Continue with remaining tasks
+        }
+      }
+    } else if (config.framework === 'custom') {
+      // Custom: just download cfx-server-data defaults + oxmysql
+      sendProgress('Downloading default CFX resources...', 0, 100);
+      const cfxDest = path.join(resourcesDir, '[cfx-default]');
+      await this.downloadGithubResource(
+        'https://github.com/citizenfx/cfx-server-data', cfxDest, 'master', 'resources'
+      );
+      sendProgress('Downloading oxmysql...', 50, 100);
+      const oxDest = path.join(resourcesDir, '[standalone]', 'oxmysql');
+      try {
+        const oxResp = await axios.get(
+          'https://github.com/overextended/oxmysql/releases/download/v2.14.1/oxmysql.zip',
+          { responseType: 'arraybuffer', timeout: 120000, maxRedirects: 5 }
+        );
+        const oxZip = path.join(os.tmpdir(), `oxmysql-${Date.now()}.zip`);
+        fs.writeFileSync(oxZip, Buffer.from(oxResp.data));
+        if (!fs.existsSync(oxDest)) fs.mkdirSync(oxDest, { recursive: true });
+        await extractZip(oxZip, { dir: path.join(resourcesDir, '[standalone]') });
+        try { fs.unlinkSync(oxZip); } catch {}
+      } catch (err: any) {
+        console.error('[Custom] Failed to download oxmysql:', err.message);
+      }
+    }
+    // blank = no resources at all, just artifacts
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 4: Generate server.cfg if the recipe didn't provide one
+    // ═══════════════════════════════════════════════════════════════════
+    const cfgPath = path.join(config.installPath, 'server.cfg');
+    if (!fs.existsSync(cfgPath)) {
+      sendProgress('Generating server.cfg...', 95, 100);
+      const serverCfg = this.generateServerCfg(config);
+      fs.writeFileSync(cfgPath, serverCfg);
+    } else {
+      // Recipe provided a server.cfg — patch in the server name
+      try {
+        let cfg = fs.readFileSync(cfgPath, 'utf-8');
+        cfg = cfg.replace(/\{\{serverName\}\}/g, config.name);
+        cfg = cfg.replace(/\{\{recipeName\}\}/g, config.framework === 'qbcore' ? 'QBCore' : 'ESX Legacy');
+        cfg = cfg.replace(/\{\{recipeAuthor\}\}/g, 'FiveM Server Builder');
+        cfg = cfg.replace(/\{\{recipeDescription\}\}/g, `${config.name} — built with FiveM Server Builder`);
+        cfg = cfg.replace(/\{\{maxClients\}\}/g, '48');
+        cfg = cfg.replace(/\{\{serverEndpoints\}\}/g, 'endpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"');
+        cfg = cfg.replace(/\{\{svLicense\}\}/g, 'changeme');
+        cfg = cfg.replace(/\{\{addPrincipalsMaster\}\}/g, '');
+        const dbName = config.name.toLowerCase().replace(/\s+/g, '_');
+        cfg = cfg.replace(/\{\{dbConnectionString\}\}/g, `mysql://root:password@localhost/${dbName}?charset=utf8mb4`);
+        cfg = cfg.replace(/\{\{dbName\}\}/g, dbName);
+        fs.writeFileSync(cfgPath, cfg);
+      } catch {}
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 4: Start the server so txAdmin launches
-    // Do NOT generate a server.cfg — txAdmin creates its own during
-    // the setup wizard (license key, recipe deployment, etc.)
-    // txAdmin handles the REAL framework deployment — it uses official
-    // recipes to install QBCore/ESX with proper release builds,
-    // dependencies, and database setup
+    // STEP 5: Count resources and finalize
     // ═══════════════════════════════════════════════════════════════════
-    sendProgress('Server ready! Starting FXServer + txAdmin...', 4, 5);
+    let resourceCount = 0;
+    try {
+      const countResources = (dir: string) => {
+        if (!fs.existsSync(dir)) return;
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const p = path.join(dir, entry.name);
+          const hasManifest = fs.existsSync(path.join(p, 'fxmanifest.lua')) ||
+                              fs.existsSync(path.join(p, '__resource.lua'));
+          if (hasManifest) {
+            resourceCount++;
+          } else {
+            countResources(p);
+          }
+        }
+      };
+      countResources(resourcesDir);
+    } catch {}
+    server.resourceCount = resourceCount;
 
     this.servers.set(id, server);
     this.saveServers();
 
     // Auto-start the server so txAdmin launches
+    sendProgress('Starting FXServer + txAdmin...', 98, 100);
     try {
       const startResult = await this.startServer(id);
       if (startResult.success) {
         server.status = 'running';
         this.saveServers();
-        sendProgress('✓ FXServer started — txAdmin is launching at http://localhost:40120', 5, 5);
-
-        // Open txAdmin in the browser after a short delay for it to boot
+        sendProgress('✓ Server started — txAdmin launching at http://localhost:40120', 100, 100);
         setTimeout(() => {
           const { shell } = require('electron');
           shell.openExternal('http://localhost:40120');
         }, 5000);
       } else {
-        sendProgress(`Server created but failed to auto-start: ${startResult.error}`, 5, 5);
+        sendProgress(`Server created but failed to auto-start: ${startResult.error}`, 100, 100);
       }
     } catch (err: any) {
-      sendProgress(`Server created but failed to auto-start: ${err.message}`, 5, 5);
+      sendProgress(`Server created but failed to auto-start: ${err.message}`, 100, 100);
     }
 
-    sendProgress('Server build complete! Use txAdmin to deploy your framework.', 5, 5);
+    sendProgress('Server build complete!', 100, 100);
     return server;
   }
 
@@ -472,6 +629,108 @@ set onesync on
         fs.copyFileSync(srcPath, destPath);
       }
     }
+  }
+
+  private parseRecipeTasks(yaml: string): Array<Record<string, any>> {
+    const tasks: Array<Record<string, any>> = [];
+    const lines = yaml.split('\n');
+    let inTasks = false;
+    let currentTask: Record<string, any> | null = null;
+
+    for (const line of lines) {
+      const trimmed = line.trimEnd();
+
+      if (trimmed === 'tasks:') {
+        inTasks = true;
+        continue;
+      }
+      if (!inTasks) continue;
+
+      // New task entry
+      if (/^\s+- action:\s*(.+)/.test(trimmed)) {
+        if (currentTask) tasks.push(currentTask);
+        const action = trimmed.match(/action:\s*(.+)/)![1].trim();
+        currentTask = { action };
+        continue;
+      }
+
+      // Task property
+      if (currentTask && /^\s+\w+:/.test(trimmed) && !trimmed.trim().startsWith('-')) {
+        const propMatch = trimmed.match(/^\s+(\w+):\s*(.*)$/);
+        if (propMatch) {
+          let [, key, value] = propMatch;
+          value = value.replace(/^['"]|['"]$/g, '').trim();
+          if (key === 'seconds') {
+            currentTask[key] = parseInt(value, 10) || 5;
+          } else {
+            currentTask[key] = value;
+          }
+        }
+      }
+    }
+    if (currentTask) tasks.push(currentTask);
+    return tasks;
+  }
+
+  private async downloadGithubResource(
+    repoUrl: string, destination: string, ref: string, subpath?: string
+  ): Promise<void> {
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/\s]+)/);
+    if (!match) throw new Error(`Invalid GitHub URL: ${repoUrl}`);
+    const [, owner, repo] = match;
+    const repoName = repo.replace(/\.git$/, '');
+
+    console.log(`[Recipe] download_github: ${owner}/${repoName} ref=${ref} subpath=${subpath || 'root'} → ${destination}`);
+
+    // Download ZIP for the specific ref
+    const zipUrl = `https://github.com/${owner}/${repoName}/archive/refs/heads/${ref}.zip`;
+    let response;
+    try {
+      response = await axios.get(zipUrl, { responseType: 'arraybuffer', timeout: 120000 });
+    } catch {
+      // ref might be a commit hash, try that
+      const commitUrl = `https://github.com/${owner}/${repoName}/archive/${ref}.zip`;
+      response = await axios.get(commitUrl, { responseType: 'arraybuffer', timeout: 120000 });
+    }
+
+    const tempDir = os.tmpdir();
+    const zipPath = path.join(tempDir, `${repoName}-${Date.now()}.zip`);
+    fs.writeFileSync(zipPath, Buffer.from(response.data));
+
+    const extractDir = path.join(tempDir, `${repoName}-extract-${Date.now()}`);
+    fs.mkdirSync(extractDir, { recursive: true });
+    await extractZip(zipPath, { dir: extractDir });
+
+    // GitHub ZIPs have a single subfolder like "repo-main/"
+    const extracted = fs.readdirSync(extractDir);
+    let innerDir = extracted.length === 1
+      ? path.join(extractDir, extracted[0])
+      : extractDir;
+
+    // If subpath specified, only copy that subdirectory
+    if (subpath) {
+      innerDir = path.join(innerDir, subpath);
+      if (!fs.existsSync(innerDir)) {
+        console.warn(`[Recipe] subpath "${subpath}" not found in ${repoName}, copying root`);
+        innerDir = extracted.length === 1 ? path.join(extractDir, extracted[0]) : extractDir;
+      }
+    }
+
+    if (!fs.existsSync(destination)) {
+      fs.mkdirSync(destination, { recursive: true });
+    }
+    this.copyDirRecursive(innerDir, destination);
+
+    // Save source URL for future updates
+    try {
+      fs.writeFileSync(path.join(destination, '.fivem-builder-source'), repoUrl);
+    } catch {}
+
+    // Cleanup
+    try {
+      fs.unlinkSync(zipPath);
+      fs.rmSync(extractDir, { recursive: true, force: true });
+    } catch {}
   }
 
   async updateServer(id: string, data: Partial<Server>): Promise<Server | null> {
