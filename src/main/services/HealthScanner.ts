@@ -69,14 +69,20 @@ export class HealthScanner {
 
     const content = fs.readFileSync(cfgPath, 'utf-8');
 
-    if (content.includes('changeme') || content.includes('change_me')) {
+    // Check for uncommented changeme license key (commented out is fine — txAdmin handles it)
+    const hasUncommentedChangeme = content.split('\n').some(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('#') || trimmed.startsWith('//')) return false;
+      return trimmed.includes('sv_licenseKey') && (trimmed.includes('changeme') || trimmed.includes('change_me'));
+    });
+    if (hasUncommentedChangeme) {
       issues.push({
         id: 'default-license-key',
         severity: 'error',
         category: 'Configuration',
         message: 'License key has not been set',
         file: cfgPath,
-        suggestion: 'Set your FiveM license key from keymaster.fivem.net',
+        suggestion: 'Set your FiveM license key from keymaster.fivem.net or use txAdmin to configure it',
         autoFixable: false,
       });
     }
@@ -253,19 +259,57 @@ export class HealthScanner {
     const cfgPath = path.join(serverPath, 'server.cfg');
     if (!fs.existsSync(cfgPath)) return;
 
-    const cfg = fs.readFileSync(cfgPath, 'utf-8');
-    const ensuredResources = new Set<string>();
-    const ensurePattern = /(?:ensure|start)\s+(\S+)/g;
-    let match;
-    while ((match = ensurePattern.exec(cfg)) !== null) {
-      ensuredResources.add(match[1]);
+    // Also check additional .cfg files referenced by exec directives
+    const cfgFiles = [cfgPath];
+    const mainCfg = fs.readFileSync(cfgPath, 'utf-8');
+    const execPattern = /^\s*exec\s+["']?(\S+?)["']?\s*$/gm;
+    let execMatch;
+    while ((execMatch = execPattern.exec(mainCfg)) !== null) {
+      const extraCfg = path.join(serverPath, execMatch[1]);
+      if (fs.existsSync(extraCfg)) cfgFiles.push(extraCfg);
     }
 
-    // Check if ensured resources actually exist
+    const ensuredResources = new Set<string>();
+
+    // CFX resources built into the server artifacts — not in resources/
+    const builtinResources = new Set([
+      'mapmanager', 'chat', 'spawnmanager', 'sessionmanager',
+      'hardcap', 'baseevents', 'basic-gamemode', 'fivem',
+      'monitor', 'sessionmanager-rdr3', 'webpack', 'yarn',
+    ]);
+
+    for (const cfgFile of cfgFiles) {
+      const cfg = fs.readFileSync(cfgFile, 'utf-8');
+      for (const line of cfg.split('\n')) {
+        const trimmed = line.trim();
+        // Skip comments and empty lines
+        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+        const match = trimmed.match(/^(?:ensure|start)\s+(\S+)/);
+        if (match) ensuredResources.add(match[1]);
+      }
+    }
+
     const resourcesPath = path.join(serverPath, 'resources');
     if (!fs.existsSync(resourcesPath)) return;
 
     for (const resourceName of ensuredResources) {
+      // Skip builtin CFX resources
+      if (builtinResources.has(resourceName)) continue;
+
+      // Folder-based ensures like [ox], [qbx] — check if the folder exists
+      if (resourceName.startsWith('[') && resourceName.endsWith(']')) {
+        if (this.folderExists(resourcesPath, resourceName)) continue;
+        issues.push({
+          id: `missing-resource-folder-${resourceName}`,
+          severity: 'warning',
+          category: 'Dependencies',
+          message: `Resource folder "${resourceName}" is ensured but not found`,
+          suggestion: `Create the ${resourceName} folder in resources or remove it from server.cfg`,
+          autoFixable: false,
+        });
+        continue;
+      }
+
       if (!this.resourceExists(resourcesPath, resourceName)) {
         issues.push({
           id: `missing-resource-${resourceName}`,
@@ -277,6 +321,19 @@ export class HealthScanner {
         });
       }
     }
+  }
+
+  private folderExists(resourcesDir: string, folderName: string): boolean {
+    // Check direct child
+    if (fs.existsSync(path.join(resourcesDir, folderName))) return true;
+    // Check nested (e.g. resources/[something]/[folderName])
+    try {
+      for (const entry of fs.readdirSync(resourcesDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (fs.existsSync(path.join(resourcesDir, entry.name, folderName))) return true;
+      }
+    } catch {}
+    return false;
   }
 
   private resourceExists(resourcesDir: string, name: string): boolean {
