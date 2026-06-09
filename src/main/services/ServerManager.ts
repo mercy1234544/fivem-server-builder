@@ -15,7 +15,7 @@ export interface ServerConfig {
   database: 'mariadb' | 'mysql';
   artifactVersion: string;
   installPath: string;
-  licenseKey: string;
+  licenseKey?: string;
 }
 
 export interface Server {
@@ -488,7 +488,7 @@ export class ServerManager {
         cfg = cfg.replace(/\{\{recipeDescription\}\}/g, `${config.name} — built with FiveM Server Builder`);
         cfg = cfg.replace(/\{\{maxClients\}\}/g, '48');
         cfg = cfg.replace(/\{\{serverEndpoints\}\}/g, 'endpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"');
-        cfg = cfg.replace(/\{\{svLicense\}\}/g, config.licenseKey);
+        cfg = cfg.replace(/\{\{svLicense\}\}/g, 'changeme');
         cfg = cfg.replace(/\{\{addPrincipalsMaster\}\}/g, '');
         const dbName = config.name.toLowerCase().replace(/\s+/g, '_');
         cfg = cfg.replace(/\{\{dbConnectionString\}\}/g, `mysql://root:password@localhost/${dbName}?charset=utf8mb4`);
@@ -523,7 +523,33 @@ export class ServerManager {
     this.servers.set(id, server);
     this.saveServers();
 
-    sendProgress('Server build complete! Start it from the Dashboard.', 100, 100);
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 6: Auto-start FXServer so txAdmin launches for registration
+    // ═══════════════════════════════════════════════════════════════════
+    sendProgress('Starting FXServer + txAdmin...', 98, 100);
+    try {
+      // Start WITHOUT server.cfg so txAdmin boots into its first-time setup wizard.
+      // The user will enter their license key, server name, and select "Use Existing Server"
+      // to link txAdmin to our already-downloaded resources.
+      const startResult = await this.startServerRaw(id);
+      if (startResult.success) {
+        server.status = 'running';
+        this.saveServers();
+        sendProgress('Waiting for txAdmin to start...', 99, 100);
+        const txReady = await this.waitForTxAdmin(40120, 60000);
+        if (txReady) {
+          sendProgress('Server build complete! txAdmin is ready.', 100, 100);
+          const { shell } = require('electron');
+          shell.openExternal('http://localhost:40120');
+        } else {
+          sendProgress('Server build complete! txAdmin may still be loading — try localhost:40120', 100, 100);
+        }
+      } else {
+        sendProgress(`Server build complete! Auto-start failed: ${startResult.error}`, 100, 100);
+      }
+    } catch (err: any) {
+      sendProgress(`Server build complete! Auto-start failed: ${err.message}`, 100, 100);
+    }
     return server;
   }
 
@@ -547,8 +573,8 @@ sets locale "en-US"
 sets tags "default"
 
 # ─── License & Keys ──────────────────────────────────────────────────
-# Get your license key from https://keymaster.fivem.net
-sv_licenseKey "${config.licenseKey}"
+# Your license key is managed by txAdmin — enter it during setup at localhost:40120
+# sv_licenseKey "changeme"
 
 # ─── Connection ───────────────────────────────────────────────────────
 endpoint_add_tcp "0.0.0.0:30120"
@@ -996,6 +1022,89 @@ set onesync on
     const deleted = this.servers.delete(id);
     if (deleted) this.saveServers();
     return deleted;
+  }
+
+  /**
+   * Start FXServer without server.cfg — txAdmin boots in setup wizard mode.
+   * Used after initial build so the user can register via txAdmin.
+   */
+  private async startServerRaw(id: string): Promise<{ success: boolean; error?: string }> {
+    const server = this.servers.get(id);
+    if (!server) return { success: false, error: 'Server not found' };
+
+    if (this.processes.has(id)) {
+      try { this.processes.get(id)!.kill(); } catch {}
+      this.processes.delete(id);
+    }
+
+    const executable = server.os === 'windows'
+      ? path.join(server.installPath, 'FXServer.exe')
+      : path.join(server.installPath, 'run.sh');
+
+    if (!fs.existsSync(executable)) {
+      return { success: false, error: `FXServer.exe not found at: ${executable}` };
+    }
+
+    console.log(`[StartServerRaw] Launching without server.cfg for txAdmin setup: ${executable}`);
+
+    try {
+      const proc = spawn(executable, [], {
+        cwd: server.installPath,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: false,
+      });
+
+      if (!proc || !proc.pid) {
+        return { success: false, error: 'Failed to launch FXServer process.' };
+      }
+
+      this.processes.set(id, proc);
+      server.status = 'running';
+      this.saveServers();
+
+      const mainWin = BrowserWindow.getAllWindows()[0];
+
+      if (proc.stdout) {
+        proc.stdout.on('data', (data: Buffer) => {
+          const line = data.toString();
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('server:console', { serverId: id, line });
+          }
+        });
+      }
+      if (proc.stderr) {
+        proc.stderr.on('data', (data: Buffer) => {
+          const line = data.toString();
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('server:console', { serverId: id, line: `[ERROR] ${line}` });
+          }
+        });
+      }
+
+      proc.on('error', (err) => {
+        server.status = 'error';
+        this.processes.delete(id);
+        this.saveServers();
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('server:statusChange', { serverId: id, status: 'error' });
+        }
+      });
+
+      proc.on('exit', (code, signal) => {
+        server.status = 'stopped';
+        this.processes.delete(id);
+        this.saveServers();
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('server:statusChange', { serverId: id, status: 'stopped' });
+        }
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      server.status = 'error';
+      this.saveServers();
+      return { success: false, error: err.message };
+    }
   }
 
   async startServer(id: string): Promise<{ success: boolean; error?: string }> {

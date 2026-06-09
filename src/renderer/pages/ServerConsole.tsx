@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 
 export default function ServerConsole() {
-  const { activeServer } = useAppStore();
+  const activeServer = useAppStore(state => state.getActiveServer());
   const [lines, setLines] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [serverStatus, setServerStatus] = useState<string>('stopped');

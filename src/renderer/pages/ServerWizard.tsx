@@ -53,7 +53,6 @@ export default function ServerWizard() {
     database: 'mariadb' as 'mariadb' | 'mysql',
     artifactVersion: 'recommended',
     installPath: '',
-    licenseKey: '',
   });
 
   const canProceed = () => {
@@ -62,7 +61,7 @@ export default function ServerWizard() {
       case 1: return !!config.os;
       case 2: return !!config.database;
       case 3: return !!config.artifactVersion;
-      case 4: return !!config.installPath && !!config.name && !!config.licenseKey;
+      case 4: return !!config.installPath && !!config.name;
       default: return true;
     }
   };
@@ -154,16 +153,28 @@ export default function ServerWizard() {
           <Check size={36} className="text-green-400" />
         </motion.div>
         <h2 className="text-2xl font-bold text-white mb-2">Server Created!</h2>
-        <p className="text-surface-400 mb-4">
-          {config.name} is ready with all resources installed. Start it from the Dashboard.
+        <p className="text-surface-400 mb-2">
+          {config.name} is ready — all resources have been downloaded.
         </p>
+        <p className="text-surface-400 mb-4 text-sm">
+          txAdmin should have opened in your browser. Complete the setup:
+        </p>
+        <div className="bg-surface-800/60 border border-surface-700/50 rounded-xl p-4 mb-6 text-left max-w-md mx-auto">
+          <ol className="list-decimal list-inside space-y-2 text-sm text-surface-300">
+            <li>Create your <span className="text-white font-medium">txAdmin account</span></li>
+            <li>Enter your server name</li>
+            <li>Enter your <a href="https://keymaster.fivem.net" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">Keymaster license key</a></li>
+            <li>Select <span className="text-white font-medium">"Use Existing Server Data"</span></li>
+            <li>Point it to: <code className="text-xs bg-surface-900 px-1.5 py-0.5 rounded text-primary-300">{config.installPath}</code></li>
+          </ol>
+        </div>
         <div className="flex gap-3 justify-center">
           <button onClick={() => navigate('/')} className="btn-primary flex items-center gap-2">
             Go to Dashboard
             <ArrowRight size={16} />
           </button>
           <button
-            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', installPath: '', licenseKey: '' }); }}
+            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', installPath: '' }); }}
             className="btn-secondary"
           >
             Create Another
@@ -357,19 +368,10 @@ export default function ServerWizard() {
                       autoFocus
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-surface-300 mb-1.5">Server License Key</label>
-                    <input
-                      type="text"
-                      className="input-field font-mono text-sm"
-                      placeholder="cfxk_xxxxxxxxxxxxxxxxxxxx_xxxxxx"
-                      value={config.licenseKey}
-                      onChange={(e) => setConfig({ ...config, licenseKey: e.target.value })}
-                    />
-                    <p className="text-xs text-surface-500 mt-1.5">
-                      Get your free key from <span className="text-primary-400 cursor-pointer" onClick={() => window.electronAPI?.openExternal('https://keymaster.fivem.net')}>keymaster.fivem.net</span>
-                    </p>
-                  </div>
+                  <p className="text-xs text-surface-500 bg-surface-800/50 p-2.5 rounded-lg border border-surface-700/50">
+                    Your license key will be entered through txAdmin after the build completes.
+                    Get one free at <span className="text-primary-400 cursor-pointer" onClick={() => window.electronAPI?.openExternal('https://keymaster.fivem.net')}>keymaster.fivem.net</span>
+                  </p>
                   <div>
                     <label className="block text-sm font-medium text-surface-300 mb-1.5">Installation Directory</label>
                     <div className="flex gap-2">
@@ -400,18 +402,19 @@ export default function ServerWizard() {
                   <SummaryRow label="Operating System" value={config.os === 'windows' ? 'Windows' : 'Linux'} />
                   <SummaryRow label="Database" value={config.database === 'mariadb' ? 'MariaDB' : 'MySQL'} />
                   <SummaryRow label="Artifacts" value={config.artifactVersion === 'recommended' ? 'Latest Recommended' : config.artifactVersion === 'experimental' ? 'Latest Experimental' : 'Custom'} />
-                  <SummaryRow label="License Key" value={config.licenseKey ? `${config.licenseKey.substring(0, 12)}...` : 'Not set'} mono />
+                  <SummaryRow label="License Key" value="Entered via txAdmin after build" />
                   <SummaryRow label="Install Path" value={config.installPath || 'Not set'} mono />
                 </div>
 
                 {!building && (
                   <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                     <p className="text-xs text-blue-300">
-                      <span className="font-semibold">How it works:</span> We'll download FiveM server artifacts and
+                      <span className="font-semibold">How it works:</span> We'll download FiveM server artifacts
                       {(config.framework === 'qbcore' || config.framework === 'qbox' || config.framework === 'esx')
-                        ? <> install all <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : 'ESX Legacy'}</span> resources from the official recipe — proper release builds, correct folder structure, ready to play.</>
-                        : <> set up the server files. You can add resources from the Marketplace or import your own.</>
+                        ? <> and all <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : 'ESX Legacy'}</span> resources from the official recipe.</>
+                        : <> and set up the server files.</>
                       }
+                      {' '}Then txAdmin will open in your browser so you can create an account, enter your license key, and select <span className="font-semibold">"Use Existing Server Data"</span> to link everything together.
                     </p>
                   </div>
                 )}
