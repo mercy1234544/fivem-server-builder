@@ -53,6 +53,7 @@ export default function ServerWizard() {
     database: 'mariadb' as 'mariadb' | 'mysql',
     artifactVersion: 'recommended',
     installPath: '',
+    licenseKey: '',
   });
 
   const canProceed = () => {
@@ -61,7 +62,7 @@ export default function ServerWizard() {
       case 1: return !!config.os;
       case 2: return !!config.database;
       case 3: return !!config.artifactVersion;
-      case 4: return !!config.installPath && !!config.name;
+      case 4: return !!config.installPath && !!config.name && !!config.licenseKey;
       default: return true;
     }
   };
@@ -176,7 +177,7 @@ export default function ServerWizard() {
             <ArrowRight size={16} />
           </button>
           <button
-            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', installPath: '' }); }}
+            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', installPath: '', licenseKey: '' }); }}
             className="btn-secondary"
           >
             Create Another
@@ -371,6 +372,19 @@ export default function ServerWizard() {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-surface-300 mb-1.5">Server License Key</label>
+                    <input
+                      type="text"
+                      className="input-field font-mono text-sm"
+                      placeholder="cfxk_xxxxxxxxxxxxxxxxxxxx_xxxxxx"
+                      value={config.licenseKey}
+                      onChange={(e) => setConfig({ ...config, licenseKey: e.target.value })}
+                    />
+                    <p className="text-xs text-surface-500 mt-1.5">
+                      Get your free key from <span className="text-primary-400 cursor-pointer" onClick={() => window.electronAPI?.openExternal('https://keymaster.fivem.net')}>keymaster.fivem.net</span>
+                    </p>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-surface-300 mb-1.5">Installation Directory</label>
                     <div className="flex gap-2">
                       <input
@@ -400,6 +414,7 @@ export default function ServerWizard() {
                   <SummaryRow label="Operating System" value={config.os === 'windows' ? 'Windows' : 'Linux'} />
                   <SummaryRow label="Database" value={config.database === 'mariadb' ? 'MariaDB' : 'MySQL'} />
                   <SummaryRow label="Artifacts" value={config.artifactVersion === 'recommended' ? 'Latest Recommended' : config.artifactVersion === 'experimental' ? 'Latest Experimental' : 'Custom'} />
+                  <SummaryRow label="License Key" value={config.licenseKey ? `${config.licenseKey.substring(0, 12)}...` : 'Not set'} mono />
                   <SummaryRow label="Install Path" value={config.installPath || 'Not set'} mono />
                 </div>
 

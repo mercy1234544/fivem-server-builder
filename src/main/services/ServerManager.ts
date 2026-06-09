@@ -15,6 +15,7 @@ export interface ServerConfig {
   database: 'mariadb' | 'mysql';
   artifactVersion: string;
   installPath: string;
+  licenseKey: string;
 }
 
 export interface Server {
@@ -437,9 +438,7 @@ export class ServerManager {
         cfg = cfg.replace(/\{\{recipeDescription\}\}/g, `${config.name} — built with FiveM Server Builder`);
         cfg = cfg.replace(/\{\{maxClients\}\}/g, '48');
         cfg = cfg.replace(/\{\{serverEndpoints\}\}/g, 'endpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"');
-        // Comment out the license key line — txAdmin will prompt for it during setup
-        cfg = cfg.replace(/^sv_licenseKey\s+.*/m, '# sv_licenseKey "enter_your_key_in_txadmin"');
-        cfg = cfg.replace(/\{\{svLicense\}\}/g, 'enter_your_key_in_txadmin');
+        cfg = cfg.replace(/\{\{svLicense\}\}/g, config.licenseKey);
         cfg = cfg.replace(/\{\{addPrincipalsMaster\}\}/g, '');
         const dbName = config.name.toLowerCase().replace(/\s+/g, '_');
         cfg = cfg.replace(/\{\{dbConnectionString\}\}/g, `mysql://root:password@localhost/${dbName}?charset=utf8mb4`);
@@ -518,7 +517,7 @@ sets tags "default"
 
 # ─── License & Keys ──────────────────────────────────────────────────
 # Get your license key from https://keymaster.fivem.net
-# sv_licenseKey "enter_your_key_in_txadmin"
+sv_licenseKey "${config.licenseKey}"
 
 # ─── Connection ───────────────────────────────────────────────────────
 endpoint_add_tcp "0.0.0.0:30120"
