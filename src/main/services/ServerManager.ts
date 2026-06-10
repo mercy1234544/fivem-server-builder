@@ -1370,6 +1370,7 @@ export class ServerManager {
       server.status = 'stopped';
       this.saveServers();
     }
+    this.consoleLogs.delete(id);
     return true;
   }
 }

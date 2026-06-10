@@ -42,6 +42,23 @@ export class HealthScanner {
       this.checkConsoleLogs(consoleLogs, issues);
     }
 
+    // Deduplicate — if same category+resource appears multiple times, keep the most severe
+    const deduped = new Map<string, HealthIssue>();
+    for (const issue of issues) {
+      const key = `${issue.category}:${issue.resource || issue.id}`;
+      const existing = deduped.get(key);
+      if (!existing) {
+        deduped.set(key, issue);
+      } else {
+        const sevOrder = { error: 0, warning: 1, info: 2 };
+        if (sevOrder[issue.severity] < sevOrder[existing.severity]) {
+          deduped.set(key, issue);
+        }
+      }
+    }
+    issues.length = 0;
+    issues.push(...deduped.values());
+
     const summary = {
       errors: issues.filter(i => i.severity === 'error').length,
       warnings: issues.filter(i => i.severity === 'warning').length,
@@ -860,20 +877,30 @@ export class HealthScanner {
 
     // "runtime-no-framework-X" — resource loaded before framework, move after
     if (issue.id.startsWith('runtime-no-framework-') && issue.resource && frameworkIdx > -1) {
-      // Try to find the resource or its parent folder ensure
       const resource = issue.resource;
-      // Check if the resource is inside a folder that's ensured
+
+      // First try direct match — is this resource ensured by name before framework?
       for (let i = 0; i < lines.length; i++) {
         const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-        if (!m) continue;
-        // Direct match
-        if (m[1] === resource && i < frameworkIdx) {
+        if (m && m[1] === resource && i < frameworkIdx) {
           return this.moveResourceLine(lines, cfgPath, resource, 'after', frameworkIdx);
         }
-        // Folder match — if [ox] contains the resource
-        if (m[1].startsWith('[') && m[1].endsWith(']') && i < frameworkIdx) {
-          // This folder loads before framework — move it after
-          return this.moveResourceLine(lines, cfgPath, m[1], 'after', frameworkIdx);
+      }
+
+      // Otherwise find the folder that contains it (e.g. ox_doorlock is in [ox])
+      // Common patterns: ox_ prefix → [ox], qbx_ prefix → [qbx], esx_ prefix → [esx]
+      const folderGuesses: string[] = [];
+      if (resource.startsWith('ox_')) folderGuesses.push('[ox]');
+      if (resource.startsWith('qbx_')) folderGuesses.push('[qbx]');
+      if (resource.startsWith('qb-') || resource.startsWith('qb_')) folderGuesses.push('[qb]');
+      if (resource.startsWith('esx_')) folderGuesses.push('[esx]');
+
+      for (const folder of folderGuesses) {
+        for (let i = 0; i < lines.length; i++) {
+          const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
+          if (m && m[1] === folder && i < frameworkIdx) {
+            return this.moveResourceLine(lines, cfgPath, folder, 'after', frameworkIdx);
+          }
         }
       }
     }
