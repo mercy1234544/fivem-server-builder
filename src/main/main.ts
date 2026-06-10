@@ -955,11 +955,16 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[AutoUpdater] Update downloaded: v${info.version} — ready to install`);
+    console.log(`[AutoUpdater] Update downloaded: v${info.version} — installing and restarting...`);
     mainWindow?.webContents.send('updater:status', {
       status: 'ready',
       version: info.version,
     });
+    // Auto-restart after a short delay to let the renderer show the status
+    setTimeout(() => {
+      console.log('[AutoUpdater] Quitting and installing...');
+      autoUpdater.quitAndInstall(false, true);
+    }, 3000);
   });
 
   autoUpdater.on('error', (err) => {
@@ -1003,17 +1008,10 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('updater:install', () => {
-    // Force-close all windows first so the NSIS installer can replace files.
-    // Without this, the app process stays alive and the installer silently fails.
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.removeAllListeners('close');
-      win.destroy();
-    }
-    // Run after IPC response completes — isSilent=true so NSIS doesn't show UI,
-    // isForceRunAfter=true so the app relaunches after install.
-    setImmediate(() => {
-      autoUpdater.quitAndInstall(true, true);
-    });
+    // Give the IPC response time to reach the renderer before quitting
+    setTimeout(() => {
+      autoUpdater.quitAndInstall(false, true);
+    }, 500);
   });
 
   ipcMain.handle('updater:getVersion', () => {

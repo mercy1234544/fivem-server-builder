@@ -497,39 +497,9 @@ export class ServerManager {
     // broken {{template}} variables gets replaced.
     // ═══════════════════════════════════════════════════════════════════
     const cfgPath = path.join(config.installPath, 'server.cfg');
-    const cfgLines = [
-      `# Endpoints (must be at top for txAdmin validation)`,
-      `endpoint_add_tcp "0.0.0.0:30120"`,
-      `endpoint_add_udp "0.0.0.0:30120"`,
-      ``,
-      `sv_hostname "${config.name}"`,
-      `sv_maxclients 48`,
-      `sets sv_projectName "${config.name}"`,
-      `sets sv_projectDesc "Powered by FiveM Server Builder"`,
-      `sets locale "en-US"`,
-      `sets tags "default"`,
-      ``,
-    ];
-    if (config.licenseKey) {
-      cfgLines.push(`sv_licenseKey "${config.licenseKey}"`);
-      cfgLines.push(``);
-    }
-    cfgLines.push(
-      `set onesync on`,
-      ``,
-      `# Base FiveM Resources (from cfx-server-data)`,
-      `ensure mapmanager`,
-      `ensure chat`,
-      `ensure spawnmanager`,
-      `ensure sessionmanager`,
-      `ensure basic-gamemode`,
-      `ensure hardcap`,
-      `ensure baseevents`,
-      ``,
-    );
-    const cleanCfg = cfgLines.join('\n');
+    const cleanCfg = this.generateServerCfg(config);
     fs.writeFileSync(cfgPath, cleanCfg, 'utf-8');
-    console.log('[Build] Generated clean server.cfg (no license key — txAdmin handles it)');
+    console.log('[Build] Generated server.cfg for framework:', config.framework);
 
     // Clean up extra cfg files from recipes that have unresolved {{template}} vars
     for (const file of ['ox.cfg', 'voice.cfg', 'misc.cfg', 'permissions.cfg']) {
@@ -542,6 +512,27 @@ export class ServerManager {
             console.log(`[Build] Deleted ${file} — had unresolved template vars`);
           }
         } catch {}
+      }
+    }
+
+    // Generate supporting cfg files if they don't exist
+    if (config.framework === 'qbox' || config.framework === 'qbcore') {
+      const oxCfg = path.join(config.installPath, 'ox.cfg');
+      if (!fs.existsSync(oxCfg)) {
+        fs.writeFileSync(oxCfg, [
+          `# Ox Configuration`,
+          `set ox:printlevel 1`,
+          ``,
+        ].join('\n'), 'utf-8');
+      }
+      const permCfg = path.join(config.installPath, 'permissions.cfg');
+      if (!fs.existsSync(permCfg)) {
+        fs.writeFileSync(permCfg, [
+          `# Permissions`,
+          `# Add admin permissions here`,
+          `# Example: add_principal identifier.fivem:123456 group.admin`,
+          ``,
+        ].join('\n'), 'utf-8');
       }
     }
 
@@ -776,6 +767,117 @@ export class ServerManager {
     }
     if (currentTask) tasks.push(currentTask);
     return tasks;
+  }
+
+  private generateServerCfg(config: { name: string; framework: string; licenseKey?: string }): string {
+    const lines: string[] = [];
+
+    // Endpoints — must be at top for txAdmin
+    lines.push(
+      `## You CAN edit the following:`,
+      `endpoint_add_tcp "0.0.0.0:30120"`,
+      `endpoint_add_udp "0.0.0.0:30120"`,
+      `sv_maxclients 48`,
+      `set steam_webApiKey "none"`,
+      ``,
+    );
+
+    // Server identity
+    lines.push(
+      `## You MAY edit the following:`,
+    );
+    if (config.licenseKey) {
+      lines.push(`sv_licenseKey "${config.licenseKey}"`);
+    }
+    lines.push(
+      `sv_hostname "${config.name}"`,
+      `sets sv_projectName "${config.name}"`,
+      `sets sv_projectDesc "Powered by FiveM Server Builder"`,
+      `sets locale "en-US"`,
+      `set onesync on`,
+      ``,
+    );
+
+    // Base FiveM resources
+    lines.push(
+      `# Base FiveM Resources (from cfx-server-data)`,
+      `ensure mapmanager`,
+      `ensure chat`,
+      `ensure spawnmanager`,
+      `ensure sessionmanager`,
+      `ensure basic-gamemode`,
+      `ensure hardcap`,
+      `ensure baseevents`,
+      ``,
+    );
+
+    // Framework-specific config
+    if (config.framework === 'qbox') {
+      lines.push(
+        `# Qbox config`,
+        `setr qb_locale "en"`,
+        `setr qbx:enableBridge "true"`,
+        `set qbx:enableQueue "true"`,
+        `set qbx:bucketLockdownMode "inactive"`,
+        `set qbx:discordLink ""`,
+        `set qbx:max_jobs_per_player 1`,
+        `set qbx:max_gangs_per_player 1`,
+        `set qbx:setjob_replaces "true"`,
+        `set qbx:setgang_replaces "true"`,
+        `set qbx:cleanPlayerGroups "true"`,
+        `set qbx:allowMethodOverrides "true"`,
+        `set qbx:disableOverrideWarning "false"`,
+        `setr qbx:enableVehiclePersistence "false"`,
+        `set qbx:acknowledge "true"`,
+        `setr qbx:enableGroupManagement "false"`,
+        ``,
+        `# Ox resources config`,
+        `exec ox.cfg`,
+        ``,
+        `# Resources`,
+        `ensure [ox]`,
+        `ensure qbx_core`,
+        `ensure [qbx]`,
+        `ensure [standalone]`,
+        ``,
+        `## Permissions`,
+        `exec permissions.cfg`,
+        ``,
+      );
+    } else if (config.framework === 'esx') {
+      lines.push(
+        `# ESX config`,
+        `set es_enableCustomData 1`,
+        `set mysql_slow_query_warning 150`,
+        ``,
+        `# Resources`,
+        `ensure oxmysql`,
+        `ensure es_extended`,
+        `ensure [esx]`,
+        `ensure [standalone]`,
+        ``,
+      );
+    } else if (config.framework === 'qbcore') {
+      lines.push(
+        `# QB-Core config`,
+        `setr qb_locale "en"`,
+        ``,
+        `# Resources`,
+        `ensure oxmysql`,
+        `ensure qb-core`,
+        `ensure [qb]`,
+        `ensure [standalone]`,
+        ``,
+      );
+    }
+
+    // Tags based on framework
+    const tags = config.framework !== 'custom' && config.framework !== 'blank'
+      ? `default, ${config.framework}`
+      : 'default';
+    lines.push(`sets tags "${tags}"`, ``);
+
+    return lines.join('\n');
   }
 
   private async downloadGithubResource(
