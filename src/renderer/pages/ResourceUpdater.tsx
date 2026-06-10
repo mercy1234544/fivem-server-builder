@@ -77,7 +77,7 @@ export default function ResourceUpdater() {
         installed !== null &&
         rec !== undefined &&
         installed !== rec.version &&
-        installed !== 'unknown'; // if unknown, we can't compare — offer update anyway
+        installed !== 'unknown'; // if unknown, we can't compare â€” offer update anyway
       setArtifactInfo({
         installed: installed || null,
         recommended: rec ? { version: rec.version, url: rec.url, txAdmin: rec.txAdminVersion } : null,
@@ -253,7 +253,7 @@ export default function ResourceUpdater() {
                 <RefreshCw size={20} className="text-emerald-400" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white">Resource Updater</h1>
+                <h1 className="text-2xl font-bold text-surface-100">Resource Updater</h1>
                 <p className="text-sm text-surface-400">
                   Check for updates and keep your resources current
                 </p>
@@ -267,7 +267,7 @@ export default function ResourceUpdater() {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 onClick={updateAll}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-medium text-sm hover:from-emerald-500 hover:to-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-surface-100 font-medium text-sm hover:from-emerald-500 hover:to-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
               >
                 <ArrowUpCircle size={16} />
                 Update All ({updateCount})
@@ -276,7 +276,7 @@ export default function ResourceUpdater() {
             <button
               onClick={scanForUpdates}
               disabled={scanning || !activeServer}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.08] text-surface-200 font-medium text-sm hover:bg-white/[0.1] hover:border-white/[0.12] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-overlay-6 border border-overlay-8 text-surface-200 font-medium text-sm hover:bg-overlay-10 hover:border-overlay-10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {scanning ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -305,18 +305,18 @@ export default function ResourceUpdater() {
                 placeholder="Search resources..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] text-sm text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500/40 focus:bg-white/[0.06] transition-all"
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-overlay-4 border border-overlay-6 text-sm text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500/40 focus:bg-overlay-6 transition-all"
               />
             </div>
 
-            <div className="flex items-center bg-white/[0.04] rounded-xl border border-white/[0.06] p-0.5">
+            <div className="flex items-center bg-overlay-4 rounded-xl border border-overlay-6 p-0.5">
               {(['all', 'updates', 'current'] as FilterMode[]).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setFilter(mode)}
                   className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     filter === mode
-                      ? 'bg-white/[0.1] text-white shadow-sm'
+                      ? 'bg-overlay-10 text-surface-100 shadow-sm'
                       : 'text-surface-400 hover:text-surface-200'
                   }`}
                 >
@@ -344,13 +344,13 @@ export default function ResourceUpdater() {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* ── Artifact Update Card ── */}
+            {/* â”€â”€ Artifact Update Card â”€â”€ */}
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden"
+              className="rounded-xl border border-overlay-6 bg-overlay-2 overflow-hidden"
             >
-              <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.04] bg-white/[0.02]">
+              <div className="flex items-center gap-3 px-5 py-3 border-b border-overlay-4 bg-overlay-2">
                 <Server size={16} className="text-blue-400" />
                 <h3 className="text-sm font-semibold text-surface-200">Server Artifacts (FXServer)</h3>
                 {artifactInfo?.hasUpdate && !artifactDone && (
@@ -404,7 +404,7 @@ export default function ResourceUpdater() {
                             <span>Downloading artifacts...</span>
                             <span>{artifactProgress}%</span>
                           </div>
-                          <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                          <div className="h-1.5 rounded-full bg-overlay-6 overflow-hidden">
                             <motion.div
                               className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400"
                               initial={{ width: 0 }}
@@ -443,7 +443,7 @@ export default function ResourceUpdater() {
                           <button
                             onClick={() => updateArtifacts('latest')}
                             disabled={artifactUpdating || activeServer.status === 'running'}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] text-surface-400 text-xs font-medium hover:bg-white/[0.08] transition-all disabled:opacity-40"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-overlay-4 border border-overlay-6 text-surface-400 text-xs font-medium hover:bg-overlay-8 transition-all disabled:opacity-40"
                             title={`Build ${artifactInfo.latest.version}`}
                           >
                             <Zap size={13} />
@@ -457,7 +457,7 @@ export default function ResourceUpdater() {
                     <p className="text-sm text-surface-500">Click to check for artifact updates</p>
                     <button
                       onClick={checkArtifacts}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] text-xs text-surface-300 hover:bg-white/[0.1] transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-overlay-6 text-xs text-surface-300 hover:bg-overlay-10 transition-all"
                     >
                       <RefreshCw size={12} />
                       Check
@@ -473,7 +473,7 @@ export default function ResourceUpdater() {
               </div>
             </motion.div>
 
-            {/* ── Resource Updates Section ── */}
+            {/* â”€â”€ Resource Updates Section â”€â”€ */}
             {resources.length === 0 && !scanning ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/10 flex items-center justify-center mb-5">
@@ -486,7 +486,7 @@ export default function ResourceUpdater() {
             </p>
             <button
               onClick={scanForUpdates}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-medium hover:from-emerald-500 hover:to-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-surface-100 font-medium hover:from-emerald-500 hover:to-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
             >
               <Search size={18} />
               Scan for Updates
@@ -523,7 +523,7 @@ export default function ResourceUpdater() {
                         ? 'bg-emerald-500/[0.06] border-emerald-500/25'
                         : isFailed
                         ? 'bg-red-500/[0.04] border-red-500/20'
-                        : 'bg-white/[0.02] border-white/[0.06] hover:border-white/[0.1]'
+                        : 'bg-overlay-2 border-overlay-6 hover:border-overlay-10'
                     }`}
                   >
                     <div className="flex items-center gap-4 p-4">
@@ -536,7 +536,7 @@ export default function ResourceUpdater() {
                             ? 'bg-red-500/15'
                             : resource.hasUpdate
                             ? 'bg-amber-500/15'
-                            : 'bg-white/[0.06]'
+                            : 'bg-overlay-6'
                         }`}
                       >
                         {isUpdating ? (
@@ -559,7 +559,7 @@ export default function ResourceUpdater() {
                             {resource.name}
                           </h3>
                           {resource.version && (
-                            <span className="px-2 py-0.5 rounded-md bg-white/[0.06] text-[10px] font-medium text-surface-400">
+                            <span className="px-2 py-0.5 rounded-md bg-overlay-6 text-[10px] font-medium text-surface-400">
                               v{resource.version}
                             </span>
                           )}
@@ -600,7 +600,7 @@ export default function ResourceUpdater() {
                           onClick={() =>
                             window.electronAPI.openExternal(resource.repoUrl)
                           }
-                          className="p-2 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-white/[0.06] transition-all"
+                          className="p-2 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-overlay-6 transition-all"
                           title="View on GitHub"
                         >
                           <ExternalLink size={15} />

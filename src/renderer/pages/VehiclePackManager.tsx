@@ -177,7 +177,7 @@ export default function VehiclePackManager() {
               <Car size={20} className="text-amber-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Vehicle Pack Manager</h1>
+              <h1 className="text-2xl font-bold text-surface-100">Vehicle Pack Manager</h1>
               <p className="text-sm text-surface-400">
                 Import vehicle packs with auto-manifest generation
               </p>
@@ -191,7 +191,7 @@ export default function VehiclePackManager() {
                 animate={{ scale: 1, opacity: 1 }}
                 onClick={importAll}
                 disabled={!activeServer}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 text-white font-medium text-sm hover:from-amber-500 hover:to-orange-400 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 text-surface-100 font-medium text-sm hover:from-amber-500 hover:to-orange-400 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40"
               >
                 <Upload size={16} />
                 Import All ({pendingCount})
@@ -199,7 +199,7 @@ export default function VehiclePackManager() {
             )}
             <button
               onClick={pickVehicles}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.08] text-surface-200 font-medium text-sm hover:bg-white/[0.1] hover:border-white/[0.12] transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-overlay-6 border border-overlay-8 text-surface-200 font-medium text-sm hover:bg-overlay-10 hover:border-overlay-10 transition-all"
             >
               <FolderOpen size={16} />
               Browse Files
@@ -220,7 +220,7 @@ export default function VehiclePackManager() {
               className={`relative rounded-2xl border-2 border-dashed transition-all duration-300 ${
                 isDragOver
                   ? 'border-amber-500/50 bg-amber-500/[0.06] scale-[1.01]'
-                  : 'border-white/[0.08] bg-white/[0.02] hover:border-white/[0.15] hover:bg-white/[0.04]'
+                  : 'border-overlay-8 bg-overlay-2 hover:border-overlay-15 hover:bg-overlay-4'
               }`}
             >
               <div className="flex flex-col items-center justify-center py-20">
@@ -240,7 +240,7 @@ export default function VehiclePackManager() {
                 </p>
                 <button
                   onClick={pickVehicles}
-                  className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 text-white font-medium hover:from-amber-500 hover:to-orange-400 transition-all shadow-lg shadow-amber-500/20"
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 text-surface-100 font-medium hover:from-amber-500 hover:to-orange-400 transition-all shadow-lg shadow-amber-500/20"
                 >
                   <Plus size={18} />
                   Select Vehicle Packs
@@ -272,7 +272,7 @@ export default function VehiclePackManager() {
               ].map((card) => (
                 <div
                   key={card.title}
-                  className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-5"
+                  className="rounded-xl bg-overlay-3 border border-overlay-6 p-5"
                 >
                   <div
                     className={`w-9 h-9 rounded-lg bg-${card.color}-500/10 flex items-center justify-center mb-3`}
@@ -317,7 +317,7 @@ export default function VehiclePackManager() {
                         ? 'bg-emerald-500/[0.04] border-emerald-500/20'
                         : result && !result.success
                         ? 'bg-red-500/[0.04] border-red-500/20'
-                        : 'bg-white/[0.03] border-white/[0.06] hover:border-white/[0.1]'
+                        : 'bg-overlay-3 border-overlay-6 hover:border-overlay-10'
                     }`}
                   >
                     <div className="flex items-center gap-4 p-4">
@@ -430,7 +430,7 @@ export default function VehiclePackManager() {
             {/* Add more */}
             <motion.button
               onClick={pickVehicles}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl border-2 border-dashed border-white/[0.06] text-surface-500 text-sm hover:border-amber-500/20 hover:text-amber-400 hover:bg-amber-500/[0.03] transition-all"
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl border-2 border-dashed border-overlay-6 text-surface-500 text-sm hover:border-amber-500/20 hover:text-amber-400 hover:bg-amber-500/[0.03] transition-all"
             >
               <Plus size={16} />
               Add More Vehicle Packs

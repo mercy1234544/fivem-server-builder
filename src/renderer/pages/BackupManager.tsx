@@ -112,7 +112,7 @@ export default function BackupManager() {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Backup Manager</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Backup Manager</h1>
           <p className="text-sm text-surface-400 mt-1">{backups.length} backups for {activeServer.name}</p>
         </div>
       </div>
@@ -136,7 +136,7 @@ export default function BackupManager() {
               <Plus size={20} className="text-primary-400" />
             )}
             <div className="text-left">
-              <p className="text-sm font-medium text-white">{action.label}</p>
+              <p className="text-sm font-medium text-surface-100">{action.label}</p>
               <p className="text-xs text-surface-400">{action.desc}</p>
             </div>
           </button>
@@ -145,7 +145,7 @@ export default function BackupManager() {
 
       {/* Backup List */}
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold text-white">Backup History</h2>
+        <h2 className="text-lg font-semibold text-surface-100">Backup History</h2>
 
         {loading ? (
           <div className="flex justify-center py-8">
@@ -162,7 +162,7 @@ export default function BackupManager() {
                 <Archive size={18} className="text-primary-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{backup.name}</p>
+                <p className="text-sm font-medium text-surface-100 truncate">{backup.name}</p>
                 <div className="flex items-center gap-3 mt-0.5">
                   <span className="flex items-center gap-1 text-xs text-surface-400">
                     <Clock size={10} />

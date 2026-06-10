@@ -79,7 +79,7 @@ export default function Sidebar() {
       initial={false}
       animate={{ width: sidebarCollapsed ? 64 : 250 }}
       transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-      className="h-full bg-surface-950/40 backdrop-blur-xl border-r border-white/[0.06] flex flex-col overflow-hidden relative"
+      className="h-full bg-surface-950/40 backdrop-blur-xl border-r border-overlay-6 flex flex-col overflow-hidden relative"
     >
       {/* Subtle gradient accent on left edge */}
       <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-primary-500/20 via-transparent to-primary-500/10" />
@@ -91,12 +91,12 @@ export default function Sidebar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="p-3 border-b border-white/[0.04]"
+            className="p-3 border-b border-overlay-4"
           >
             <div className="relative">
               <Server size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 pointer-events-none" />
               <select
-                className="w-full pl-8 pr-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-xl text-sm text-surface-200 focus:outline-none focus:border-primary-500/40 focus:bg-white/[0.06] transition-all appearance-none cursor-pointer"
+                className="w-full pl-8 pr-3 py-2 bg-overlay-4 border border-overlay-6 rounded-xl text-sm text-surface-200 focus:outline-none focus:border-primary-500/40 focus:bg-overlay-6 transition-all appearance-none cursor-pointer"
                 value={activeServerId || ''}
                 onChange={(e) => setActiveServer(e.target.value || null)}
               >
@@ -113,8 +113,8 @@ export default function Sidebar() {
       </AnimatePresence>
 
       {sidebarCollapsed && (
-        <div className="p-3 border-b border-white/[0.04] flex justify-center">
-          <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">
+        <div className="p-3 border-b border-overlay-4 flex justify-center">
+          <div className="w-8 h-8 rounded-lg bg-overlay-4 flex items-center justify-center">
             <Server size={15} className="text-surface-400" />
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function Sidebar() {
               </div>
             )}
             {sidebarCollapsed && sectionIndex > 0 && (
-              <div className="mx-3 my-2 border-t border-white/[0.04]" />
+              <div className="mx-3 my-2 border-t border-overlay-4" />
             )}
 
             {/* Items */}
@@ -148,8 +148,8 @@ export default function Sidebar() {
                     onClick={() => navigate(item.path)}
                     className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 group ${
                       isActive
-                        ? 'text-white'
-                        : 'text-surface-400 hover:text-surface-200 hover:bg-white/[0.04]'
+                        ? 'text-surface-100'
+                        : 'text-surface-400 hover:text-surface-200 hover:bg-overlay-4'
                     }`}
                     title={sidebarCollapsed ? item.label : undefined}
                   >
@@ -199,10 +199,10 @@ export default function Sidebar() {
       </nav>
 
       {/* Collapse Toggle */}
-      <div className="p-2 border-t border-white/[0.04]">
+      <div className="p-2 border-t border-overlay-4">
         <button
           onClick={toggleSidebar}
-          className="w-full flex items-center justify-center py-2 rounded-xl text-surface-500 hover:text-surface-300 hover:bg-white/[0.04] transition-all duration-200"
+          className="w-full flex items-center justify-center py-2 rounded-xl text-surface-500 hover:text-surface-300 hover:bg-overlay-4 transition-all duration-200"
         >
           {sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
         </button>

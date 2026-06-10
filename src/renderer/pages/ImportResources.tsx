@@ -39,29 +39,29 @@ interface AnalyzedResource {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  police: '👮 Police System',
-  ambulance: '🚑 EMS / Ambulance',
-  mechanic: '🔧 Mechanic Job',
-  inventory: '🎒 Inventory',
-  phone: '📱 Phone',
-  hud: '📊 HUD',
-  housing: '🏠 Housing',
-  clothing: '👔 Clothing / Appearance',
-  multichar: '👥 Character Selection',
-  garage: '🅿️ Garage',
-  vehicleshop: '🚗 Vehicle Shop',
-  banking: '🏦 Banking',
-  target: '🎯 Target / Interaction',
-  admin: '🛡️ Admin Menu',
-  weather: '🌦️ Weather System',
-  voice: '🎙️ Voice Chat',
-  racing: '🏁 Racing',
-  gangs: '💀 Gangs / Factions',
-  prison: '🔒 Prison / Jail',
-  dispatch: '📟 Dispatch / 911',
-  doorlock: '🚪 Door Lock',
-  fuel: '⛽ Fuel System',
-  mlo: '🏗️ MLO / Interior',
+  police: 'ðŸ‘® Police System',
+  ambulance: 'ðŸš‘ EMS / Ambulance',
+  mechanic: 'ðŸ”§ Mechanic Job',
+  inventory: 'ðŸŽ’ Inventory',
+  phone: 'ðŸ“± Phone',
+  hud: 'ðŸ“Š HUD',
+  housing: 'ðŸ  Housing',
+  clothing: 'ðŸ‘” Clothing / Appearance',
+  multichar: 'ðŸ‘¥ Character Selection',
+  garage: 'ðŸ…¿ï¸ Garage',
+  vehicleshop: 'ðŸš— Vehicle Shop',
+  banking: 'ðŸ¦ Banking',
+  target: 'ðŸŽ¯ Target / Interaction',
+  admin: 'ðŸ›¡ï¸ Admin Menu',
+  weather: 'ðŸŒ¦ï¸ Weather System',
+  voice: 'ðŸŽ™ï¸ Voice Chat',
+  racing: 'ðŸ Racing',
+  gangs: 'ðŸ’€ Gangs / Factions',
+  prison: 'ðŸ”’ Prison / Jail',
+  dispatch: 'ðŸ“Ÿ Dispatch / 911',
+  doorlock: 'ðŸšª Door Lock',
+  fuel: 'â›½ Fuel System',
+  mlo: 'ðŸ—ï¸ MLO / Interior',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -185,7 +185,7 @@ export default function ImportResources() {
         ]);
         toast.success(
           result.replaced.length > 0
-            ? `Installed ${item.name} — replaced ${result.replaced.join(', ')}`
+            ? `Installed ${item.name} â€” replaced ${result.replaced.join(', ')}`
             : `Installed ${item.name}`
         );
       } else {
@@ -230,9 +230,9 @@ export default function ImportResources() {
             <Import size={24} className="text-primary-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Import Resources</h1>
+            <h1 className="text-2xl font-bold text-surface-100">Import Resources</h1>
             <p className="text-sm text-surface-400">
-              Drag & drop folders or ZIPs — auto-detects type, replaces conflicts, updates server.cfg
+              Drag & drop folders or ZIPs â€” auto-detects type, replaces conflicts, updates server.cfg
             </p>
           </div>
         </div>
@@ -240,7 +240,7 @@ export default function ImportResources() {
         {pendingCount > 0 && (
           <button
             onClick={importAll}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm font-medium text-white transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm font-medium text-surface-100 transition-colors"
           >
             <Import size={16} />
             Import All ({pendingCount})
@@ -292,7 +292,7 @@ export default function ImportResources() {
                   {isDragOver ? 'Drop resources here!' : 'Drag & drop resource folders or ZIPs here'}
                 </p>
                 <p className="text-sm text-surface-400">
-                  Or click to browse • Supports folders, .zip files • MLOs, scripts, jobs, anything
+                  Or click to browse â€¢ Supports folders, .zip files â€¢ MLOs, scripts, jobs, anything
                 </p>
                 <div className="flex justify-center gap-2 mt-4 flex-wrap">
                   {['MLO', 'Police', 'EMS', 'Phone', 'HUD', 'Inventory', 'Admin', 'Weather'].map(tag => (
@@ -343,7 +343,7 @@ export default function ImportResources() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-white">{item.name}</h3>
+                      <h3 className="font-semibold text-surface-100">{item.name}</h3>
                       <span className="text-[10px] px-1.5 py-0.5 bg-surface-700 rounded text-surface-400">
                         v{item.version}
                       </span>
@@ -367,7 +367,7 @@ export default function ImportResources() {
 
                     <div className="flex items-center gap-3 text-[10px] text-surface-500">
                       <span>by {item.author}</span>
-                      <span>→ {item.suggestedFolder}/{item.name}</span>
+                      <span>â†’ {item.suggestedFolder}/{item.name}</span>
                     </div>
 
                     {/* Conflicts found */}
@@ -413,7 +413,7 @@ export default function ImportResources() {
                               ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                               : 'bg-surface-800 text-surface-400'
                           }`}>
-                            {dep} {installedResources.includes(dep) ? '✓' : ''}
+                            {dep} {installedResources.includes(dep) ? 'âœ“' : ''}
                           </span>
                         ))}
                       </div>
@@ -426,7 +426,7 @@ export default function ImportResources() {
                       <>
                         <button
                           onClick={() => importOne(index)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 rounded-lg text-xs font-medium text-white transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 rounded-lg text-xs font-medium text-surface-100 transition-colors"
                         >
                           <Import size={12} />
                           {item.conflictsInstalled.length > 0 ? 'Replace & Import' : 'Import'}
@@ -440,7 +440,7 @@ export default function ImportResources() {
                       </>
                     )}
                     {item.status === 'done' && (
-                      <span className="text-xs text-green-400 font-medium">Installed ✓</span>
+                      <span className="text-xs text-green-400 font-medium">Installed âœ“</span>
                     )}
                   </div>
                 </div>
@@ -465,7 +465,7 @@ export default function ImportResources() {
                 MLOs & Interiors
               </h3>
               <p className="text-xs text-surface-400">
-                Drop any MLO folder or ZIP — auto-placed in [mlo] folder with ensure added to server.cfg.
+                Drop any MLO folder or ZIP â€” auto-placed in [mlo] folder with ensure added to server.cfg.
               </p>
             </div>
             <div className="card bg-surface-800/30">
@@ -483,7 +483,7 @@ export default function ImportResources() {
                 Auto Config
               </h3>
               <p className="text-xs text-surface-400">
-                server.cfg is updated automatically — old ensures removed, new ones added. No manual editing needed.
+                server.cfg is updated automatically â€” old ensures removed, new ones added. No manual editing needed.
               </p>
             </div>
           </div>

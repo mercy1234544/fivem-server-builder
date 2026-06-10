@@ -212,17 +212,17 @@ export default function Dashboard() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-500/10 via-transparent to-transparent" />
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-400/5 rounded-full blur-[80px]" />
 
-        <div className="relative z-10 flex items-center justify-between p-6 border border-white/[0.06] rounded-2xl">
+        <div className="relative z-10 flex items-center justify-between p-6 border border-overlay-6 rounded-2xl">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Sparkles size={16} className="text-primary-400" />
               <span className="text-xs font-medium text-primary-400 uppercase tracking-wide">Command Center</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">Dashboard</h1>
+            <h1 className="text-3xl font-extrabold text-surface-100 tracking-tight">Dashboard</h1>
             <p className="text-sm text-surface-400 mt-1">Manage and monitor your FiveM servers</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/[0.06] text-surface-300 hover:bg-white/[0.1] hover:text-white border border-white/[0.08] hover:border-white/[0.15] transition-all">
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-overlay-6 text-surface-300 hover:bg-overlay-10 hover:text-surface-100 border border-overlay-8 hover:border-overlay-15 transition-all">
               <Download size={16} />
               Import Server
             </button>
@@ -256,14 +256,14 @@ export default function Dashboard() {
               <button
                 key={action.path}
                 onClick={() => navigate(action.path)}
-                className="group relative overflow-hidden flex items-center gap-3 p-3 rounded-xl border border-white/[0.04] hover:border-white/[0.1] bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-300"
+                className="group relative overflow-hidden flex items-center gap-3 p-3 rounded-xl border border-overlay-4 hover:border-overlay-10 bg-overlay-2 hover:bg-overlay-4 transition-all duration-300"
               >
                 <div className={`absolute inset-0 bg-gradient-to-r ${action.gradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
                 <div className="relative z-10 flex items-center gap-3 w-full">
-                  <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <div className="w-8 h-8 rounded-lg bg-overlay-4 flex items-center justify-center group-hover:scale-110 transition-transform">
                     <action.icon size={15} className={action.iconColor} />
                   </div>
-                  <span className="text-sm text-surface-300 group-hover:text-white transition-colors font-medium">{action.label}</span>
+                  <span className="text-sm text-surface-300 group-hover:text-surface-100 transition-colors font-medium">{action.label}</span>
                   <ArrowRight size={12} className="text-surface-600 ml-auto group-hover:text-surface-400 group-hover:translate-x-0.5 transition-all" />
                 </div>
               </button>
@@ -275,14 +275,14 @@ export default function Dashboard() {
       {/* ═══ Server List ═══ */}
       <motion.div variants={itemVariants} className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">Your Servers</h2>
+          <h2 className="text-lg font-bold text-surface-100">Your Servers</h2>
           {servers.length > 0 && (
             <span className="text-xs text-surface-500">{servers.length} server{servers.length !== 1 ? 's' : ''}</span>
           )}
         </div>
 
         {servers.length === 0 ? (
-          <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-surface-900/30">
+          <div className="relative overflow-hidden rounded-2xl border border-overlay-6 bg-surface-900/30">
             <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 via-transparent to-purple-500/5" />
             <div className="relative z-10 flex flex-col items-center justify-center py-20">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500/10 to-primary-500/5 border border-primary-500/20 flex items-center justify-center mb-5">
@@ -295,7 +295,7 @@ export default function Dashboard() {
                   <Plus size={16} />
                   Create New Server
                 </button>
-                <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/[0.06] text-surface-300 hover:bg-white/[0.1] hover:text-white border border-white/[0.08] hover:border-white/[0.15] transition-all">
+                <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-overlay-6 text-surface-300 hover:bg-overlay-10 hover:text-surface-100 border border-overlay-8 hover:border-overlay-15 transition-all">
                   <Download size={16} />
                   Import Existing
                 </button>
@@ -329,7 +329,7 @@ export default function Dashboard() {
           <h2 className="text-xs font-semibold text-surface-500 uppercase tracking-[0.08em]">Recent Activity</h2>
           <div className="card-flat space-y-0.5 p-2">
             {actionLog.slice(0, 5).map((log) => (
-              <div key={log.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+              <div key={log.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-overlay-3 transition-colors">
                 <div className={`w-1.5 h-1.5 rounded-full ${
                   log.severity === 'success' ? 'bg-emerald-400' :
                   log.severity === 'warning' ? 'bg-amber-400' :
@@ -372,12 +372,12 @@ export default function Dashboard() {
                   <HardDrive size={22} className="text-primary-400" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white">Import Existing Server</h3>
+                  <h3 className="text-lg font-bold text-surface-100">Import Existing Server</h3>
                   <p className="text-sm text-surface-400 mt-0.5">
                     Select your existing FiveM server folder
                   </p>
                 </div>
-                <button onClick={() => !importing && (setShowImportModal(false), setScanResult(null), setImportPath(''))} className="p-1.5 rounded-lg text-surface-500 hover:text-white hover:bg-white/[0.06] transition-all">
+                <button onClick={() => !importing && (setShowImportModal(false), setScanResult(null), setImportPath(''))} className="p-1.5 rounded-lg text-surface-500 hover:text-surface-100 hover:bg-overlay-6 transition-all">
                   <X size={16} />
                 </button>
               </div>
@@ -386,7 +386,7 @@ export default function Dashboard() {
               <div className="mb-5">
                 <label className="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2 block">Server Folder</label>
                 <div className="flex gap-2">
-                  <div className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-surface-300 truncate font-mono">
+                  <div className="flex-1 bg-overlay-3 border border-overlay-6 rounded-xl px-4 py-2.5 text-sm text-surface-300 truncate font-mono">
                     {importPath || 'No folder selected...'}
                   </div>
                   <button
@@ -421,13 +421,13 @@ export default function Dashboard() {
                       type="text"
                       value={importName}
                       onChange={(e) => setImportName(e.target.value)}
-                      className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-white placeholder-surface-600 focus:outline-none focus:border-primary-500/40 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                      className="w-full bg-overlay-3 border border-overlay-6 rounded-xl px-4 py-2.5 text-sm text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40 focus:ring-1 focus:ring-primary-500/20 transition-all"
                       placeholder="Server name..."
                     />
                   </div>
 
                   {/* Detection Results */}
-                  <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-3">
+                  <div className="bg-overlay-3 border border-overlay-6 rounded-xl p-4 space-y-3">
                     <h4 className="text-xs font-semibold text-surface-400 uppercase tracking-wider flex items-center gap-2">
                       <Search size={12} />
                       Detected Configuration
@@ -527,17 +527,17 @@ export default function Dashboard() {
                   <AlertTriangle size={22} className="text-red-400" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white">Delete Server</h3>
+                  <h3 className="text-lg font-bold text-surface-100">Delete Server</h3>
                   <p className="text-sm text-surface-400 mt-0.5">
-                    Are you sure you want to delete <span className="text-white font-semibold">"{deleteTarget.name}"</span>?
+                    Are you sure you want to delete <span className="text-surface-100 font-semibold">"{deleteTarget.name}"</span>?
                   </p>
                 </div>
-                <button onClick={() => !deleting && setDeleteTarget(null)} className="p-1.5 rounded-lg text-surface-500 hover:text-white hover:bg-white/[0.06] transition-all">
+                <button onClick={() => !deleting && setDeleteTarget(null)} className="p-1.5 rounded-lg text-surface-500 hover:text-surface-100 hover:bg-overlay-6 transition-all">
                   <X size={16} />
                 </button>
               </div>
 
-              <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-5 space-y-3">
+              <div className="bg-overlay-3 border border-overlay-6 rounded-xl p-4 mb-5 space-y-3">
                 <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(true)}>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
                     deleteFiles ? 'border-red-400 bg-red-500' : 'border-surface-600'
@@ -545,12 +545,12 @@ export default function Dashboard() {
                     {deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">Delete everything</p>
+                    <p className="text-sm font-medium text-surface-100">Delete everything</p>
                     <p className="text-xs text-surface-400 mt-0.5">Remove from builder <span className="text-red-400 font-medium">AND delete all files</span></p>
                     {deleteTarget.installPath && <p className="text-[10px] text-surface-600 font-mono mt-1 truncate">{deleteTarget.installPath}</p>}
                   </div>
                 </label>
-                <div className="border-t border-white/[0.04]" />
+                <div className="border-t border-overlay-4" />
                 <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(false)}>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
                     !deleteFiles ? 'border-primary-400 bg-primary-500' : 'border-surface-600'
@@ -558,7 +558,7 @@ export default function Dashboard() {
                     {!deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">Remove from builder only</p>
+                    <p className="text-sm font-medium text-surface-100">Remove from builder only</p>
                     <p className="text-xs text-surface-400 mt-0.5">Keep server files on your computer</p>
                   </div>
                 </label>
@@ -596,11 +596,11 @@ function StatCard({ icon: Icon, label, value, gradient, iconColor }: {
     <motion.div whileHover={{ scale: 1.02, y: -2 }} transition={{ duration: 0.2 }} className="relative overflow-hidden card group">
       <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-60 group-hover:opacity-100 transition-opacity`} />
       <div className="relative z-10 flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center group-hover:scale-105 transition-transform">
+        <div className="w-12 h-12 rounded-xl bg-overlay-6 border border-overlay-6 flex items-center justify-center group-hover:scale-105 transition-transform">
           <Icon size={20} className={iconColor} />
         </div>
         <div>
-          <p className="text-2xl font-extrabold text-white tracking-tight">{value}</p>
+          <p className="text-2xl font-extrabold text-surface-100 tracking-tight">{value}</p>
           <p className="text-[11px] text-surface-400 font-medium">{label}</p>
         </div>
       </div>
@@ -613,7 +613,7 @@ function DetectionItem({ icon: Icon, label, value, color }: {
   icon: any; label: string; value: string; color: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5 bg-white/[0.02] rounded-lg p-2.5">
+    <div className="flex items-center gap-2.5 bg-overlay-2 rounded-lg p-2.5">
       <Icon size={14} className={color} />
       <div className="min-w-0">
         <p className="text-[10px] text-surface-500 uppercase tracking-wider">{label}</p>
@@ -643,7 +643,7 @@ function ServerCard({ server, onSelect, onDelete, onToggle }: {
             <Server size={18} className="text-primary-400" />
           </div>
           <div>
-            <h3 className="font-bold text-white group-hover:text-primary-300 transition-colors">{server.name}</h3>
+            <h3 className="font-bold text-surface-100 group-hover:text-primary-300 transition-colors">{server.name}</h3>
             <p className="text-xs text-surface-500">{frameworkLabels[server.framework] || server.framework} &middot; {server.os}</p>
           </div>
         </div>
@@ -659,14 +659,14 @@ function ServerCard({ server, onSelect, onDelete, onToggle }: {
           { label: 'Artifacts', value: server.artifactVersion || 'N/A' },
           { label: 'Backup', value: server.lastBackup ? new Date(server.lastBackup).toLocaleDateString() : 'Never' },
         ].map((stat) => (
-          <div key={stat.label} className="bg-white/[0.03] border border-white/[0.04] rounded-lg py-2.5 text-center">
-            <p className="text-sm font-bold text-white truncate px-1">{stat.value}</p>
+          <div key={stat.label} className="bg-overlay-3 border border-overlay-4 rounded-lg py-2.5 text-center">
+            <p className="text-sm font-bold text-surface-100 truncate px-1">{stat.value}</p>
             <p className="text-[10px] text-surface-500">{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
+      <div className="flex items-center gap-2 pt-3 border-t border-overlay-4">
         <button onClick={onToggle} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
           server.status === 'running'
             ? 'bg-red-500/8 text-red-400 hover:bg-red-500/15 border border-red-500/15'
@@ -675,7 +675,7 @@ function ServerCard({ server, onSelect, onDelete, onToggle }: {
           {server.status === 'running' ? <Square size={11} /> : <Play size={11} />}
           {server.status === 'running' ? 'Stop' : 'Start'}
         </button>
-        <button onClick={(e) => { e.stopPropagation(); window.electronAPI.openPath(server.installPath); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-white/[0.04] text-surface-300 hover:bg-white/[0.08] border border-white/[0.04] transition-all">
+        <button onClick={(e) => { e.stopPropagation(); window.electronAPI.openPath(server.installPath); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-overlay-4 text-surface-300 hover:bg-overlay-8 border border-overlay-4 transition-all">
           <FolderOpen size={11} />
           Open
         </button>

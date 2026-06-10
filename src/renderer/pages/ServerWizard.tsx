@@ -30,11 +30,11 @@ const STEPS = [
 ];
 
 const FRAMEWORKS = [
-  { id: 'qbcore', name: 'QBCore', description: 'Official QBCore recipe — 50+ resources including phone, inventory, jobs, banking, housing, gangs & more', icon: Zap, color: 'from-purple-600 to-purple-800', border: 'border-purple-500/30' },
-  { id: 'qbox', name: 'Qbox', description: 'Modern QBCore successor — ox_lib, ox_inventory, ox_target, NPWD phone, 60+ resources with overextended stack', icon: Package, color: 'from-emerald-600 to-emerald-800', border: 'border-emerald-500/30' },
-  { id: 'esx', name: 'ESX Legacy', description: 'ESX Legacy recipe — framework, jobs, inventory, phone, HUD, voice, and all core dependencies', icon: Globe, color: 'from-blue-600 to-blue-800', border: 'border-blue-500/30' },
-  { id: 'custom', name: 'Custom', description: 'Default CFX resources + oxmysql only — add your own framework and resources', icon: Box, color: 'from-amber-600 to-amber-800', border: 'border-amber-500/30' },
-  { id: 'blank', name: 'Blank Server', description: 'Server artifacts only — no resources. Full control, set everything up manually', icon: Server, color: 'from-surface-600 to-surface-800', border: 'border-surface-500/30' },
+  { id: 'qbcore', name: 'QBCore', description: 'Official QBCore recipe â€” 50+ resources including phone, inventory, jobs, banking, housing, gangs & more', icon: Zap, color: 'from-purple-600 to-purple-800', border: 'border-purple-500/30' },
+  { id: 'qbox', name: 'Qbox', description: 'Modern QBCore successor â€” ox_lib, ox_inventory, ox_target, NPWD phone, 60+ resources with overextended stack', icon: Package, color: 'from-emerald-600 to-emerald-800', border: 'border-emerald-500/30' },
+  { id: 'esx', name: 'ESX Legacy', description: 'ESX Legacy recipe â€” framework, jobs, inventory, phone, HUD, voice, and all core dependencies', icon: Globe, color: 'from-blue-600 to-blue-800', border: 'border-blue-500/30' },
+  { id: 'custom', name: 'Custom', description: 'Default CFX resources + oxmysql only â€” add your own framework and resources', icon: Box, color: 'from-amber-600 to-amber-800', border: 'border-amber-500/30' },
+  { id: 'blank', name: 'Blank Server', description: 'Server artifacts only â€” no resources. Full control, set everything up manually', icon: Server, color: 'from-surface-600 to-surface-800', border: 'border-surface-500/30' },
 ];
 
 export default function ServerWizard() {
@@ -97,7 +97,7 @@ export default function ServerWizard() {
         setBuildProgress(5);
         server = await window.electronAPI.server.create(config);
       } else {
-        // Demo mode — simulate artifact download only (txAdmin handles the rest)
+        // Demo mode â€” simulate artifact download only (txAdmin handles the rest)
         for (let pct = 0; pct <= 100; pct += 10) {
           setBuildStep(`Downloading FiveM server artifacts: ${pct}%`);
           setBuildProgress(pct);
@@ -116,7 +116,7 @@ export default function ServerWizard() {
       }
 
       addServer(server);
-      logAction('Server Created', `${config.name} (${config.framework}) — txAdmin launching for framework deployment`, 'success');
+      logAction('Server Created', `${config.name} (${config.framework}) â€” txAdmin launching for framework deployment`, 'success');
       setBuildComplete(true);
       toast.success('Server created successfully!');
 
@@ -160,18 +160,18 @@ export default function ServerWizard() {
         >
           <Check size={36} className="text-green-400" />
         </motion.div>
-        <h2 className="text-2xl font-bold text-white mb-2">Server Created!</h2>
+        <h2 className="text-2xl font-bold text-surface-100 mb-2">Server Created!</h2>
         <p className="text-surface-400 mb-2">
-          {config.name} is ready — all resources have been downloaded.
+          {config.name} is ready â€” all resources have been downloaded.
         </p>
         <p className="text-surface-400 mb-4 text-sm">
           txAdmin has opened in your browser. Complete the setup:
         </p>
         <div className="bg-surface-800/60 border border-surface-700/50 rounded-xl p-4 mb-6 text-left max-w-md mx-auto">
           <ol className="list-decimal list-inside space-y-2 text-sm text-surface-300">
-            <li>Create your <span className="text-white font-medium">txAdmin account</span></li>
+            <li>Create your <span className="text-surface-100 font-medium">txAdmin account</span></li>
             <li>Enter your server name</li>
-            <li>Select <span className="text-white font-medium">"Use Existing Server Data"</span></li>
+            <li>Select <span className="text-surface-100 font-medium">"Use Existing Server Data"</span></li>
             <li>Point it to: <code className="text-xs bg-surface-900 px-1.5 py-0.5 rounded text-primary-300">{config.installPath}</code></li>
           </ol>
         </div>
@@ -199,7 +199,7 @@ export default function ServerWizard() {
       className="max-w-3xl mx-auto space-y-6"
     >
       <div>
-        <h1 className="text-2xl font-bold text-white">Create New Server</h1>
+        <h1 className="text-2xl font-bold text-surface-100">Create New Server</h1>
         <p className="text-sm text-surface-400 mt-1">Follow the wizard to set up your FiveM server</p>
       </div>
 
@@ -209,7 +209,7 @@ export default function ServerWizard() {
           <React.Fragment key={i}>
             <div className="flex items-center gap-2">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all duration-300 ${
-                i < step ? 'bg-primary-600 border-primary-600 text-white' :
+                i < step ? 'bg-primary-600 border-primary-600 text-surface-100' :
                 i === step ? 'border-primary-500 text-primary-400' :
                 'border-surface-600 text-surface-500'
               }`}>
@@ -254,9 +254,9 @@ export default function ServerWizard() {
                         }`}
                       >
                         <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${fw.color} flex items-center justify-center mb-3`}>
-                          <Icon size={18} className="text-white" />
+                          <Icon size={18} className="text-surface-100" />
                         </div>
-                        <h3 className="font-semibold text-white">{fw.name}</h3>
+                        <h3 className="font-semibold text-surface-100">{fw.name}</h3>
                         <p className="text-xs text-surface-400 mt-1">{fw.description}</p>
                       </motion.button>
                     );
@@ -286,7 +286,7 @@ export default function ServerWizard() {
                       }`}
                     >
                       <os.icon size={36} className={config.os === os.id ? 'text-primary-400' : 'text-surface-400'} />
-                      <span className="font-semibold text-white">{os.name}</span>
+                      <span className="font-semibold text-surface-100">{os.name}</span>
                       <span className="text-xs text-surface-400">{os.desc}</span>
                     </motion.button>
                   ))}
@@ -300,7 +300,7 @@ export default function ServerWizard() {
                 <p className="text-sm text-surface-400">Choose your database server</p>
                 <div className="grid grid-cols-2 gap-4 mt-4">
                   {[
-                    { id: 'mariadb', name: 'MariaDB', desc: 'Recommended — fast and compatible', tag: 'Recommended' },
+                    { id: 'mariadb', name: 'MariaDB', desc: 'Recommended â€” fast and compatible', tag: 'Recommended' },
                     { id: 'mysql', name: 'MySQL', desc: 'Traditional and widely supported', tag: null },
                   ].map((db) => (
                     <motion.button
@@ -320,7 +320,7 @@ export default function ServerWizard() {
                         </span>
                       )}
                       <Database size={36} className={config.database === db.id ? 'text-primary-400' : 'text-surface-400'} />
-                      <span className="font-semibold text-white">{db.name}</span>
+                      <span className="font-semibold text-surface-100">{db.name}</span>
                       <span className="text-xs text-surface-400 text-center">{db.desc}</span>
                     </motion.button>
                   ))}
@@ -335,7 +335,7 @@ export default function ServerWizard() {
                 <div className="space-y-3 mt-4">
                   {[
                     { id: 'recommended', name: 'Latest Recommended', desc: 'Stable version recommended for production servers', icon: Shield, color: 'text-green-400' },
-                    { id: 'experimental', name: 'Latest Experimental', desc: 'Newest features, may be unstable — for testing only', icon: Zap, color: 'text-amber-400' },
+                    { id: 'experimental', name: 'Latest Experimental', desc: 'Newest features, may be unstable â€” for testing only', icon: Zap, color: 'text-amber-400' },
                     { id: 'custom', name: 'Custom Version', desc: 'Specify a custom artifact build number', icon: Download, color: 'text-blue-400' },
                   ].map((v) => (
                     <motion.button
@@ -350,7 +350,7 @@ export default function ServerWizard() {
                     >
                       <v.icon size={22} className={v.color} />
                       <div>
-                        <span className="font-semibold text-white">{v.name}</span>
+                        <span className="font-semibold text-surface-100">{v.name}</span>
                         <p className="text-xs text-surface-400 mt-0.5">{v.desc}</p>
                       </div>
                     </motion.button>
@@ -500,7 +500,7 @@ function SummaryRow({ label, value, mono }: { label: string; value: string; mono
   return (
     <div className="flex justify-between items-center py-2.5 border-b border-surface-800/50">
       <span className="text-sm text-surface-400">{label}</span>
-      <span className={`text-sm font-medium text-white ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+      <span className={`text-sm font-medium text-surface-100 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
     </div>
   );
 }

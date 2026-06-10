@@ -38,13 +38,13 @@ export default function Settings() {
       className="space-y-6 max-w-2xl"
     >
       <div>
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <h1 className="text-2xl font-bold text-surface-100">Settings</h1>
         <p className="text-sm text-surface-400 mt-1">Configure application preferences</p>
       </div>
 
       {/* Appearance */}
       <div className="glass-panel p-5 space-y-4">
-        <h2 className="text-base font-semibold text-white flex items-center gap-2">
+        <h2 className="text-base font-semibold text-surface-100 flex items-center gap-2">
           <Monitor size={16} className="text-primary-400" />
           Appearance
         </h2>
@@ -55,7 +55,7 @@ export default function Settings() {
           </div>
           <button
             onClick={toggleTheme}
-            className="flex items-center gap-2 px-4 py-2 bg-surface-700 rounded-lg hover:bg-surface-600 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-overlay-6 rounded-lg hover:bg-overlay-10 transition-colors"
           >
             {theme === 'dark' ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-amber-400" />}
             <span className="text-sm capitalize">{theme} Mode</span>
@@ -65,7 +65,7 @@ export default function Settings() {
 
       {/* Storage */}
       <div className="glass-panel p-5 space-y-4">
-        <h2 className="text-base font-semibold text-white flex items-center gap-2">
+        <h2 className="text-base font-semibold text-surface-100 flex items-center gap-2">
           <FolderOpen size={16} className="text-amber-400" />
           Storage
         </h2>
@@ -89,7 +89,7 @@ export default function Settings() {
       {actionLog.length > 0 && (
         <div className="glass-panel p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <h2 className="text-base font-semibold text-surface-100 flex items-center gap-2">
               <Activity size={16} className="text-green-400" />
               Recent Activity
             </h2>
@@ -119,7 +119,7 @@ export default function Settings() {
 
       {/* About */}
       <div className="glass-panel p-5 space-y-4">
-        <h2 className="text-base font-semibold text-white flex items-center gap-2">
+        <h2 className="text-base font-semibold text-surface-100 flex items-center gap-2">
           <Info size={16} className="text-blue-400" />
           About
         </h2>

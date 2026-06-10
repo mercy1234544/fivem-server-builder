@@ -72,7 +72,7 @@ export default function HealthScanner() {
         result = DEMO_REPORT;
       }
       setReport(result);
-      logAction('Health Scan', `Score: ${result.score}/100 — ${result.issues.length} issues`, result.score > 70 ? 'success' : 'warning');
+      logAction('Health Scan', `Score: ${result.score}/100 â€” ${result.issues.length} issues`, result.score > 70 ? 'success' : 'warning');
       if (result.issues.length === 0) toast.success('No issues found!');
     } catch {
       toast.error('Scan failed');
@@ -160,7 +160,7 @@ export default function HealthScanner() {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Health Scanner</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Health Scanner</h1>
           <p className="text-sm text-surface-400 mt-1">Diagnose issues with {activeServer.name}</p>
         </div>
         <button onClick={runScan} disabled={loading} className="btn-primary flex items-center gap-2">
@@ -211,7 +211,7 @@ export default function HealthScanner() {
               </div>
 
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-white mb-3">
+                <h3 className="text-lg font-semibold text-surface-100 mb-3">
                   {report.score >= 80 ? 'Looking Good!' : report.score >= 50 ? 'Needs Attention' : 'Critical Issues Found'}
                 </h3>
                 <div className="grid grid-cols-3 gap-4">
@@ -282,11 +282,11 @@ export default function HealthScanner() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-white">{issue.message}</p>
+                        <p className="text-sm font-medium text-surface-100">{issue.message}</p>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-xs text-surface-500">{issue.category}</span>
-                        {issue.resource && <span className="text-xs text-surface-500">· {issue.resource}</span>}
+                        {issue.resource && <span className="text-xs text-surface-500">Â· {issue.resource}</span>}
                       </div>
                       {issue.suggestion && (
                         <p className="text-xs text-surface-400 mt-1.5 flex items-start gap-1">

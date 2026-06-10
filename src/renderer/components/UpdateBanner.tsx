@@ -65,7 +65,7 @@ export default function UpdateBanner() {
               </button>
               <button
                 onClick={() => setDismissed(true)}
-                className="p-1 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-white/[0.06] transition-all"
+                className="p-1 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-overlay-6 transition-all"
               >
                 <X size={14} />
               </button>
@@ -78,7 +78,7 @@ export default function UpdateBanner() {
               <span className="text-primary-200 flex-1">
                 Downloading update... {percent}%
               </span>
-              <div className="w-32 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <div className="w-32 h-1.5 rounded-full bg-overlay-6 overflow-hidden">
                 <motion.div
                   className="h-full rounded-full bg-primary-400"
                   animate={{ width: `${percent}%` }}
@@ -103,7 +103,7 @@ export default function UpdateBanner() {
               </button>
               <button
                 onClick={() => setDismissed(true)}
-                className="p-1 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-white/[0.06] transition-all"
+                className="p-1 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-overlay-6 transition-all"
               >
                 <X size={14} />
               </button>

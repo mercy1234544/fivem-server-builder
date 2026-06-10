@@ -118,10 +118,10 @@ export default function ResourceManager() {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Resource Manager</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Resource Manager</h1>
           <p className="text-sm text-surface-400 mt-1">
-            {activeServer.name} · {filtered.length} resources · {enabledCount} enabled
-            {issueCount > 0 && <span className="text-amber-400"> · {issueCount} with issues</span>}
+            {activeServer.name} Â· {filtered.length} resources Â· {enabledCount} enabled
+            {issueCount > 0 && <span className="text-amber-400"> Â· {issueCount} with issues</span>}
           </p>
         </div>
         <button onClick={scanResources} disabled={loading} className="btn-secondary flex items-center gap-2">
@@ -201,7 +201,7 @@ function ResourceRow({ resource, onToggle, expanded, onExpand }: {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-white text-sm truncate">{resource.name}</span>
+            <span className="font-medium text-surface-100 text-sm truncate">{resource.name}</span>
             {resource.version && (
               <span className="text-[10px] px-1.5 py-0.5 bg-surface-700 rounded text-surface-400">v{resource.version}</span>
             )}

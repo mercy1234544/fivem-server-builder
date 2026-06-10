@@ -68,7 +68,12 @@ export const useAppStore = create<AppState>((set, get) => {
   return {
     servers: initial.servers,
     activeServerId: initial.activeServerId,
-    theme: 'dark',
+    theme: (() => {
+      const saved = localStorage.getItem('fivem-theme') as 'dark' | 'light' | null;
+      const t = saved || 'dark';
+      document.documentElement.classList.toggle('dark', t === 'dark');
+      return t;
+    })(),
     sidebarCollapsed: false,
     actionLog: [],
     isElectron: !!window.electronAPI,
@@ -86,6 +91,7 @@ export const useAppStore = create<AppState>((set, get) => {
     toggleTheme: () => set((state) => {
       const newTheme = state.theme === 'dark' ? 'light' : 'dark';
       document.documentElement.classList.toggle('dark', newTheme === 'dark');
+      localStorage.setItem('fivem-theme', newTheme);
       return { theme: newTheme };
     }),
 

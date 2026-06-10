@@ -104,7 +104,7 @@ export default function ServerConsole() {
         className="flex flex-col items-center justify-center h-full text-center py-20"
       >
         <Terminal size={48} className="text-surface-600 mb-4" />
-        <h2 className="text-xl font-semibold text-white mb-2">No Server Selected</h2>
+        <h2 className="text-xl font-semibold text-surface-100 mb-2">No Server Selected</h2>
         <p className="text-surface-400 text-sm">Select a server from the Dashboard to view its console</p>
       </motion.div>
     );
@@ -121,7 +121,7 @@ export default function ServerConsole() {
         <div className="flex items-center gap-3">
           <Terminal size={20} className="text-primary-400" />
           <div>
-            <h1 className="text-lg font-bold text-white">Server Console</h1>
+            <h1 className="text-lg font-bold text-surface-100">Server Console</h1>
             <p className="text-xs text-surface-400">{activeServer.name}</p>
           </div>
           <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${

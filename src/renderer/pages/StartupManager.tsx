@@ -130,7 +130,7 @@ export default function StartupManager() {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Startup Order</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Startup Order</h1>
           <p className="text-sm text-surface-400 mt-1">Manage resource load order in server.cfg</p>
         </div>
         <div className="flex gap-2">
@@ -177,7 +177,7 @@ export default function StartupManager() {
               <span className="text-xs font-mono text-surface-500 w-6 text-right">{index + 1}</span>
 
               <div className="flex-1 flex items-center gap-2">
-                <span className="text-sm font-medium text-white">{entry.resource}</span>
+                <span className="text-sm font-medium text-surface-100">{entry.resource}</span>
                 {entry.hasDependencyIssue && (
                   <AlertTriangle size={14} className="text-amber-400" />
                 )}

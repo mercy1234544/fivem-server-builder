@@ -64,7 +64,7 @@ export default function ResourceOrganizer() {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Resource Organizer</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Resource Organizer</h1>
           <p className="text-sm text-surface-400 mt-1">Analyze and categorize your resources</p>
         </div>
         <button
@@ -102,7 +102,7 @@ export default function ResourceOrganizer() {
             <div key={category.name} className="card">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-3 h-3 rounded-full bg-primary-500" />
-                <h3 className="font-semibold text-white">{category.name}</h3>
+                <h3 className="font-semibold text-surface-100">{category.name}</h3>
                 <span className="text-xs text-surface-400 ml-auto">
                   {category.resources.length + category.vendorProtected.length}
                 </span>

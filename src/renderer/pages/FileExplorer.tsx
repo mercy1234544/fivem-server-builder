@@ -117,7 +117,7 @@ export default function FileExplorer() {
       className="space-y-4"
     >
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">File Explorer</h1>
+        <h1 className="text-2xl font-bold text-surface-100">File Explorer</h1>
         <div className="flex gap-2">
           <button onClick={createFolder} className="btn-secondary flex items-center gap-2">
             <Plus size={16} />

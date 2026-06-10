@@ -112,10 +112,10 @@ export default function ServerCfgEditor() {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Server.cfg Editor</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Server.cfg Editor</h1>
           <p className="text-sm text-surface-400 mt-1">
             {activeServer.name}
-            {hasChanges && <span className="text-amber-400 ml-2">· Unsaved changes</span>}
+            {hasChanges && <span className="text-amber-400 ml-2">Â· Unsaved changes</span>}
           </p>
         </div>
         <div className="flex gap-2">
@@ -171,7 +171,7 @@ export default function ServerCfgEditor() {
       </div>
 
       <div className="flex justify-between text-xs text-surface-500">
-        <span>Ctrl+S to save · Tab for indent</span>
+        <span>Ctrl+S to save Â· Tab for indent</span>
         <span>{content.split('\n').length} lines</span>
       </div>
     </motion.div>
