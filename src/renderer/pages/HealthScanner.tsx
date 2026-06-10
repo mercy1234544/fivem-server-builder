@@ -56,6 +56,7 @@ export default function HealthScanner() {
   const [report, setReport] = useState<HealthReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [fixing, setFixing] = useState<string | null>(null);
+  const [fixingAll, setFixingAll] = useState(false);
 
   const activeServer = servers.find(s => s.id === activeServerId);
 
@@ -78,6 +79,38 @@ export default function HealthScanner() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fixAll = async () => {
+    if (!activeServer || !report) return;
+    const fixable = report.issues.filter(i => i.autoFixable);
+    if (fixable.length === 0) { toast('No auto-fixable issues'); return; }
+
+    setFixingAll(true);
+    let fixed = 0;
+    for (const issue of fixable) {
+      setFixing(issue.id);
+      try {
+        if (window.electronAPI) {
+          await window.electronAPI.health.fix(activeServer.installPath, issue);
+        }
+        fixed++;
+      } catch {}
+    }
+    setFixing(null);
+    setFixingAll(false);
+
+    // Re-scan to get fresh results
+    setLoading(true);
+    try {
+      const result = await window.electronAPI.health.scan(activeServer.installPath);
+      setReport(result);
+      logAction('Fix All', `Fixed ${fixed} issues, re-scanned`, 'success');
+    } catch {
+      setReport(prev => prev ? { ...prev, issues: prev.issues.filter(i => !i.autoFixable) } : null);
+    }
+    setLoading(false);
+    toast.success(`Fixed ${fixed} issue${fixed !== 1 ? 's' : ''}`);
   };
 
   const fixIssue = async (issue: HealthIssue) => {
@@ -198,6 +231,28 @@ export default function HealthScanner() {
               </div>
             </div>
           </motion.div>
+
+          {/* Fix All + Re-scan bar */}
+          {report.issues.length > 0 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-surface-400">{report.issues.length} issue{report.issues.length !== 1 ? 's' : ''} found</p>
+              <div className="flex items-center gap-2">
+                {report.issues.some(i => i.autoFixable) && (
+                  <button
+                    onClick={fixAll}
+                    disabled={fixingAll}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-600/30 transition-all font-medium disabled:opacity-50"
+                  >
+                    {fixingAll ? <Loader2 size={14} className="animate-spin" /> : <Wrench size={14} />}
+                    Fix All ({report.issues.filter(i => i.autoFixable).length})
+                  </button>
+                )}
+                <button onClick={runScan} className="flex items-center gap-1.5 px-3 py-2 text-sm btn-secondary">
+                  <RefreshCw size={14} /> Re-scan
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Issues List */}
           <div className="space-y-2">

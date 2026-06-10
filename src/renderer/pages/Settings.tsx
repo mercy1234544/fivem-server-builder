@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings as SettingsIcon,
@@ -18,6 +18,13 @@ import toast from 'react-hot-toast';
 
 export default function Settings() {
   const { theme, toggleTheme, servers, actionLog } = useAppStore();
+  const [appVersion, setAppVersion] = useState('...');
+
+  useEffect(() => {
+    if (window.electronAPI?.appUpdater) {
+      window.electronAPI.appUpdater.getVersion().then(v => setAppVersion(v)).catch(() => setAppVersion('unknown'));
+    }
+  }, []);
 
   const totalBackups = 0;
   const clearLogs = () => {
@@ -123,7 +130,7 @@ export default function Settings() {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-surface-400">Version</span>
-            <span className="text-surface-200">1.0.0</span>
+            <span className="text-surface-200">{appVersion}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-surface-400">Electron</span>

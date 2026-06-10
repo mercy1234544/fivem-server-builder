@@ -83,7 +83,7 @@ export class HealthScanner {
         message: 'License key has not been set',
         file: cfgPath,
         suggestion: 'Set your FiveM license key from keymaster.fivem.net or use txAdmin to configure it',
-        autoFixable: false,
+        autoFixable: true,
       });
     }
 
@@ -441,25 +441,93 @@ export class HealthScanner {
 
     const cfgPath = path.join(serverPath, 'server.cfg');
 
-    switch (issue.id) {
-      case 'missing-endpoints': {
-        let content = fs.readFileSync(cfgPath, 'utf-8');
-        content += '\nendpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"\n';
-        fs.writeFileSync(cfgPath, content);
-        return true;
-      }
-      case 'onesync-not-set': {
-        let content = fs.readFileSync(cfgPath, 'utf-8');
-        content += '\nset onesync on\n';
-        fs.writeFileSync(cfgPath, content);
-        return true;
-      }
-      case 'missing-resources-dir': {
-        fs.mkdirSync(path.join(serverPath, 'resources'), { recursive: true });
-        return true;
-      }
-      default:
-        return false;
+    // Fix missing endpoints
+    if (issue.id === 'missing-endpoints') {
+      let content = fs.readFileSync(cfgPath, 'utf-8');
+      content += '\nendpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"\n';
+      fs.writeFileSync(cfgPath, content);
+      return true;
     }
+
+    // Fix missing onesync
+    if (issue.id === 'onesync-not-set') {
+      let content = fs.readFileSync(cfgPath, 'utf-8');
+      content += '\nset onesync on\n';
+      fs.writeFileSync(cfgPath, content);
+      return true;
+    }
+
+    // Fix missing resources dir
+    if (issue.id === 'missing-resources-dir') {
+      fs.mkdirSync(path.join(serverPath, 'resources'), { recursive: true });
+      return true;
+    }
+
+    // Fix missing fx_version in manifest
+    if (issue.id.startsWith('no-fx-version-') && issue.file) {
+      let content = fs.readFileSync(issue.file, 'utf-8');
+      content = `fx_version 'cerulean'\n${content}`;
+      fs.writeFileSync(issue.file, content);
+      return true;
+    }
+
+    // Fix missing game directive in manifest
+    if (issue.id.startsWith('no-game-') && issue.file) {
+      let content = fs.readFileSync(issue.file, 'utf-8');
+      if (content.includes('fx_version')) {
+        content = content.replace(/(fx_version\s+['"][^'"]+['"])\n?/, `$1\ngame 'gta5'\n`);
+      } else {
+        content = `game 'gta5'\n${content}`;
+      }
+      fs.writeFileSync(issue.file, content);
+      return true;
+    }
+
+    // Fix startup order — move resource above framework in server.cfg
+    if (issue.id === 'startup-order-mysql' || issue.id === 'startup-order-oxlib') {
+      if (!fs.existsSync(cfgPath)) return false;
+      const content = fs.readFileSync(cfgPath, 'utf-8');
+      const lines = content.split('\n');
+
+      const targetResource = issue.id === 'startup-order-mysql' ? 'oxmysql' : 'ox_lib';
+      const frameworks = ['es_extended', 'qb-core', 'qbx_core'];
+
+      let targetIdx = -1;
+      let frameworkIdx = -1;
+      let targetLine = '';
+
+      for (let i = 0; i < lines.length; i++) {
+        const match = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
+        if (!match) continue;
+        if (match[1] === targetResource) { targetIdx = i; targetLine = lines[i]; }
+        if (frameworks.includes(match[1]) && frameworkIdx === -1) frameworkIdx = i;
+      }
+
+      if (targetIdx > -1 && frameworkIdx > -1 && targetIdx > frameworkIdx) {
+        lines.splice(targetIdx, 1);
+        lines.splice(frameworkIdx, 0, targetLine);
+        fs.writeFileSync(cfgPath, lines.join('\n'), 'utf-8');
+        return true;
+      }
+      return false;
+    }
+
+    // Fix default license key — remove or comment out the changeme line
+    if (issue.id === 'default-license-key') {
+      if (!fs.existsSync(cfgPath)) return false;
+      let content = fs.readFileSync(cfgPath, 'utf-8');
+      content = content.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('#') || trimmed.startsWith('//')) return line;
+        if (trimmed.includes('sv_licenseKey') && (trimmed.includes('changeme') || trimmed.includes('change_me'))) {
+          return `# ${line.trimStart()} # Removed by Health Scanner — set via txAdmin`;
+        }
+        return line;
+      }).join('\n');
+      fs.writeFileSync(cfgPath, content, 'utf-8');
+      return true;
+    }
+
+    return false;
   }
 }
