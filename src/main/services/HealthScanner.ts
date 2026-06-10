@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import net from 'net';
 import axios from 'axios';
 import extractZip from 'extract-zip';
 import os from 'os';
@@ -37,6 +38,7 @@ export class HealthScanner {
     await this.checkDependencies(serverPath, issues);
     await this.checkDuplicates(serverPath, issues);
     await this.checkStartupOrder(serverPath, issues);
+    await this.checkDatabase(serverPath, issues);
 
     if (consoleLogs && consoleLogs.length > 0) {
       this.checkConsoleLogs(consoleLogs, issues);
@@ -519,6 +521,108 @@ export class HealthScanner {
     }
   }
 
+  private async checkDatabase(serverPath: string, issues: HealthIssue[]) {
+    const cfgPath = path.join(serverPath, 'server.cfg');
+    if (!fs.existsSync(cfgPath)) return;
+
+    const content = fs.readFileSync(cfgPath, 'utf-8');
+
+    // Check if any resource needs a database (oxmysql, mysql-async, etc.)
+    const needsDb = content.includes('oxmysql') || content.includes('mysql-async') || content.includes('ghmattimysql');
+    if (!needsDb) return;
+
+    // Find mysql_connection_string — check all cfg files including exec'd ones
+    let connString = '';
+    const allCfgContent = this.getAllCfgContent(serverPath);
+
+    const connMatch = allCfgContent.match(/set\s+mysql_connection_string\s+["']([^"']+)["']/);
+    if (connMatch) {
+      connString = connMatch[1];
+    }
+
+    if (!connString) {
+      issues.push({
+        id: 'db-no-connection-string',
+        severity: 'error',
+        category: 'Database',
+        message: 'mysql_connection_string is missing from server.cfg',
+        suggestion: 'Add: set mysql_connection_string "mysql://user:password@host/database" to your server.cfg',
+        autoFixable: false,
+      });
+      return;
+    }
+
+    // Parse the connection string
+    let host = '127.0.0.1';
+    let port = 3306;
+
+    try {
+      // Handle mysql:// URI format
+      const uriMatch = connString.match(/mysql:\/\/[^@]*@([^/:]+)(?::(\d+))?/);
+      if (uriMatch) {
+        host = uriMatch[1];
+        if (uriMatch[2]) port = parseInt(uriMatch[2]);
+      } else {
+        // Handle key=value format: host=x;port=y;user=z;password=w;database=d
+        const hostMatch = connString.match(/host=([^;]+)/i);
+        const portMatch = connString.match(/port=(\d+)/i);
+        if (hostMatch) host = hostMatch[1];
+        if (portMatch) port = parseInt(portMatch[1]);
+      }
+    } catch {}
+
+    // TCP ping the database host
+    const reachable = await this.tcpPing(host, port, 3000);
+
+    if (!reachable) {
+      issues.push({
+        id: 'db-unreachable',
+        severity: 'error',
+        category: 'Database',
+        message: `MySQL is not reachable at ${host}:${port}`,
+        suggestion: `Make sure MySQL/MariaDB is running on ${host}:${port}. Check that the mysql_connection_string in server.cfg has the correct host, port, user, and password.`,
+        autoFixable: false,
+      });
+    } else {
+      issues.push({
+        id: 'db-reachable',
+        severity: 'info',
+        category: 'Database',
+        message: `MySQL is reachable at ${host}:${port}`,
+        autoFixable: false,
+      });
+    }
+  }
+
+  private getAllCfgContent(serverPath: string): string {
+    const cfgPath = path.join(serverPath, 'server.cfg');
+    if (!fs.existsSync(cfgPath)) return '';
+
+    let content = fs.readFileSync(cfgPath, 'utf-8');
+
+    // Also read exec'd cfg files
+    const execPattern = /^\s*exec\s+["']?(\S+?)["']?\s*$/gm;
+    let m;
+    while ((m = execPattern.exec(content)) !== null) {
+      const extraPath = path.join(serverPath, m[1]);
+      if (fs.existsSync(extraPath)) {
+        try { content += '\n' + fs.readFileSync(extraPath, 'utf-8'); } catch {}
+      }
+    }
+    return content;
+  }
+
+  private tcpPing(host: string, port: number, timeout: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(timeout);
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('timeout', () => { socket.destroy(); resolve(false); });
+      socket.once('error', () => { socket.destroy(); resolve(false); });
+      socket.connect(port, host);
+    });
+  }
+
   private checkConsoleLogs(logs: string[], issues: HealthIssue[]) {
     const failedResources: string[] = [];
     const buildPending: string[] = [];
@@ -634,16 +738,19 @@ export class HealthScanner {
       });
     }
 
-    // Database connection issue
+    // Database connection issue — skip if the file-based check already caught it
     if (dbConnectionFailed) {
-      issues.push({
-        id: 'runtime-db-connection',
-        severity: 'error',
-        category: 'Runtime',
-        message: `Database connection failed${dbConnectionString ? ` (${dbConnectionString})` : ''}`,
-        suggestion: 'Make sure MySQL/MariaDB is running and the mysql_connection_string in server.cfg is correct',
-        autoFixable: false,
-      });
+      const alreadyCaught = issues.some(i => i.id === 'db-unreachable' || i.id === 'db-no-connection-string');
+      if (!alreadyCaught) {
+        issues.push({
+          id: 'runtime-db-connection',
+          severity: 'error',
+          category: 'Database',
+          message: `Database connection failed at runtime${dbConnectionString ? ` (${dbConnectionString})` : ''}`,
+          suggestion: 'Make sure MySQL/MariaDB is running and the mysql_connection_string in server.cfg is correct',
+          autoFixable: false,
+        });
+      }
     }
 
     // Resource order warnings — auto-fixable by reordering server.cfg
