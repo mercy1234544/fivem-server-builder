@@ -1,29 +1,127 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Terminal, Play, Square, Trash2, ArrowDown, Copy } from 'lucide-react';
+import { Terminal, Play, Square, Trash2, ArrowDown, Copy, Filter } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 
+interface ParsedLine {
+  raw: string;
+  source: string;
+  message: string;
+  type: 'error' | 'warning' | 'success' | 'info' | 'system' | 'normal';
+}
+
+function parseLine(raw: string): ParsedLine {
+  const trimmed = raw.replace(/\r?\n$/, '');
+
+  // System messages from our app
+  if (trimmed.startsWith('>') || trimmed.startsWith('---')) {
+    return { raw: trimmed, source: '', message: trimmed, type: 'system' };
+  }
+
+  // FXServer bracket format: [           resources] Started resource chat
+  const bracketMatch = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
+  let source = '';
+  let message = trimmed;
+
+  if (bracketMatch) {
+    source = bracketMatch[1].trim();
+    message = bracketMatch[2];
+  }
+
+  // Determine type
+  let type: ParsedLine['type'] = 'normal';
+
+  // Errors
+  if (
+    trimmed.startsWith('[ERROR]') ||
+    message.toLowerCase().includes('error') ||
+    message.toLowerCase().includes("couldn't start resource") ||
+    message.toLowerCase().includes('could not start') ||
+    message.toLowerCase().includes('failed') ||
+    message.includes('SCRIPT ERROR') ||
+    message.includes('ECONNREFUSED') ||
+    message.includes('Unable to establish')
+  ) {
+    type = 'error';
+  }
+  // Warnings
+  else if (
+    message.toLowerCase().includes('warning') ||
+    message.toLowerCase().includes('warn') ||
+    message.includes('is currently busy') ||
+    message.includes('should start before') ||
+    message.includes('not loaded') ||
+    message.includes('no compatible framework')
+  ) {
+    type = 'warning';
+  }
+  // Success
+  else if (
+    message.includes('Started resource') ||
+    message.includes('license key authentication succeeded') ||
+    message.includes('Authenticated with') ||
+    message.includes('All Ready')
+  ) {
+    type = 'success';
+  }
+  // Info / system
+  else if (
+    message.includes('Scanning resources') ||
+    message.includes('Found') ||
+    message.includes('FXServer Starting') ||
+    message.includes('Running build tasks') ||
+    source === 'yarn'
+  ) {
+    type = 'info';
+  }
+
+  return { raw: trimmed, source, message, type };
+}
+
+const typeStyles: Record<ParsedLine['type'], string> = {
+  error: 'text-red-400',
+  warning: 'text-amber-400',
+  success: 'text-emerald-400',
+  info: 'text-blue-300/70',
+  system: 'text-primary-400 font-semibold',
+  normal: 'text-surface-300',
+};
+
+const sourceStyles: Record<string, string> = {
+  error: 'text-red-500/60',
+  warning: 'text-amber-500/60',
+  success: 'text-emerald-500/60',
+  info: 'text-blue-400/50',
+  system: 'text-primary-500/60',
+  normal: 'text-surface-600',
+};
+
+type FilterType = 'all' | 'errors' | 'warnings' | 'resources';
+
 export default function ServerConsole() {
   const activeServer = useAppStore(state => state.getActiveServer());
-  const [lines, setLines] = useState<string[]>([]);
+  const [lines, setLines] = useState<ParsedLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [serverStatus, setServerStatus] = useState<string>('stopped');
+  const [filter, setFilter] = useState<FilterType>('all');
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!window.electronAPI || !activeServer) return;
 
-    // Get initial status
     window.electronAPI.server.get(activeServer.id).then((s: any) => {
       if (s) setServerStatus(s.status);
     });
 
     const cleanupConsole = window.electronAPI.onServerConsole((data: { serverId: string; line: string }) => {
       if (data.serverId === activeServer.id) {
+        // Split multi-line chunks into individual lines
+        const rawLines = data.line.split('\n').filter(l => l.trim());
+        const parsed = rawLines.map(parseLine);
         setLines(prev => {
-          const next = [...prev, data.line];
+          const next = [...prev, ...parsed];
           if (next.length > 5000) return next.slice(-4000);
           return next;
         });
@@ -34,9 +132,9 @@ export default function ServerConsole() {
       if (data.serverId === activeServer.id) {
         setServerStatus(data.status);
         if (data.status === 'running') {
-          setLines(prev => [...prev, '\n--- Server Started ---\n']);
+          setLines(prev => [...prev, parseLine('--- Server Started ---')]);
         } else if (data.status === 'stopped') {
-          setLines(prev => [...prev, '\n--- Server Stopped ---\n']);
+          setLines(prev => [...prev, parseLine('--- Server Stopped ---')]);
         }
       }
     });
@@ -61,40 +159,35 @@ export default function ServerConsole() {
 
   const handleStart = async () => {
     if (!activeServer) return;
-    setLines(prev => [...prev, '> Starting server...\n']);
+    setLines(prev => [...prev, parseLine('> Starting server...')]);
     const result = await window.electronAPI.server.start(activeServer.id);
     if (!result.success) {
-      setLines(prev => [...prev, `> ERROR: ${result.error}\n`]);
+      setLines(prev => [...prev, parseLine(`> ERROR: ${result.error}`)]);
       toast.error(result.error || 'Failed to start');
     }
   };
 
   const handleStop = async () => {
     if (!activeServer) return;
-    setLines(prev => [...prev, '> Stopping server...\n']);
+    setLines(prev => [...prev, parseLine('> Stopping server...')]);
     await window.electronAPI.server.stop(activeServer.id);
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(lines.join('\n'));
+    navigator.clipboard.writeText(lines.map(l => l.raw).join('\n'));
     toast.success('Console output copied');
   };
 
-  const colorLine = (line: string) => {
-    if (line.startsWith('[ERROR]') || line.includes('error') || line.includes('Error')) {
-      return 'text-red-400';
-    }
-    if (line.includes('warn') || line.includes('Warning') || line.includes('WARN')) {
-      return 'text-yellow-400';
-    }
-    if (line.startsWith('>') || line.startsWith('---')) {
-      return 'text-primary-400 font-semibold';
-    }
-    if (line.includes('Started resource') || line.includes('ensure')) {
-      return 'text-green-400';
-    }
-    return 'text-surface-300';
-  };
+  const filteredLines = lines.filter(line => {
+    if (filter === 'all') return true;
+    if (filter === 'errors') return line.type === 'error';
+    if (filter === 'warnings') return line.type === 'error' || line.type === 'warning';
+    if (filter === 'resources') return line.message.includes('Started resource') || line.message.includes("Couldn't start") || line.message.includes('Could not start');
+    return true;
+  });
+
+  const errorCount = lines.filter(l => l.type === 'error').length;
+  const warnCount = lines.filter(l => l.type === 'warning').length;
 
   if (!activeServer) {
     return (
@@ -163,11 +256,42 @@ export default function ServerConsole() {
         </div>
       </div>
 
+      {/* Filter bar + stats */}
+      {lines.length > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Filter size={12} className="text-surface-500" />
+            {(['all', 'errors', 'warnings', 'resources'] as FilterType[]).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition-all ${
+                  filter === f
+                    ? 'bg-primary-600/20 text-primary-400 border border-primary-500/30'
+                    : 'text-surface-400 hover:text-surface-200 hover:bg-overlay-4'
+                }`}
+              >
+                {f === 'all' ? 'All' : f === 'errors' ? 'Errors' : f === 'warnings' ? 'Errors & Warnings' : 'Resources'}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 text-[11px]">
+            {errorCount > 0 && (
+              <span className="text-red-400">{errorCount} error{errorCount !== 1 ? 's' : ''}</span>
+            )}
+            {warnCount > 0 && (
+              <span className="text-amber-400">{warnCount} warning{warnCount !== 1 ? 's' : ''}</span>
+            )}
+            <span className="text-surface-500">{lines.length} lines</span>
+          </div>
+        </div>
+      )}
+
       {/* Console */}
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 bg-[#0d1117] rounded-xl border border-surface-700/50 p-4 overflow-y-auto font-mono text-xs leading-5 min-h-0"
+        className="flex-1 bg-[#0d1117] rounded-xl border border-surface-700/50 p-4 overflow-y-auto font-mono text-[11px] leading-[1.6] min-h-0"
       >
         {lines.length === 0 ? (
           <div className="text-surface-600 text-center py-12">
@@ -176,9 +300,19 @@ export default function ServerConsole() {
               : 'Start the server to see console output'}
           </div>
         ) : (
-          lines.map((line, i) => (
-            <div key={i} className={`whitespace-pre-wrap break-all ${colorLine(line)}`}>
-              {line}
+          filteredLines.map((line, i) => (
+            <div key={i} className="flex gap-0 hover:bg-white/[0.02] -mx-2 px-2 rounded">
+              {line.source ? (
+                <>
+                  <span className={`shrink-0 w-[180px] truncate text-right pr-3 select-none ${sourceStyles[line.type]}`}>
+                    {line.source}
+                  </span>
+                  <span className="shrink-0 text-surface-700 select-none mr-2">|</span>
+                  <span className={`${typeStyles[line.type]} break-words min-w-0`}>{line.message}</span>
+                </>
+              ) : (
+                <span className={`${typeStyles[line.type]} break-words min-w-0`}>{line.message}</span>
+              )}
             </div>
           ))
         )}

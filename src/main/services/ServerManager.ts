@@ -126,6 +126,7 @@ export class ServerManager {
   private serversFile: string;
   private servers: Map<string, Server> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
+  private consoleLogs: Map<string, string[]> = new Map();
 
   constructor(userDataPath: string) {
     this.dataPath = path.join(userDataPath, 'data');
@@ -880,6 +881,17 @@ export class ServerManager {
     return lines.join('\n');
   }
 
+  private bufferConsoleLine(serverId: string, line: string) {
+    let buf = this.consoleLogs.get(serverId);
+    if (!buf) { buf = []; this.consoleLogs.set(serverId, buf); }
+    buf.push(line);
+    if (buf.length > 2000) buf.splice(0, buf.length - 1500);
+  }
+
+  getConsoleLogs(serverId: string): string[] {
+    return this.consoleLogs.get(serverId) || [];
+  }
+
   private async downloadGithubResource(
     repoUrl: string, destination: string, ref: string, subpath?: string
   ): Promise<void> {
@@ -1182,6 +1194,7 @@ export class ServerManager {
       }
 
       this.processes.set(id, proc);
+      this.consoleLogs.set(id, []);
       server.status = 'running';
       this.saveServers();
 
@@ -1190,6 +1203,7 @@ export class ServerManager {
       if (proc.stdout) {
         proc.stdout.on('data', (data: Buffer) => {
           const line = data.toString();
+          this.bufferConsoleLine(id, line);
           if (mainWin && !mainWin.isDestroyed()) {
             mainWin.webContents.send('server:console', { serverId: id, line });
           }
@@ -1198,6 +1212,7 @@ export class ServerManager {
       if (proc.stderr) {
         proc.stderr.on('data', (data: Buffer) => {
           const line = data.toString();
+          this.bufferConsoleLine(id, `[ERROR] ${line}`);
           if (mainWin && !mainWin.isDestroyed()) {
             mainWin.webContents.send('server:console', { serverId: id, line: `[ERROR] ${line}` });
           }
@@ -1281,15 +1296,16 @@ export class ServerManager {
       console.log(`[StartServer] FXServer launched with PID: ${proc.pid}`);
 
       this.processes.set(id, proc);
+      this.consoleLogs.set(id, []);
       server.status = 'running';
       this.saveServers();
 
       const mainWin = BrowserWindow.getAllWindows()[0];
 
-      // Capture stdout for console output
       if (proc.stdout) {
         proc.stdout.on('data', (data: Buffer) => {
           const line = data.toString();
+          this.bufferConsoleLine(id, line);
           if (mainWin && !mainWin.isDestroyed()) {
             mainWin.webContents.send('server:console', { serverId: id, line });
           }
@@ -1298,6 +1314,7 @@ export class ServerManager {
       if (proc.stderr) {
         proc.stderr.on('data', (data: Buffer) => {
           const line = data.toString();
+          this.bufferConsoleLine(id, `[ERROR] ${line}`);
           if (mainWin && !mainWin.isDestroyed()) {
             mainWin.webContents.send('server:console', { serverId: id, line: `[ERROR] ${line}` });
           }

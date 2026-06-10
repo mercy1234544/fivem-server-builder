@@ -174,7 +174,13 @@ function registerIpcHandlers() {
   ipcMain.handle('resource:categorize', (_, resources) => resourceScanner.categorizeResources(resources));
 
   // Health Scanner
-  ipcMain.handle('health:scan', (_, serverPath) => healthScanner.scanServer(serverPath));
+  ipcMain.handle('health:scan', (_, serverPath) => {
+    // Find the server by path to get its console logs
+    const servers = serverManager.getAllServers();
+    const server = servers.find((s: any) => s.installPath === serverPath);
+    const logs = server ? serverManager.getConsoleLogs(server.id) : [];
+    return healthScanner.scanServer(serverPath, logs);
+  });
   ipcMain.handle('health:fix', (_, serverPath, issue) => healthScanner.fixIssue(serverPath, issue));
 
   // Backup Management

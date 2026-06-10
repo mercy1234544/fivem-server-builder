@@ -28,7 +28,7 @@ export interface HealthReport {
 }
 
 export class HealthScanner {
-  async scanServer(serverPath: string): Promise<HealthReport> {
+  async scanServer(serverPath: string, consoleLogs?: string[]): Promise<HealthReport> {
     const issues: HealthIssue[] = [];
 
     await this.checkServerCfg(serverPath, issues);
@@ -37,6 +37,10 @@ export class HealthScanner {
     await this.checkDependencies(serverPath, issues);
     await this.checkDuplicates(serverPath, issues);
     await this.checkStartupOrder(serverPath, issues);
+
+    if (consoleLogs && consoleLogs.length > 0) {
+      this.checkConsoleLogs(consoleLogs, issues);
+    }
 
     const summary = {
       errors: issues.filter(i => i.severity === 'error').length,
@@ -462,6 +466,111 @@ export class HealthScanner {
         message: 'ox_lib should typically start before framework',
         suggestion: 'Move ox_lib above your framework in server.cfg',
         autoFixable: true,
+      });
+    }
+  }
+
+  private checkConsoleLogs(logs: string[], issues: HealthIssue[]) {
+    const failedResources: string[] = [];
+    const scriptErrors: { resource: string; error: string }[] = [];
+    let dbConnectionFailed = false;
+    const warnings: { resource: string; message: string }[] = [];
+    const seenIds = new Set<string>();
+
+    for (const raw of logs) {
+      const line = raw.trim();
+
+      // Failed to start resource
+      const failMatch = line.match(/Couldn't start resource (\S+)/i) ||
+                         line.match(/Could not start dependency \S+ for resource (\S+)/i);
+      if (failMatch) {
+        const name = failMatch[1].replace(/\.$/, '');
+        if (!failedResources.includes(name)) failedResources.push(name);
+      }
+
+      // Script errors
+      const scriptErrMatch = line.match(/SCRIPT ERROR: @([^/]+)\/.+?: (.+)/);
+      if (scriptErrMatch) {
+        scriptErrors.push({ resource: scriptErrMatch[1], error: scriptErrMatch[2] });
+      }
+
+      // Database connection failure
+      if (line.includes('ECONNREFUSED') && line.includes('3306') || line.includes('Unable to establish a connection to the database')) {
+        dbConnectionFailed = true;
+      }
+
+      // Resource warnings (should start before, not loaded, no compatible framework)
+      const warnPatterns = [
+        /Warning: (\S+) is not loaded.*should start before (\S+)/,
+        /Warning: no compatible framework was loaded/,
+      ];
+      for (const pat of warnPatterns) {
+        const m = line.match(pat);
+        if (m) {
+          const bracketMatch = raw.match(/^\[([^\]]+)\]/);
+          const src = bracketMatch ? bracketMatch[1].trim().replace(/^script:/, '') : 'unknown';
+          warnings.push({ resource: src, message: line });
+        }
+      }
+    }
+
+    // Add issues for failed resources
+    for (const name of failedResources) {
+      const id = `runtime-failed-${name}`;
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      issues.push({
+        id,
+        severity: 'error',
+        category: 'Runtime',
+        message: `Resource "${name}" failed to start`,
+        resource: name,
+        suggestion: `Check that ${name}'s dependencies are installed and started first. Try restarting the server after all build tasks complete.`,
+        autoFixable: false,
+      });
+    }
+
+    // Add issues for script errors
+    for (const { resource, error } of scriptErrors) {
+      const id = `runtime-script-error-${resource}`;
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      issues.push({
+        id,
+        severity: 'error',
+        category: 'Runtime',
+        message: `Script error in ${resource}: ${error}`,
+        resource,
+        suggestion: `Check if ${resource}'s dependencies are loaded and started in the correct order`,
+        autoFixable: false,
+      });
+    }
+
+    // Database connection issue
+    if (dbConnectionFailed) {
+      issues.push({
+        id: 'runtime-db-connection',
+        severity: 'error',
+        category: 'Runtime',
+        message: 'Database connection failed (ECONNREFUSED)',
+        suggestion: 'Make sure MySQL/MariaDB is running and the connection string in server.cfg is correct',
+        autoFixable: false,
+      });
+    }
+
+    // Resource order warnings
+    for (const w of warnings) {
+      const id = `runtime-warn-${w.resource}`;
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      issues.push({
+        id,
+        severity: 'warning',
+        category: 'Runtime',
+        message: w.message.replace(/^\[([^\]]+)\]\s*/, ''),
+        resource: w.resource,
+        suggestion: 'Check resource start order in server.cfg',
+        autoFixable: false,
       });
     }
   }
