@@ -181,7 +181,7 @@ function registerIpcHandlers() {
     const logs = server ? serverManager.getConsoleLogs(server.id) : [];
     return healthScanner.scanServer(serverPath, logs);
   });
-  ipcMain.handle('health:fix', (_, serverPath, issue) => healthScanner.fixIssue(serverPath, issue));
+  ipcMain.handle('health:fix', (_, serverPath, issue) => healthScanner.fixIssue(serverPath, issue, serverManager));
 
   // Backup Management
   ipcMain.handle('backup:create', (_, serverId, options) => backupManager.createBackup(serverId, options));

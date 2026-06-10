@@ -14,6 +14,7 @@ export interface HealthIssue {
   file?: string;
   suggestion?: string;
   autoFixable: boolean;
+  fixAction?: string;
 }
 
 export interface HealthReport {
@@ -631,6 +632,7 @@ export class HealthScanner {
     let dbConnectionString = '';
     const orderWarnings: { resource: string; needsBefore: string }[] = [];
     const frameworkWarnings: string[] = [];
+    const configWarnings: { resource: string; message: string; raw: string }[] = [];
     const seenIds = new Set<string>();
 
     for (const raw of logs) {
@@ -643,23 +645,18 @@ export class HealthScanner {
         if (!failedResources.includes(name)) failedResources.push(name);
       }
 
-      // Dependency failure — "Could not start dependency X for resource Y"
+      // Dependency failure
       const depMatch = line.match(/Could not start dependency (\S+) for resource (\S+)/i);
       if (depMatch) {
         const dep = depMatch[1];
         const res = depMatch[2].replace(/\.$/, '');
         if (!failedResources.includes(res)) failedResources.push(res);
-        // Track the dependency that failed so we know why
         scriptErrors.push({ resource: res, error: `Dependency ${dep} not available`, dep });
       }
 
-      // Build tasks still running — "Running build tasks on resource X"
+      // Build tasks
       const buildMatch = line.match(/Running build tasks on resource (\S+)/);
-      if (buildMatch) {
-        buildPending.push(buildMatch[1]);
-      }
-
-      // Build completed — remove from pending
+      if (buildMatch) buildPending.push(buildMatch[1]);
       const buildDone = line.match(/Build tasks completed.*resource (\S+)/);
       if (buildDone) {
         const idx = buildPending.indexOf(buildDone[1]);
@@ -670,25 +667,19 @@ export class HealthScanner {
       const scriptErrMatch = line.match(/SCRIPT ERROR: @([^/]+)\/.+?: (.+)/);
       if (scriptErrMatch) {
         const existing = scriptErrors.find(e => e.resource === scriptErrMatch[1]);
-        if (!existing) {
-          scriptErrors.push({ resource: scriptErrMatch[1], error: scriptErrMatch[2] });
-        }
+        if (!existing) scriptErrors.push({ resource: scriptErrMatch[1], error: scriptErrMatch[2] });
       }
 
       // Database connection failure
       if (line.includes('ECONNREFUSED') || line.includes('Unable to establish a connection to the database')) {
         dbConnectionFailed = true;
       }
-
-      // Capture connection string info
       const connMatch = line.match(/connect ECONNREFUSED ([\d.]+:\d+)/);
       if (connMatch) dbConnectionString = connMatch[1];
 
       // "Warning: X is not loaded - it should start before Y"
       const orderMatch = line.match(/Warning: (\S+) is not loaded.*should start before (\S+)/);
-      if (orderMatch) {
-        orderWarnings.push({ resource: orderMatch[1], needsBefore: orderMatch[2] });
-      }
+      if (orderMatch) orderWarnings.push({ resource: orderMatch[1], needsBefore: orderMatch[2] });
 
       // "Warning: no compatible framework was loaded"
       if (line.includes('no compatible framework was loaded')) {
@@ -696,34 +687,56 @@ export class HealthScanner {
         const src = bracketMatch ? bracketMatch[1].trim().replace(/^script:/, '') : 'unknown';
         if (!frameworkWarnings.includes(src)) frameworkWarnings.push(src);
       }
+
+      // Catch ALL other warnings from scripts — [WARN], Warning:, etc.
+      const bracketMatch = raw.match(/^\[([^\]]+)\]/);
+      const src = bracketMatch ? bracketMatch[1].trim().replace(/^script:/, '') : '';
+      if (src && (
+        line.includes('[WARN]') ||
+        line.includes('Warning:') ||
+        line.includes('warning:')
+      )) {
+        // Skip ones we already handle specifically
+        if (!line.includes('is not loaded') &&
+            !line.includes('no compatible framework') &&
+            !line.includes('fsevents') &&
+            !line.includes('yarn') &&
+            !line.includes('uuid@')) {
+          configWarnings.push({ resource: src, message: line, raw });
+        }
+      }
+
+      // Catch "No such export X in resource Y"
+      const exportMatch = line.match(/No such export (\S+) in resource (\S+)/);
+      if (exportMatch) {
+        scriptErrors.push({
+          resource: src || 'unknown',
+          error: `Missing export "${exportMatch[1]}" from ${exportMatch[2]}`,
+          dep: exportMatch[2],
+        });
+      }
     }
 
-    // Failed resources — check if it's a build-timing issue (auto-fixable by restart)
+    // Failed resources — auto-fix by restarting
     for (const name of failedResources) {
       const id = `runtime-failed-${name}`;
       if (seenIds.has(id)) continue;
       seenIds.add(id);
-
-      const isBuildIssue = buildPending.some(bp =>
-        scriptErrors.some(e => e.resource === name && e.dep === bp)
-      );
-
       issues.push({
         id,
         severity: 'error',
         category: 'Runtime',
         message: `Resource "${name}" failed to start`,
         resource: name,
-        suggestion: isBuildIssue
-          ? `${name} failed because a dependency was still building. Restart the server to fix.`
-          : `Check that ${name}'s dependencies are installed and started in the right order in server.cfg`,
+        suggestion: `Will restart ${name} on the running server`,
         autoFixable: true,
+        fixAction: `restart:${name}`,
       });
     }
 
-    // Script errors (not already covered by failed resources)
+    // Script errors
     for (const { resource, error, dep } of scriptErrors) {
-      if (dep) continue; // already reported as failed resource
+      if (failedResources.includes(resource)) continue;
       const id = `runtime-script-error-${resource}`;
       if (seenIds.has(id)) continue;
       seenIds.add(id);
@@ -733,12 +746,13 @@ export class HealthScanner {
         category: 'Runtime',
         message: `Script error in ${resource}: ${error}`,
         resource,
-        suggestion: `This is usually a load-order issue. The health scanner will try reordering resources in server.cfg.`,
+        suggestion: dep ? `Will restart ${resource} after ensuring ${dep} is loaded` : `Will restart ${resource}`,
         autoFixable: true,
+        fixAction: dep ? `restart:${dep},${resource}` : `restart:${resource}`,
       });
     }
 
-    // Database connection issue — skip if the file-based check already caught it
+    // Database — skip if file-based check caught it
     if (dbConnectionFailed) {
       const alreadyCaught = issues.some(i => i.id === 'db-unreachable' || i.id === 'db-no-connection-string');
       if (!alreadyCaught) {
@@ -746,14 +760,14 @@ export class HealthScanner {
           id: 'runtime-db-connection',
           severity: 'error',
           category: 'Database',
-          message: `Database connection failed at runtime${dbConnectionString ? ` (${dbConnectionString})` : ''}`,
-          suggestion: 'Make sure MySQL/MariaDB is running and the mysql_connection_string in server.cfg is correct',
+          message: `Database connection failed${dbConnectionString ? ` (${dbConnectionString})` : ''}`,
+          suggestion: 'Make sure MySQL/MariaDB is running and mysql_connection_string is correct',
           autoFixable: false,
         });
       }
     }
 
-    // Resource order warnings — auto-fixable by reordering server.cfg
+    // Resource order warnings
     for (const w of orderWarnings) {
       const id = `runtime-order-${w.resource}-before-${w.needsBefore}`;
       if (seenIds.has(id)) continue;
@@ -764,12 +778,12 @@ export class HealthScanner {
         category: 'Startup Order',
         message: `${w.resource} should start before ${w.needsBefore}`,
         resource: w.resource,
-        suggestion: `Move ensure ${w.resource} above ensure ${w.needsBefore} in server.cfg`,
+        suggestion: `Will reorder server.cfg and restart ${w.needsBefore}`,
         autoFixable: true,
       });
     }
 
-    // Framework warnings — ox resources loaded before framework
+    // Framework warnings
     for (const resource of frameworkWarnings) {
       const id = `runtime-no-framework-${resource}`;
       if (seenIds.has(id)) continue;
@@ -780,8 +794,36 @@ export class HealthScanner {
         category: 'Startup Order',
         message: `${resource} loaded before framework — no compatible framework available`,
         resource,
-        suggestion: `Move ${resource} (or its folder) below your framework (qbx_core/qb-core/es_extended) in server.cfg`,
+        suggestion: `Will move ${resource} after framework in server.cfg`,
         autoFixable: true,
+      });
+    }
+
+    // Config/script warnings — auto-fix by finding and editing config or restarting
+    for (const w of configWarnings) {
+      const id = `runtime-warn-${w.resource}-${w.message.slice(0, 40)}`;
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+
+      // Detect specific fixable patterns
+      let fixAction = `restart:${w.resource}`;
+      let suggestion = `Will restart ${w.resource}`;
+
+      // Entity blacklist warning
+      if (w.message.includes('entity blacklist') || w.message.includes('entitiesblacklist')) {
+        fixAction = `config:${w.resource}:entitiesblacklist:false`;
+        suggestion = `Will disable entity blacklist in ${w.resource} config`;
+      }
+
+      issues.push({
+        id,
+        severity: 'warning',
+        category: 'Runtime',
+        message: w.message.replace(/^\[([^\]]+)\]\s*/, '').replace(/\[WARN\]\s*/i, '').replace(/Warning:\s*/i, '').trim(),
+        resource: w.resource,
+        suggestion,
+        autoFixable: true,
+        fixAction,
       });
     }
   }
@@ -799,10 +841,15 @@ export class HealthScanner {
     }
   }
 
-  async fixIssue(serverPath: string, issue: HealthIssue): Promise<boolean> {
+  async fixIssue(serverPath: string, issue: HealthIssue, serverManager?: any): Promise<boolean> {
     if (!issue.autoFixable) return false;
 
     const cfgPath = path.join(serverPath, 'server.cfg');
+
+    // Handle fixAction-based fixes (restart, config edit)
+    if (issue.fixAction) {
+      return this.executeFixAction(serverPath, issue.fixAction, serverManager);
+    }
 
     // Fix missing endpoints — prepend to start of file (txAdmin requires them at top)
     if (issue.id === 'missing-endpoints') {
@@ -923,6 +970,127 @@ export class HealthScanner {
     }
 
     return false;
+  }
+
+  private async executeFixAction(serverPath: string, fixAction: string, serverManager?: any): Promise<boolean> {
+    // "restart:resource1,resource2" — restart resources on the running server
+    if (fixAction.startsWith('restart:')) {
+      const resources = fixAction.slice(8).split(',');
+      if (!serverManager) return false;
+      const serverId = serverManager.getServerId(serverPath);
+      if (!serverId || !serverManager.isRunning(serverId)) {
+        console.log('[HealthFix] Server not running — restart resources will apply on next boot');
+        return true;
+      }
+      for (const res of resources) {
+        console.log(`[HealthFix] Restarting resource: ${res}`);
+        serverManager.sendCommand(serverId, `ensure ${res}`);
+      }
+      return true;
+    }
+
+    // "config:resource:key:value" — edit a Lua config file
+    if (fixAction.startsWith('config:')) {
+      const parts = fixAction.split(':');
+      if (parts.length < 4) return false;
+      const [, resource, key, value] = parts;
+      return this.fixLuaConfig(serverPath, resource, key, value);
+    }
+
+    return false;
+  }
+
+  private fixLuaConfig(serverPath: string, resource: string, key: string, value: string): boolean {
+    const resourcesDir = path.join(serverPath, 'resources');
+    const configPath = this.findConfigFile(resourcesDir, resource, key);
+    if (!configPath) {
+      console.log(`[HealthFix] Could not find config for ${resource} with key ${key}`);
+      return false;
+    }
+
+    try {
+      let content = fs.readFileSync(configPath, 'utf-8');
+
+      // Try to find the key in various Lua config patterns:
+      // Config.key = value / Config['key'] = value / key = value
+      const patterns = [
+        new RegExp(`(Config\\.${this.escapeRegex(key)}\\s*=\\s*)([^,\\n]+)`, 'i'),
+        new RegExp(`(Config\\['${this.escapeRegex(key)}'\\]\\s*=\\s*)([^,\\n]+)`, 'i'),
+        new RegExp(`(Config\\["${this.escapeRegex(key)}"\\]\\s*=\\s*)([^,\\n]+)`, 'i'),
+        new RegExp(`(\\b${this.escapeRegex(key)}\\s*=\\s*)([^,\\n]+)`, 'i'),
+        new RegExp(`(EnableBlacklist\\s*=\\s*)([^,\\n]+)`, 'i'),
+      ];
+
+      let replaced = false;
+      for (const pat of patterns) {
+        if (pat.test(content)) {
+          content = content.replace(pat, `$1${value}`);
+          replaced = true;
+          break;
+        }
+      }
+
+      if (replaced) {
+        fs.writeFileSync(configPath, content, 'utf-8');
+        console.log(`[HealthFix] Updated ${configPath}: ${key} = ${value}`);
+        return true;
+      }
+
+      console.log(`[HealthFix] Key "${key}" not found in ${configPath}`);
+      return false;
+    } catch (err: any) {
+      console.error(`[HealthFix] Failed to edit config: ${err.message}`);
+      return false;
+    }
+  }
+
+  private findConfigFile(resourcesDir: string, resource: string, key: string): string | null {
+    const search = (dir: string): string | null => {
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          const fullPath = path.join(dir, entry.name);
+
+          if (entry.name === resource) {
+            // Found the resource — look for config files
+            for (const cfgFile of ['config.lua', 'shared/config.lua', 'config/config.lua', 'shared.lua']) {
+              const cfgPath = path.join(fullPath, cfgFile);
+              if (fs.existsSync(cfgPath)) {
+                const content = fs.readFileSync(cfgPath, 'utf-8');
+                if (content.toLowerCase().includes(key.toLowerCase())) {
+                  return cfgPath;
+                }
+              }
+            }
+            // Also check all .lua files in the resource root
+            try {
+              for (const f of fs.readdirSync(fullPath)) {
+                if (!f.endsWith('.lua')) continue;
+                const fPath = path.join(fullPath, f);
+                if (fs.statSync(fPath).isFile()) {
+                  const content = fs.readFileSync(fPath, 'utf-8');
+                  if (content.toLowerCase().includes(key.toLowerCase())) {
+                    return fPath;
+                  }
+                }
+              }
+            } catch {}
+            return null;
+          }
+
+          // Check subdirectory resources (inside [folders])
+          const found = search(fullPath);
+          if (found) return found;
+        }
+      } catch {}
+      return null;
+    };
+    return search(resourcesDir);
+  }
+
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private fixStartupOrder(cfgPath: string, issue: HealthIssue): boolean {

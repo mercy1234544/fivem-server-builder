@@ -1373,4 +1373,26 @@ export class ServerManager {
     this.consoleLogs.delete(id);
     return true;
   }
+
+  sendCommand(id: string, command: string): boolean {
+    const proc = this.processes.get(id);
+    if (!proc || !proc.stdin) return false;
+    try {
+      proc.stdin.write(command + '\n');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  getServerId(serverPath: string): string | null {
+    for (const [id, server] of this.servers) {
+      if (server.installPath === serverPath) return id;
+    }
+    return null;
+  }
+
+  isRunning(id: string): boolean {
+    return this.processes.has(id);
+  }
 }
