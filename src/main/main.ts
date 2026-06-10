@@ -988,7 +988,17 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('updater:install', () => {
-    autoUpdater.quitAndInstall(false, true);
+    // Force-close all windows first so the NSIS installer can replace files.
+    // Without this, the app process stays alive and the installer silently fails.
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.removeAllListeners('close');
+      win.destroy();
+    }
+    // Run after IPC response completes — isSilent=true so NSIS doesn't show UI,
+    // isForceRunAfter=true so the app relaunches after install.
+    setImmediate(() => {
+      autoUpdater.quitAndInstall(true, true);
+    });
   });
 
   ipcMain.handle('updater:getVersion', () => {
