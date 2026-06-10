@@ -14,6 +14,7 @@ export interface ServerConfig {
   os: 'windows' | 'linux';
   database: 'mariadb' | 'mysql';
   artifactVersion: string;
+  licenseKey: string;
   installPath: string;
 }
 
@@ -476,7 +477,7 @@ export class ServerManager {
     // broken {{template}} variables gets replaced.
     // ═══════════════════════════════════════════════════════════════════
     const cfgPath = path.join(config.installPath, 'server.cfg');
-    const cleanCfg = [
+    const cfgLines = [
       `# Endpoints (must be at top for txAdmin validation)`,
       `endpoint_add_tcp "0.0.0.0:30120"`,
       `endpoint_add_udp "0.0.0.0:30120"`,
@@ -488,6 +489,12 @@ export class ServerManager {
       `sets locale "en-US"`,
       `sets tags "default"`,
       ``,
+    ];
+    if (config.licenseKey) {
+      cfgLines.push(`sv_licenseKey "${config.licenseKey}"`);
+      cfgLines.push(``);
+    }
+    cfgLines.push(
       `set onesync on`,
       ``,
       `# Resources`,
@@ -499,7 +506,8 @@ export class ServerManager {
       `ensure hardcap`,
       `ensure baseevents`,
       ``,
-    ].join('\n');
+    );
+    const cleanCfg = cfgLines.join('\n');
     fs.writeFileSync(cfgPath, cleanCfg, 'utf-8');
     console.log('[Build] Generated clean server.cfg (no license key — txAdmin handles it)');
 
@@ -1014,8 +1022,8 @@ export class ServerManager {
   }
 
   /**
-   * Start FXServer without server.cfg — txAdmin boots in setup wizard mode.
-   * Used after initial build so the user can register via txAdmin.
+   * Start FXServer after initial build for txAdmin first-time setup.
+   * Uses server.cfg which has the license key from the wizard.
    */
   private async startServerRaw(id: string): Promise<{ success: boolean; error?: string }> {
     const server = this.servers.get(id);
@@ -1034,10 +1042,14 @@ export class ServerManager {
       return { success: false, error: `FXServer.exe not found at: ${executable}` };
     }
 
-    console.log(`[StartServerRaw] Launching without server.cfg for txAdmin setup: ${executable}`);
+    const cfgPath = path.join(server.installPath, 'server.cfg');
+    const hasCfg = fs.existsSync(cfgPath);
+    const args = hasCfg ? ['+exec', 'server.cfg'] : [];
+
+    console.log(`[StartServerRaw] Launching for txAdmin setup: ${executable} ${args.join(' ')}`);
 
     try {
-      const proc = spawn(executable, [], {
+      const proc = spawn(executable, args, {
         cwd: server.installPath,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: false,
@@ -1122,25 +1134,24 @@ export class ServerManager {
       return { success: false, error: `FXServer.exe not found at:\n${executable}\n\nUse the Resource Updater to download artifacts first.` };
     }
 
-    // Only use server.cfg if it exists, has a real license key (cfxk_), and no
-    // unresolved {{template}} variables. Otherwise start bare for txAdmin setup.
+    // Use server.cfg if it exists and has a real license key (not changeme/template vars).
     const cfgPath = path.join(server.installPath, 'server.cfg');
     let useServerCfg = false;
     if (fs.existsSync(cfgPath)) {
       try {
         const cfgContent = fs.readFileSync(cfgPath, 'utf-8');
-        const hasValidKey = /sv_licenseKey\s+["']?cfxk_/i.test(cfgContent);
+        const hasKey = /sv_licenseKey\s+["'][^"']+["']/i.test(cfgContent);
         const hasChangeme = /sv_licenseKey\s+["']?changeme/i.test(cfgContent);
         const hasTemplateVars = /\{\{/.test(cfgContent);
-        useServerCfg = hasValidKey && !hasChangeme && !hasTemplateVars;
+        useServerCfg = hasKey && !hasChangeme && !hasTemplateVars;
         if (!useServerCfg) {
-          console.log('[StartServer] server.cfg is invalid — starting without it for txAdmin setup');
+          console.log('[StartServer] server.cfg missing valid license key — starting without it');
         }
       } catch {}
     }
     const args = useServerCfg ? ['+exec', 'server.cfg'] : [];
 
-    console.log(`[StartServer] Launching: ${executable} ${args.join(' ') || '(no args — txAdmin first-time setup)'}`);
+    console.log(`[StartServer] Launching: ${executable} ${args.join(' ')}`);
 
     try {
       const proc = spawn(executable, args, {

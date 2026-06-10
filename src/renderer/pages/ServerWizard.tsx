@@ -52,6 +52,7 @@ export default function ServerWizard() {
     os: 'windows' as 'windows' | 'linux',
     database: 'mariadb' as 'mariadb' | 'mysql',
     artifactVersion: 'recommended',
+    licenseKey: '',
     installPath: '',
   });
 
@@ -61,7 +62,7 @@ export default function ServerWizard() {
       case 1: return !!config.os;
       case 2: return !!config.database;
       case 3: return !!config.artifactVersion;
-      case 4: return !!config.installPath && !!config.name;
+      case 4: return !!config.installPath && !!config.name && !!config.licenseKey;
       default: return true;
     }
   };
@@ -170,7 +171,6 @@ export default function ServerWizard() {
           <ol className="list-decimal list-inside space-y-2 text-sm text-surface-300">
             <li>Create your <span className="text-white font-medium">txAdmin account</span></li>
             <li>Enter your server name</li>
-            <li>Enter your <a href="https://keymaster.fivem.net" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">Keymaster license key</a></li>
             <li>Select <span className="text-white font-medium">"Use Existing Server Data"</span></li>
             <li>Point it to: <code className="text-xs bg-surface-900 px-1.5 py-0.5 rounded text-primary-300">{config.installPath}</code></li>
           </ol>
@@ -181,7 +181,7 @@ export default function ServerWizard() {
             <ArrowRight size={16} />
           </button>
           <button
-            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', installPath: '' }); }}
+            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', licenseKey: '', installPath: '' }); }}
             className="btn-secondary"
           >
             Create Another
@@ -375,10 +375,19 @@ export default function ServerWizard() {
                       autoFocus
                     />
                   </div>
-                  <p className="text-xs text-surface-500 bg-surface-800/50 p-2.5 rounded-lg border border-surface-700/50">
-                    Your license key will be entered through txAdmin after the build completes.
-                    Get one free at <span className="text-primary-400 cursor-pointer" onClick={() => window.electronAPI?.openExternal('https://keymaster.fivem.net')}>keymaster.fivem.net</span>
-                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-surface-300 mb-1.5">License Key</label>
+                    <input
+                      type="text"
+                      className="input-field font-mono text-sm"
+                      placeholder="cfxk_xxxxxxxxxxxxxxxxxxxx"
+                      value={config.licenseKey}
+                      onChange={(e) => setConfig({ ...config, licenseKey: e.target.value })}
+                    />
+                    <p className="text-xs text-surface-500 mt-1.5">
+                      Get a free key from <span className="text-primary-400 cursor-pointer" onClick={() => window.electronAPI?.openExternal('https://keymaster.fivem.net')}>keymaster.fivem.net</span>
+                    </p>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-surface-300 mb-1.5">Installation Directory</label>
                     <div className="flex gap-2">
@@ -409,7 +418,7 @@ export default function ServerWizard() {
                   <SummaryRow label="Operating System" value={config.os === 'windows' ? 'Windows' : 'Linux'} />
                   <SummaryRow label="Database" value={config.database === 'mariadb' ? 'MariaDB' : 'MySQL'} />
                   <SummaryRow label="Artifacts" value={config.artifactVersion === 'recommended' ? 'Latest Recommended' : config.artifactVersion === 'experimental' ? 'Latest Experimental' : 'Custom'} />
-                  <SummaryRow label="License Key" value="Entered via txAdmin after build" />
+                  <SummaryRow label="License Key" value={config.licenseKey ? `${config.licenseKey.substring(0, 12)}...` : 'Not set'} mono />
                   <SummaryRow label="Install Path" value={config.installPath || 'Not set'} mono />
                 </div>
 
@@ -421,7 +430,7 @@ export default function ServerWizard() {
                         ? <> and all <span className="font-semibold">{config.framework === 'qbcore' ? 'QBCore' : config.framework === 'qbox' ? 'Qbox' : 'ESX Legacy'}</span> resources from the official recipe.</>
                         : <> and set up the server files.</>
                       }
-                      {' '}Then txAdmin will open in your browser so you can create an account, enter your license key, and select <span className="font-semibold">"Use Existing Server Data"</span> to link everything together.
+                      {' '}Then txAdmin will open in your browser so you can create an account and select <span className="font-semibold">"Use Existing Server Data"</span> pointing to your install folder.
                     </p>
                   </div>
                 )}
