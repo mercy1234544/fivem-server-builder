@@ -441,10 +441,10 @@ export class HealthScanner {
 
     const cfgPath = path.join(serverPath, 'server.cfg');
 
-    // Fix missing endpoints
+    // Fix missing endpoints — prepend to start of file (txAdmin requires them at top)
     if (issue.id === 'missing-endpoints') {
       let content = fs.readFileSync(cfgPath, 'utf-8');
-      content += '\nendpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"\n';
+      content = `endpoint_add_tcp "0.0.0.0:30120"\nendpoint_add_udp "0.0.0.0:30120"\n\n${content}`;
       fs.writeFileSync(cfgPath, content);
       return true;
     }

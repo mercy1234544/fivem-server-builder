@@ -477,15 +477,16 @@ export class ServerManager {
     // ═══════════════════════════════════════════════════════════════════
     const cfgPath = path.join(config.installPath, 'server.cfg');
     const cleanCfg = [
+      `# Endpoints (must be at top for txAdmin validation)`,
+      `endpoint_add_tcp "0.0.0.0:30120"`,
+      `endpoint_add_udp "0.0.0.0:30120"`,
+      ``,
       `sv_hostname "${config.name}"`,
       `sv_maxclients 48`,
       `sets sv_projectName "${config.name}"`,
       `sets sv_projectDesc "Powered by FiveM Server Builder"`,
       `sets locale "en-US"`,
       `sets tags "default"`,
-      ``,
-      `endpoint_add_tcp "0.0.0.0:30120"`,
-      `endpoint_add_udp "0.0.0.0:30120"`,
       ``,
       `set onesync on`,
       ``,
