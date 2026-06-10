@@ -118,6 +118,13 @@ export default function ServerWizard() {
       logAction('Server Created', `${config.name} (${config.framework}) — txAdmin launching for framework deployment`, 'success');
       setBuildComplete(true);
       toast.success('Server created successfully!');
+
+      // Auto-open txAdmin in browser so the user doesn't have to go to the dashboard
+      if (window.electronAPI?.txAdmin && config.installPath) {
+        try {
+          await window.electronAPI.txAdmin.open(config.installPath);
+        } catch {}
+      }
     } catch (error: any) {
       toast.error(`Build failed: ${error.message}`);
       logAction('Build Failed', error.message, 'error');
@@ -157,7 +164,7 @@ export default function ServerWizard() {
           {config.name} is ready — all resources have been downloaded.
         </p>
         <p className="text-surface-400 mb-4 text-sm">
-          txAdmin should have opened in your browser. Complete the setup:
+          txAdmin has opened in your browser. Complete the setup:
         </p>
         <div className="bg-surface-800/60 border border-surface-700/50 rounded-xl p-4 mb-6 text-left max-w-md mx-auto">
           <ol className="list-decimal list-inside space-y-2 text-sm text-surface-300">

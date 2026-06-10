@@ -958,13 +958,8 @@ function setupAutoUpdater() {
     });
   });
 
-  // Check immediately on startup (small delay to let window load)
-  setTimeout(() => {
-    console.log('[AutoUpdater] Initial update check...');
-    autoUpdater.checkForUpdates().catch((err) => {
-      console.error('[AutoUpdater] Initial check failed:', err.message);
-    });
-  }, 3000);
+  // Initial check is triggered by the splash screen via IPC (updater:check).
+  // No automatic startup check needed — the renderer drives it.
 
   // Then check every 15 minutes
   setInterval(() => {
