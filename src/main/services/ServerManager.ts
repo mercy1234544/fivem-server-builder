@@ -433,6 +433,26 @@ export class ServerManager {
     // blank = no resources at all, just artifacts
 
     // ═══════════════════════════════════════════════════════════════════
+    // Download base CFX resources for ALL frameworks (mapmanager, chat, etc.)
+    // These are required by every FiveM server but only cfx-server-data has them.
+    // ═══════════════════════════════════════════════════════════════════
+    if (config.framework !== 'blank') {
+      const cfxDefaultDir = path.join(resourcesDir, '[cfx-default]');
+      if (!fs.existsSync(path.join(cfxDefaultDir, 'chat'))) {
+        sendProgress('Downloading base FiveM resources (chat, mapmanager, etc.)...', 90, 100);
+        try {
+          await this.downloadGithubResource(
+            'https://github.com/citizenfx/cfx-server-data', cfxDefaultDir, 'master', 'resources'
+          );
+          console.log('[Build] Downloaded cfx-server-data base resources');
+        } catch (err: any) {
+          console.error('[Build] Failed to download cfx-server-data:', err.message);
+          sendProgress('Warning: Could not download base resources — run Health Scanner to fix', 90, 100);
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Verify critical resources were downloaded
     // ═══════════════════════════════════════════════════════════════════
     if (config.framework === 'qbcore' || config.framework === 'qbox' || config.framework === 'esx') {
@@ -497,7 +517,7 @@ export class ServerManager {
     cfgLines.push(
       `set onesync on`,
       ``,
-      `# Resources`,
+      `# Base FiveM Resources (from cfx-server-data)`,
       `ensure mapmanager`,
       `ensure chat`,
       `ensure spawnmanager`,

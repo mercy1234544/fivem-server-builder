@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import axios from 'axios';
+import extractZip from 'extract-zip';
+import os from 'os';
 
 export interface HealthIssue {
   id: string;
@@ -29,6 +32,7 @@ export class HealthScanner {
     const issues: HealthIssue[] = [];
 
     await this.checkServerCfg(serverPath, issues);
+    await this.checkBaseResources(serverPath, issues);
     await this.checkResources(serverPath, issues);
     await this.checkDependencies(serverPath, issues);
     await this.checkDuplicates(serverPath, issues);
@@ -107,6 +111,34 @@ export class HealthScanner {
         message: 'OneSync is not explicitly configured',
         file: cfgPath,
         suggestion: 'Add "set onesync on" to enable OneSync',
+        autoFixable: true,
+      });
+    }
+  }
+
+  private async checkBaseResources(serverPath: string, issues: HealthIssue[]) {
+    const resourcesPath = path.join(serverPath, 'resources');
+    if (!fs.existsSync(resourcesPath)) return;
+
+    const baseResources = [
+      'mapmanager', 'chat', 'spawnmanager', 'sessionmanager',
+      'basic-gamemode', 'hardcap', 'baseevents',
+    ];
+
+    const missing: string[] = [];
+    for (const name of baseResources) {
+      if (!this.resourceExists(resourcesPath, name)) {
+        missing.push(name);
+      }
+    }
+
+    if (missing.length > 0) {
+      issues.push({
+        id: 'missing-base-resources',
+        severity: 'error',
+        category: 'Base Resources',
+        message: `Missing ${missing.length} base FiveM resources: ${missing.join(', ')}`,
+        suggestion: 'Download cfx-server-data base resources (mapmanager, chat, spawnmanager, etc.)',
         autoFixable: true,
       });
     }
@@ -271,11 +303,9 @@ export class HealthScanner {
 
     const ensuredResources = new Set<string>();
 
-    // CFX resources built into the server artifacts — not in resources/
+    // Resources truly built into FXServer binary — not in resources/
     const builtinResources = new Set([
-      'mapmanager', 'chat', 'spawnmanager', 'sessionmanager',
-      'hardcap', 'baseevents', 'basic-gamemode', 'fivem',
-      'monitor', 'sessionmanager-rdr3', 'webpack', 'yarn',
+      'fivem', 'monitor', 'webpack', 'yarn',
     ]);
 
     for (const cfgFile of cfgFiles) {
@@ -436,6 +466,19 @@ export class HealthScanner {
     }
   }
 
+  private copyDirRecursive(src: string, dest: string) {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        this.copyDirRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+
   async fixIssue(serverPath: string, issue: HealthIssue): Promise<boolean> {
     if (!issue.autoFixable) return false;
 
@@ -510,6 +553,42 @@ export class HealthScanner {
         return true;
       }
       return false;
+    }
+
+    // Fix missing base resources — download cfx-server-data
+    if (issue.id === 'missing-base-resources') {
+      const resourcesDir = path.join(serverPath, 'resources');
+      const cfxDefaultDir = path.join(resourcesDir, '[cfx-default]');
+      try {
+        const zipUrl = 'https://github.com/citizenfx/cfx-server-data/archive/refs/heads/master.zip';
+        const response = await axios.get(zipUrl, { responseType: 'arraybuffer', timeout: 120000 });
+        const tempDir = os.tmpdir();
+        const zipPath = path.join(tempDir, `cfx-server-data-${Date.now()}.zip`);
+        fs.writeFileSync(zipPath, Buffer.from(response.data));
+
+        const extractDir = path.join(tempDir, `cfx-data-extract-${Date.now()}`);
+        fs.mkdirSync(extractDir, { recursive: true });
+        await extractZip(zipPath, { dir: extractDir });
+
+        // GitHub ZIP has a single subfolder like "cfx-server-data-master/"
+        const extracted = fs.readdirSync(extractDir);
+        let innerDir = extracted.length === 1
+          ? path.join(extractDir, extracted[0], 'resources')
+          : path.join(extractDir, 'resources');
+
+        if (fs.existsSync(innerDir)) {
+          if (!fs.existsSync(cfxDefaultDir)) fs.mkdirSync(cfxDefaultDir, { recursive: true });
+          this.copyDirRecursive(innerDir, cfxDefaultDir);
+          console.log('[HealthFix] Downloaded cfx-server-data base resources');
+        }
+
+        try { fs.unlinkSync(zipPath); } catch {}
+        try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch {}
+        return true;
+      } catch (err: any) {
+        console.error('[HealthFix] Failed to download cfx-server-data:', err.message);
+        return false;
+      }
     }
 
     // Fix default license key — remove or comment out the changeme line
