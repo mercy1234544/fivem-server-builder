@@ -1,6 +1,6 @@
 {
   "name": "fivem-server-builder",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "Professional desktop application for creating, managing, and maintaining FiveM servers",
   "main": "dist/main/main.js",
   "scripts": {
@@ -75,6 +75,7 @@
       "signAndEditExecutable": false
     },
     "forceCodeSigning": false,
+    "artifactName": "FiveM-Server-Builder-Setup-${version}.${ext}",
     "nsis": {
       "oneClick": false,
       "perMachine": false,
