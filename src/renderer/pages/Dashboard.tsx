@@ -679,12 +679,15 @@ function ServerCard({ server, onSelect, onDelete, onToggle }: {
           <FolderOpen size={11} />
           Open
         </button>
-        {server.status === 'running' && (
-          <button onClick={(e) => { e.stopPropagation(); window.electronAPI.txAdmin.open(server.installPath).then(r => { if (r.url) toast.success('Opening txAdmin...'); }); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-primary-500/8 text-primary-400 hover:bg-primary-500/15 border border-primary-500/15 transition-all">
-            <Globe size={11} />
-            txAdmin
-          </button>
-        )}
+        <button onClick={(e) => {
+          e.stopPropagation();
+          window.electronAPI.txAdmin.open(server.installPath)
+            .then(r => { toast.success(`Opening txAdmin at ${r.url}`); })
+            .catch(() => { toast.error('Failed to open txAdmin'); });
+        }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-primary-500/8 text-primary-400 hover:bg-primary-500/15 border border-primary-500/15 transition-all">
+          <Globe size={11} />
+          txAdmin
+        </button>
         <button onClick={onDelete} className="p-2 rounded-xl text-surface-600 hover:text-red-400 hover:bg-red-500/8 border border-transparent hover:border-red-500/15 transition-all">
           <Trash2 size={13} />
         </button>

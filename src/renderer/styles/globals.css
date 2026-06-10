@@ -5,12 +5,58 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @layer base {
+  /* ═══ Theme CSS Variables ═══ */
+  :root {
+    --bg-base: #f1f5f9;
+    --bg-panel: rgba(255, 255, 255, 0.75);
+    --bg-card: rgba(255, 255, 255, 0.6);
+    --bg-input: rgba(0, 0, 0, 0.04);
+    --bg-hover: rgba(0, 0, 0, 0.06);
+    --border-color: rgba(0, 0, 0, 0.08);
+    --border-hover: rgba(0, 0, 0, 0.15);
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-faint: #94a3b8;
+    --shadow-panel: 0 4px 24px -1px rgba(0, 0, 0, 0.08);
+    --shadow-card: 0 2px 8px -1px rgba(0, 0, 0, 0.06);
+    --shadow-card-hover: 0 8px 32px -4px rgba(0, 0, 0, 0.1);
+    --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+    --scrollbar-hover: rgba(0, 0, 0, 0.25);
+    --inset-glow: 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
+    --console-bg: #ffffff;
+  }
+
+  .dark {
+    --bg-base: #060a18;
+    --bg-panel: rgba(15, 23, 42, 0.6);
+    --bg-card: rgba(15, 23, 42, 0.4);
+    --bg-input: rgba(255, 255, 255, 0.04);
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --border-color: rgba(255, 255, 255, 0.06);
+    --border-hover: rgba(255, 255, 255, 0.1);
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-faint: #64748b;
+    --shadow-panel: 0 4px 24px -1px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 2px 8px -1px rgba(0, 0, 0, 0.2);
+    --shadow-card-hover: 0 8px 32px -4px rgba(0, 0, 0, 0.35), 0 0 20px -5px rgba(99, 102, 241, 0.06);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+    --scrollbar-hover: rgba(255, 255, 255, 0.2);
+    --inset-glow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    --console-bg: #0d1117;
+  }
+
   * {
-    @apply border-surface-700/50;
+    border-color: var(--border-color);
   }
 
   body {
-    @apply bg-surface-950 text-surface-100 overflow-hidden antialiased;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
@@ -21,60 +67,76 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-surface-700/60 rounded-full;
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-surface-600;
+    background: var(--scrollbar-hover);
   }
 
   /* Selection */
   ::selection {
-    @apply bg-primary-500/30 text-white;
+    @apply bg-primary-500/30;
+    color: var(--text-primary);
   }
+
+  /* Text color utilities that respect theme */
+  .text-theme { color: var(--text-primary); }
+  .text-theme-secondary { color: var(--text-secondary); }
+  .text-theme-muted { color: var(--text-muted); }
+  .text-theme-faint { color: var(--text-faint); }
 }
 
 @layer components {
   /* ═══ Glass Panels ═══ */
   .glass-panel {
-    @apply bg-surface-900/60 backdrop-blur-xl border border-white/[0.06] rounded-2xl;
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-      0 4px 24px -1px rgba(0, 0, 0, 0.3);
+    background: var(--bg-panel);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    box-shadow: var(--inset-glow), var(--shadow-panel);
   }
 
   .glass-panel-hover {
-    @apply glass-panel transition-all duration-300;
+    background: var(--bg-panel);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    box-shadow: var(--inset-glow), var(--shadow-panel);
+    transition: all 0.3s;
   }
   .glass-panel-hover:hover {
-    @apply border-white/[0.1];
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-      0 8px 40px -4px rgba(0, 0, 0, 0.4),
-      0 0 30px -5px rgba(99, 102, 241, 0.08);
+    border-color: var(--border-hover);
+    box-shadow: var(--inset-glow), var(--shadow-card-hover);
   }
 
   /* ═══ Cards ═══ */
   .card {
-    @apply relative bg-surface-900/40 backdrop-blur-sm border border-white/[0.06] rounded-2xl p-5 transition-all duration-300;
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.02) inset,
-      0 2px 8px -1px rgba(0, 0, 0, 0.2);
+    position: relative;
+    background: var(--bg-card);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    transition: all 0.3s;
+    box-shadow: var(--inset-glow), var(--shadow-card);
   }
   .card:hover {
-    @apply border-white/[0.1] -translate-y-0.5;
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-      0 8px 32px -4px rgba(0, 0, 0, 0.35),
-      0 0 20px -5px rgba(99, 102, 241, 0.06);
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--inset-glow), var(--shadow-card-hover);
   }
 
   .card-flat {
-    @apply bg-surface-900/30 border border-white/[0.04] rounded-xl p-4;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 1rem;
   }
 
   /* ═══ Buttons ═══ */
@@ -89,8 +151,14 @@
   }
 
   .btn-secondary {
-    @apply px-5 py-2.5 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] hover:border-white/[0.15] text-surface-200 rounded-xl font-medium text-sm transition-all duration-200 active:scale-[0.97];
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    @apply px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 active:scale-[0.97];
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+  .btn-secondary:hover {
+    background: var(--bg-input);
+    border-color: var(--border-hover);
   }
 
   .btn-danger {
@@ -103,16 +171,28 @@
   }
 
   .btn-ghost {
-    @apply px-4 py-2 text-surface-400 hover:text-white hover:bg-white/[0.06] rounded-xl text-sm font-medium transition-all duration-200;
+    @apply px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
   }
 
   /* ═══ Inputs ═══ */
   .input-field {
-    @apply w-full px-4 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-surface-100 placeholder-surface-500 transition-all duration-200;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) inset;
+    @apply w-full px-4 py-2.5 rounded-xl transition-all duration-200;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05) inset;
+  }
+  .input-field::placeholder {
+    color: var(--text-faint);
   }
   .input-field:focus {
-    @apply outline-none border-primary-500/50 bg-white/[0.06];
+    @apply outline-none border-primary-500/50;
+    background: var(--bg-hover);
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 0 0 0 1px rgba(99, 102, 241, 0.3) inset;
   }
 

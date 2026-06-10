@@ -110,16 +110,31 @@ function registerIpcHandlers() {
 
   // txAdmin — detect and open in browser after server starts
   ipcMain.handle('server:openTxAdmin', async (_, serverPath: string) => {
-    // txAdmin default port is 40120, check server.cfg for custom port
+    // Determine the txAdmin web port: explicit setting > endpoint+10000 > default 40120
     let txPort = 40120;
     const cfgPath = path.join(serverPath, 'server.cfg');
     if (fs.existsSync(cfgPath)) {
       const cfg = fs.readFileSync(cfgPath, 'utf-8');
-      const portMatch = cfg.match(/set\s+txAdminPort\s+(\d+)/);
-      if (portMatch) txPort = parseInt(portMatch[1]);
+      // Check for explicit txAdmin port setting
+      const txPortMatch = cfg.match(/set\s+txAdminPort\s+["']?(\d+)/);
+      if (txPortMatch) {
+        txPort = parseInt(txPortMatch[1]);
+      } else {
+        // Derive from game server endpoint: txAdmin = game port + 10000
+        const endpointMatch = cfg.match(/endpoint_add_tcp\s+["'][\d.]+:(\d+)/);
+        if (endpointMatch) {
+          txPort = parseInt(endpointMatch[1]) + 10000;
+        }
+      }
     }
+
     const url = `http://localhost:${txPort}`;
-    shell.openExternal(url);
+    console.log(`[txAdmin] Opening: ${url}`);
+    try {
+      await shell.openExternal(url);
+    } catch (err: any) {
+      console.error(`[txAdmin] Failed to open browser:`, err);
+    }
     return { url, port: txPort };
   });
 

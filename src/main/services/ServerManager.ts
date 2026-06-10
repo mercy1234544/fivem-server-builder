@@ -1042,11 +1042,11 @@ export class ServerManager {
       return { success: false, error: `FXServer.exe not found at: ${executable}` };
     }
 
-    const cfgPath = path.join(server.installPath, 'server.cfg');
-    const hasCfg = fs.existsSync(cfgPath);
-    const args = hasCfg ? ['+exec', 'server.cfg'] : [];
+    // Start without +exec so txAdmin boots as the server manager (web panel on port 40120).
+    // txAdmin will handle server.cfg once the user configures it through the web panel.
+    const args: string[] = [];
 
-    console.log(`[StartServerRaw] Launching for txAdmin setup: ${executable} ${args.join(' ')}`);
+    console.log(`[StartServerRaw] Launching for txAdmin setup: ${executable}`);
 
     try {
       const proc = spawn(executable, args, {
@@ -1134,24 +1134,12 @@ export class ServerManager {
       return { success: false, error: `FXServer.exe not found at:\n${executable}\n\nUse the Resource Updater to download artifacts first.` };
     }
 
-    // Use server.cfg if it exists and has a real license key (not changeme/template vars).
-    const cfgPath = path.join(server.installPath, 'server.cfg');
-    let useServerCfg = false;
-    if (fs.existsSync(cfgPath)) {
-      try {
-        const cfgContent = fs.readFileSync(cfgPath, 'utf-8');
-        const hasKey = /sv_licenseKey\s+["'][^"']+["']/i.test(cfgContent);
-        const hasChangeme = /sv_licenseKey\s+["']?changeme/i.test(cfgContent);
-        const hasTemplateVars = /\{\{/.test(cfgContent);
-        useServerCfg = hasKey && !hasChangeme && !hasTemplateVars;
-        if (!useServerCfg) {
-          console.log('[StartServer] server.cfg missing valid license key — starting without it');
-        }
-      } catch {}
-    }
-    const args = useServerCfg ? ['+exec', 'server.cfg'] : [];
+    // Start FXServer WITHOUT +exec so txAdmin boots up as the server manager.
+    // txAdmin will read server.cfg on its own once it's been configured.
+    // Passing +exec server.cfg bypasses txAdmin entirely (no web panel).
+    const args: string[] = [];
 
-    console.log(`[StartServer] Launching: ${executable} ${args.join(' ')}`);
+    console.log(`[StartServer] Launching (txAdmin mode): ${executable}`);
 
     try {
       const proc = spawn(executable, args, {
