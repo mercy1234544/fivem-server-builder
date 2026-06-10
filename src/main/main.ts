@@ -902,17 +902,14 @@ async function importVehiclePack(opts: { sourcePath: string; serverPath: string;
 
 // ─── Auto Updater Setup ─────────────────────────────────────────────────────
 function setupAutoUpdater() {
-  // Don't check for updates in dev mode
-  if (process.env.NODE_ENV === 'development' || !app.isPackaged) return;
-
-  // Auto-download updates so users get them seamlessly
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  // Log everything for debugging
   autoUpdater.logger = require('electron-log');
   (autoUpdater.logger as any).transports.file.level = 'info';
 
+  // Always register event listeners so the splash screen gets status updates
+  // even when running in dev mode (check will error but status flows through)
   autoUpdater.on('checking-for-update', () => {
     console.log('[AutoUpdater] Checking for updates...');
     mainWindow?.webContents.send('updater:status', { status: 'checking' });
@@ -958,13 +955,12 @@ function setupAutoUpdater() {
     });
   });
 
-  // Initial check is triggered by the splash screen via IPC (updater:check).
-  // No automatic startup check needed — the renderer drives it.
-
-  // Then check every 15 minutes
-  setInterval(() => {
-    autoUpdater.checkForUpdates().catch(() => {});
-  }, 15 * 60 * 1000);
+  // Background re-check every 15 minutes (only on packaged builds)
+  if (app.isPackaged) {
+    setInterval(() => {
+      autoUpdater.checkForUpdates().catch(() => {});
+    }, 15 * 60 * 1000);
+  }
 }
 
 app.whenReady().then(() => {
