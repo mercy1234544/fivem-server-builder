@@ -469,19 +469,40 @@ export class ServerManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 4: DELETE any recipe-provided server.cfg
-    // txAdmin will create its own proper server.cfg during its setup
-    // wizard — with the user's license key, server name, DB string, etc.
-    // We must NOT have a server.cfg here so FXServer boots into txAdmin
-    // setup mode instead of trying to load a broken template.
+    // STEP 4: Generate a clean server.cfg for txAdmin
+    // txAdmin's "Use Existing Server Data" requires a server.cfg to exist.
+    // We write a minimal one with NO license key — txAdmin adds that
+    // itself during its setup wizard. Any recipe-provided cfg with
+    // broken {{template}} variables gets replaced.
     // ═══════════════════════════════════════════════════════════════════
     const cfgPath = path.join(config.installPath, 'server.cfg');
-    if (fs.existsSync(cfgPath)) {
-      try { fs.unlinkSync(cfgPath); } catch {}
-      console.log('[Build] Deleted recipe server.cfg — txAdmin will generate a proper one');
-    }
-    // Also delete any extra cfg files from recipes (ox.cfg, voice.cfg, etc.)
-    // that have unresolved {{template}} variables
+    const cleanCfg = [
+      `sv_hostname "${config.name}"`,
+      `sv_maxclients 48`,
+      `sets sv_projectName "${config.name}"`,
+      `sets sv_projectDesc "Powered by FiveM Server Builder"`,
+      `sets locale "en-US"`,
+      `sets tags "default"`,
+      ``,
+      `endpoint_add_tcp "0.0.0.0:30120"`,
+      `endpoint_add_udp "0.0.0.0:30120"`,
+      ``,
+      `set onesync on`,
+      ``,
+      `# Resources`,
+      `ensure mapmanager`,
+      `ensure chat`,
+      `ensure spawnmanager`,
+      `ensure sessionmanager`,
+      `ensure basic-gamemode`,
+      `ensure hardcap`,
+      `ensure baseevents`,
+      ``,
+    ].join('\n');
+    fs.writeFileSync(cfgPath, cleanCfg, 'utf-8');
+    console.log('[Build] Generated clean server.cfg (no license key — txAdmin handles it)');
+
+    // Clean up extra cfg files from recipes that have unresolved {{template}} vars
     for (const file of ['ox.cfg', 'voice.cfg', 'misc.cfg', 'permissions.cfg']) {
       const extraCfg = path.join(config.installPath, file);
       if (fs.existsSync(extraCfg)) {
