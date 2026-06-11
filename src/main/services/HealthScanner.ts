@@ -4,6 +4,7 @@ import net from 'net';
 import axios from 'axios';
 import extractZip from 'extract-zip';
 import os from 'os';
+import { DatabaseManager } from './DatabaseManager';
 
 export interface HealthIssue {
   id: string;
@@ -30,6 +31,95 @@ export interface HealthReport {
 }
 
 export class HealthScanner {
+  private dbManager: DatabaseManager | null = null;
+
+  setDatabaseManager(dbManager: DatabaseManager) {
+    this.dbManager = dbManager;
+  }
+
+  // ─── Folder-aware ensure order helpers ─────────────────────────────────
+  // Resources often live inside bracket folders (ensure [ox] loads ox_lib,
+  // oxmysql, etc). To reason about load order we expand folders to the
+  // resources they physically contain on disk.
+
+  /** List all resource names physically inside a bracket folder on disk. */
+  private resourcesInFolder(resourcesDir: string, folderName: string): string[] {
+    const names: string[] = [];
+    const findFolder = (dir: string): string | null => {
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const full = path.join(dir, entry.name);
+          if (entry.name === folderName) return full;
+          const found = findFolder(full);
+          if (found) return found;
+        }
+      } catch {}
+      return null;
+    };
+    const folderPath = findFolder(resourcesDir);
+    if (!folderPath) return names;
+
+    const collect = (dir: string) => {
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const full = path.join(dir, entry.name);
+          if (fs.existsSync(path.join(full, 'fxmanifest.lua')) ||
+              fs.existsSync(path.join(full, '__resource.lua'))) {
+            names.push(entry.name);
+          } else {
+            collect(full);
+          }
+        }
+      } catch {}
+    };
+    collect(folderPath);
+    return names;
+  }
+
+  /** Parse ensure/start lines from server.cfg with their line numbers. */
+  private parseEnsureLines(lines: string[]): { name: string; lineIdx: number }[] {
+    const out: { name: string; lineIdx: number }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      if (trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+      const m = trimmed.match(/^(?:ensure|start)\s+(\S+)/);
+      if (m) out.push({ name: m[1], lineIdx: i });
+    }
+    return out;
+  }
+
+  /**
+   * Effective position of a resource in the load order: its explicit
+   * ensure line, or the line of the bracket folder that contains it.
+   * Explicit lines win (later explicit ensure re-starts the resource).
+   */
+  private effectiveLineIdx(
+    ensures: { name: string; lineIdx: number }[],
+    resourcesDir: string,
+    resource: string,
+    folderCache: Map<string, string[]>
+  ): number {
+    // Last explicit ensure wins — a re-ensure later in the file restarts it
+    let explicit = -1;
+    for (const e of ensures) {
+      if (e.name === resource) explicit = e.lineIdx;
+    }
+    if (explicit > -1) return explicit;
+
+    for (const e of ensures) {
+      if (!e.name.startsWith('[')) continue;
+      let contents = folderCache.get(e.name);
+      if (!contents) {
+        contents = this.resourcesInFolder(resourcesDir, e.name);
+        folderCache.set(e.name, contents);
+      }
+      if (contents.includes(resource)) return e.lineIdx;
+    }
+    return -1;
+  }
+
   async scanServer(serverPath: string, consoleLogs?: string[]): Promise<HealthReport> {
     const issues: HealthIssue[] = [];
 
@@ -452,70 +542,73 @@ export class HealthScanner {
 
     const content = fs.readFileSync(cfgPath, 'utf-8');
     const lines = content.split('\n');
-    const ensureOrder: { name: string; lineIdx: number }[] = [];
+    const ensures = this.parseEnsureLines(lines);
+    const resourcesDir = path.join(serverPath, 'resources');
+    const folderCache = new Map<string, string[]>();
 
-    for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
-      const match = trimmed.match(/^(?:ensure|start)\s+(\S+)/);
-      if (match) ensureOrder.push({ name: match[1], lineIdx: i });
-    }
-
-    const indexOf = (name: string) => ensureOrder.findIndex(e => e.name === name);
+    const effIdx = (name: string) =>
+      this.effectiveLineIdx(ensures, resourcesDir, name, folderCache);
 
     const frameworks = ['es_extended', 'qb-core', 'qbx_core'];
-    const frameworkIdx = Math.max(...frameworks.map(f => indexOf(f)));
+    const frameworkIdx = Math.max(...frameworks.map(f => effIdx(f)));
+    if (frameworkIdx === -1) return; // no framework — nothing to order
 
-    const oxmysqlIdx = indexOf('oxmysql');
-    const oxlibIdx = indexOf('ox_lib');
-    const oxFolderIdx = indexOf('[ox]');
-
-    // oxmysql must load before framework
-    if (oxmysqlIdx > -1 && frameworkIdx > -1 && oxmysqlIdx > frameworkIdx) {
+    // oxmysql must load before framework (folder-aware: being inside an
+    // [ox] folder that loads before the framework is perfectly fine)
+    const oxmysqlIdx = effIdx('oxmysql');
+    if (oxmysqlIdx > -1 && oxmysqlIdx > frameworkIdx) {
       issues.push({
         id: 'startup-order-mysql',
         severity: 'error',
         category: 'Startup Order',
         message: 'Database (oxmysql) must start before framework',
-        suggestion: 'Move oxmysql above your framework in server.cfg',
+        suggestion: 'Will move oxmysql above your framework in server.cfg',
         autoFixable: true,
       });
     }
 
     // ox_lib should load before framework
-    if (oxlibIdx > -1 && frameworkIdx > -1 && oxlibIdx > frameworkIdx) {
+    const oxlibIdx = effIdx('ox_lib');
+    if (oxlibIdx > -1 && oxlibIdx > frameworkIdx) {
       issues.push({
         id: 'startup-order-oxlib',
         severity: 'warning',
         category: 'Startup Order',
         message: 'ox_lib should start before framework',
-        suggestion: 'Move ox_lib above your framework in server.cfg',
+        suggestion: 'Will move ox_lib above your framework in server.cfg',
         autoFixable: true,
       });
     }
 
-    // [ox] folder should load before framework (ox resources need framework)
-    if (oxFolderIdx > -1 && frameworkIdx > -1 && oxFolderIdx < frameworkIdx) {
-      issues.push({
-        id: 'startup-order-ox-folder',
-        severity: 'error',
-        category: 'Startup Order',
-        message: '[ox] resources load before framework — they need qbx_core/qb-core/es_extended first',
-        suggestion: 'Move ensure [ox] below your framework in server.cfg',
-        autoFixable: true,
-      });
-    }
-
-    // Check [qbx] or [qb] loads after framework
+    // Framework resource folders ([qbx]/[qb]/[esx]) must load after framework
     for (const folder of ['[qbx]', '[qb]', '[esx]']) {
-      const folderIdx = indexOf(folder);
-      if (folderIdx > -1 && frameworkIdx > -1 && folderIdx < frameworkIdx) {
+      const folderEntry = ensures.find(e => e.name === folder);
+      if (folderEntry && folderEntry.lineIdx < frameworkIdx) {
         issues.push({
           id: `startup-order-${folder}`,
           severity: 'error',
           category: 'Startup Order',
           message: `${folder} resources load before framework — move below framework`,
-          suggestion: `Move ensure ${folder} below your framework in server.cfg`,
+          suggestion: `Will move ensure ${folder} below your framework in server.cfg`,
+          autoFixable: true,
+        });
+      }
+    }
+
+    // Framework-dependent ox resources loading before the framework
+    // (e.g. ox_doorlock inside [ox] which loads first). The fix is NOT to
+    // move [ox] (it holds oxmysql/ox_lib) — it's to add an explicit
+    // re-ensure after the framework so they restart once it's up.
+    for (const res of ['ox_inventory', 'ox_doorlock']) {
+      const idx = effIdx(res);
+      if (idx > -1 && idx < frameworkIdx) {
+        issues.push({
+          id: `startup-order-reensure-${res}`,
+          severity: 'warning',
+          category: 'Startup Order',
+          message: `${res} loads before the framework and will warn "no compatible framework"`,
+          resource: res,
+          suggestion: `Will add "ensure ${res}" after the framework so it restarts once the framework is loaded`,
           autoFixable: true,
         });
       }
@@ -547,8 +640,9 @@ export class HealthScanner {
         severity: 'error',
         category: 'Database',
         message: 'mysql_connection_string is missing from server.cfg',
-        suggestion: 'Add: set mysql_connection_string "mysql://user:password@host/database" to your server.cfg',
-        autoFixable: false,
+        suggestion: 'Will set up a local database and add the connection string to server.cfg automatically',
+        autoFixable: true,
+        fixAction: 'db:connstring',
       });
       return;
     }
@@ -575,24 +669,50 @@ export class HealthScanner {
     // TCP ping the database host
     const reachable = await this.tcpPing(host, port, 3000);
 
+    const isLocal = ['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(host.toLowerCase());
+
     if (!reachable) {
       issues.push({
         id: 'db-unreachable',
         severity: 'error',
         category: 'Database',
         message: `MySQL is not reachable at ${host}:${port}`,
-        suggestion: `Make sure MySQL/MariaDB is running on ${host}:${port}. Check that the mysql_connection_string in server.cfg has the correct host, port, user, and password.`,
-        autoFixable: false,
+        suggestion: isLocal
+          ? 'Will start MySQL/MariaDB automatically — installs a portable MariaDB if none is on this PC'
+          : `Make sure MySQL/MariaDB is running on ${host}:${port} — remote databases can't be started from this PC.`,
+        autoFixable: isLocal,
+        fixAction: isLocal ? 'db:setup' : undefined,
       });
-    } else {
-      issues.push({
-        id: 'db-reachable',
-        severity: 'info',
-        category: 'Database',
-        message: `MySQL is reachable at ${host}:${port}`,
-        autoFixable: false,
-      });
+      return;
     }
+
+    // Reachable — also verify the credentials actually work
+    if (this.dbManager) {
+      const creds = this.dbManager.parseConnectionString(connString);
+      const verify = await this.dbManager.verifyCredentials(creds);
+      if (!verify.ok) {
+        issues.push({
+          id: 'db-bad-credentials',
+          severity: 'error',
+          category: 'Database',
+          message: `MySQL is running but the connection failed: ${verify.error}`,
+          suggestion: isLocal
+            ? 'Will create the database and fix the connection string in server.cfg'
+            : 'Check the user, password, and database name in mysql_connection_string',
+          autoFixable: isLocal,
+          fixAction: isLocal ? 'db:connstring' : undefined,
+        });
+        return;
+      }
+    }
+
+    issues.push({
+      id: 'db-reachable',
+      severity: 'info',
+      category: 'Database',
+      message: `MySQL is connected and working at ${host}:${port}`,
+      autoFixable: false,
+    });
   }
 
   private getAllCfgContent(serverPath: string): string {
@@ -761,8 +881,9 @@ export class HealthScanner {
           severity: 'error',
           category: 'Database',
           message: `Database connection failed${dbConnectionString ? ` (${dbConnectionString})` : ''}`,
-          suggestion: 'Make sure MySQL/MariaDB is running and mysql_connection_string is correct',
-          autoFixable: false,
+          suggestion: 'Will start MySQL/MariaDB automatically — installs a portable MariaDB if none is on this PC',
+          autoFixable: true,
+          fixAction: 'db:setup',
         });
       }
     }
@@ -899,10 +1020,24 @@ export class HealthScanner {
       return this.fixStartupOrder(cfgPath, issue);
     }
 
-    // Fix runtime resource order issues detected from console
+    // Fix runtime resource order issues detected from console.
+    // Fix the cfg for next boot AND apply live to the running server.
     if (issue.id.startsWith('runtime-order-') || issue.id.startsWith('runtime-no-framework-')) {
       if (!fs.existsSync(cfgPath)) return false;
-      return this.fixRuntimeOrder(cfgPath, issue);
+      const fixed = this.fixRuntimeOrder(cfgPath, issue);
+      if (fixed && serverManager) {
+        const serverId = serverManager.getServerId(serverPath);
+        if (serverId && serverManager.isRunning(serverId)) {
+          const orderMatch = issue.id.match(/^runtime-order-(.+)-before-(.+)$/);
+          const toRestart = orderMatch ? [orderMatch[1], orderMatch[2]]
+            : issue.resource ? [issue.resource] : [];
+          for (const res of toRestart) {
+            console.log(`[HealthFix] Live-restarting ${res} in correct order`);
+            serverManager.sendCommand(serverId, `ensure ${res}`);
+          }
+        }
+      }
+      return fixed;
     }
 
     // Fix failed resources — add comment with restart hint
@@ -972,7 +1107,57 @@ export class HealthScanner {
     return false;
   }
 
+  /**
+   * Get the database running (start service / portable MariaDB, installing
+   * it if needed), create the server's database, and optionally rewrite
+   * the connection string in server.cfg to known-good local credentials.
+   */
+  private async fixDatabase(serverPath: string, rewriteConnString: boolean): Promise<boolean> {
+    if (!this.dbManager) return false;
+
+    const result = await this.dbManager.ensureRunning(true);
+    if (!result.success) {
+      console.error('[HealthFix] Database setup failed:', result.error);
+      return false;
+    }
+    console.log(`[HealthFix] Database running (${result.method})`);
+
+    // Work out the database name — from the existing connection string,
+    // falling back to the server folder name
+    const allCfg = this.getAllCfgContent(serverPath);
+    const connMatch = allCfg.match(/set\s+mysql_connection_string\s+["']([^"']+)["']/);
+    let dbName = '';
+    if (connMatch) {
+      const creds = this.dbManager.parseConnectionString(connMatch[1]);
+      if (creds.database) dbName = creds.database.split('?')[0];
+    }
+    if (!dbName) {
+      dbName = path.basename(serverPath).toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 60) || 'fivem';
+    }
+
+    await this.dbManager.createDatabase(dbName);
+
+    if (rewriteConnString || !connMatch) {
+      const cfgPath = path.join(serverPath, 'server.cfg');
+      if (!fs.existsSync(cfgPath)) return false;
+      let content = fs.readFileSync(cfgPath, 'utf-8');
+      const newLine = `set mysql_connection_string "${this.dbManager.buildConnectionString(dbName)}"`;
+      if (/^\s*set\s+mysql_connection_string\s+.*$/m.test(content)) {
+        content = content.replace(/^\s*set\s+mysql_connection_string\s+.*$/m, newLine);
+      } else {
+        content = `# Database (added by Health Scanner)\n${newLine}\n\n${content}`;
+      }
+      fs.writeFileSync(cfgPath, content, 'utf-8');
+      console.log(`[HealthFix] Wrote connection string for database "${dbName}" to server.cfg`);
+    }
+    return true;
+  }
+
   private async executeFixAction(serverPath: string, fixAction: string, serverManager?: any): Promise<boolean> {
+    // Database fixes — start/install MySQL, create DB, fix connection string
+    if (fixAction === 'db:setup') return this.fixDatabase(serverPath, false);
+    if (fixAction === 'db:connstring') return this.fixDatabase(serverPath, true);
+
     // "restart:resource1,resource2" — restart resources on the running server
     if (fixAction.startsWith('restart:')) {
       const resources = fixAction.slice(8).split(',');
@@ -1093,116 +1278,134 @@ export class HealthScanner {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private fixStartupOrder(cfgPath: string, issue: HealthIssue): boolean {
-    const content = fs.readFileSync(cfgPath, 'utf-8');
-    const lines = content.split('\n');
+  /** Line index of the last framework-block ensure (framework itself plus
+   *  its resource folders) — re-ensures go after this point. */
+  private frameworkBlockEnd(lines: string[]): number {
     const frameworks = ['es_extended', 'qb-core', 'qbx_core'];
-
-    // Find framework line index
-    let frameworkIdx = -1;
+    const frameworkFolders = ['[qbx]', '[qb]', '[esx]', '[standalone]'];
+    let end = -1;
     for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-      if (m && frameworks.includes(m[1])) { frameworkIdx = i; break; }
+      const m = lines[i].trim().match(/^(?:ensure|start)\s+(\S+)/);
+      if (m && (frameworks.includes(m[1]) || frameworkFolders.includes(m[1]))) {
+        end = i;
+      }
     }
+    return end;
+  }
+
+  private findFrameworkLine(lines: string[]): number {
+    const frameworks = ['es_extended', 'qb-core', 'qbx_core'];
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].trim().match(/^(?:ensure|start)\s+(\S+)/);
+      if (m && frameworks.includes(m[1])) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Guarantee `resource` loads before/after the given anchor line.
+   * If the resource has an explicit ensure line, move it. If it only loads
+   * via a bracket folder (or isn't ensured at all), INSERT an explicit
+   * ensure line — for "after", a later re-ensure restarts the resource at
+   * the right time, which is the only way to reorder a folder resource
+   * without breaking its siblings.
+   */
+  private placeResource(cfgPath: string, lines: string[], resource: string, direction: 'before' | 'after', anchorIdx: number): boolean {
+    if (anchorIdx < 0 || anchorIdx >= lines.length) return false;
+
+    // Find resource's explicit ensure line (last occurrence wins)
+    let sourceIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].trim().match(/^(?:ensure|start)\s+(\S+)/);
+      if (m && m[1] === resource) sourceIdx = i;
+    }
+
+    if (sourceIdx > -1) {
+      // Already in the right place?
+      if (direction === 'before' && sourceIdx < anchorIdx) return true;
+      if (direction === 'after' && sourceIdx > anchorIdx) return true;
+      const sourceLine = lines[sourceIdx];
+      lines.splice(sourceIdx, 1);
+      if (sourceIdx < anchorIdx) anchorIdx--;
+      const insertIdx = direction === 'before' ? anchorIdx : anchorIdx + 1;
+      lines.splice(insertIdx, 0, sourceLine);
+      fs.writeFileSync(cfgPath, lines.join('\n'), 'utf-8');
+      console.log(`[HealthFix] Moved "ensure ${resource}" ${direction} line ${anchorIdx + 1} in server.cfg`);
+      return true;
+    }
+
+    // No explicit line — insert one (resource loads via a bracket folder)
+    const insertIdx = direction === 'before' ? anchorIdx : anchorIdx + 1;
+    lines.splice(insertIdx, 0, `# load order fix (Health Scanner)`, `ensure ${resource}`);
+    fs.writeFileSync(cfgPath, lines.join('\n'), 'utf-8');
+    console.log(`[HealthFix] Inserted "ensure ${resource}" ${direction} line ${anchorIdx + 1} in server.cfg`);
+    return true;
+  }
+
+  private fixStartupOrder(cfgPath: string, issue: HealthIssue): boolean {
+    const lines = fs.readFileSync(cfgPath, 'utf-8').split('\n');
+    const frameworkIdx = this.findFrameworkLine(lines);
     if (frameworkIdx === -1) return false;
 
-    // "startup-order-ox-folder" or "startup-order-[qbx]" — move AFTER framework
-    if (issue.id === 'startup-order-ox-folder' || issue.id.startsWith('startup-order-[')) {
-      const folder = issue.id === 'startup-order-ox-folder' ? '[ox]'
-        : issue.id.replace('startup-order-', '');
-      return this.moveResourceLine(lines, cfgPath, folder, 'after', frameworkIdx);
+    // "[qbx]"/"[qb]"/"[esx]" folder before framework — move it after
+    if (issue.id.startsWith('startup-order-[')) {
+      const folder = issue.id.replace('startup-order-', '');
+      return this.placeResource(cfgPath, lines, folder, 'after', frameworkIdx);
     }
 
-    // "startup-order-mysql" or "startup-order-oxlib" — move BEFORE framework
+    // oxmysql / ox_lib after framework — move (or insert) before it
     if (issue.id === 'startup-order-mysql') {
-      return this.moveResourceLine(lines, cfgPath, 'oxmysql', 'before', frameworkIdx);
+      return this.placeResource(cfgPath, lines, 'oxmysql', 'before', frameworkIdx);
     }
     if (issue.id === 'startup-order-oxlib') {
-      return this.moveResourceLine(lines, cfgPath, 'ox_lib', 'before', frameworkIdx);
+      return this.placeResource(cfgPath, lines, 'ox_lib', 'before', frameworkIdx);
+    }
+
+    // Framework-dependent ox resources — re-ensure after the framework block
+    if (issue.id.startsWith('startup-order-reensure-') && issue.resource) {
+      const blockEnd = this.frameworkBlockEnd(lines);
+      return this.placeResource(cfgPath, lines, issue.resource, 'after', blockEnd > -1 ? blockEnd : frameworkIdx);
     }
 
     return false;
   }
 
   private fixRuntimeOrder(cfgPath: string, issue: HealthIssue): boolean {
-    const content = fs.readFileSync(cfgPath, 'utf-8');
-    const lines = content.split('\n');
-    const frameworks = ['es_extended', 'qb-core', 'qbx_core'];
+    const lines = fs.readFileSync(cfgPath, 'utf-8').split('\n');
+    const serverPath = path.dirname(cfgPath);
+    const resourcesDir = path.join(serverPath, 'resources');
+    const ensures = this.parseEnsureLines(lines);
+    const folderCache = new Map<string, string[]>();
 
-    // Find framework line
-    let frameworkIdx = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-      if (m && frameworks.includes(m[1])) { frameworkIdx = i; break; }
-    }
+    const effIdx = (name: string) =>
+      this.effectiveLineIdx(ensures, resourcesDir, name, folderCache);
 
-    // "runtime-order-X-before-Y" — move X before Y
-    const orderMatch = issue.id.match(/^runtime-order-(\S+)-before-(\S+)/);
+    // "runtime-order-X-before-Y" — make X load before Y.
+    // Y's anchor is its explicit line OR the folder line that loads it.
+    const orderMatch = issue.id.match(/^runtime-order-(.+)-before-(.+)$/);
     if (orderMatch) {
       const [, resourceA, resourceB] = orderMatch;
-      let bIdx = -1;
-      for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-        if (m && m[1] === resourceB) { bIdx = i; break; }
-      }
+      const aIdx = effIdx(resourceA);
+      const bIdx = effIdx(resourceB);
+      // Already ordered correctly (e.g. via a folder ensure)? The warning
+      // came from a boot where A failed to start — nothing to reorder.
+      if (aIdx > -1 && bIdx > -1 && aIdx < bIdx) return true;
       if (bIdx > -1) {
-        return this.moveResourceLine(lines, cfgPath, resourceA, 'before', bIdx);
+        return this.placeResource(cfgPath, lines, resourceA, 'before', bIdx);
       }
+      return false;
     }
 
-    // "runtime-no-framework-X" — resource loaded before framework, move after
-    if (issue.id.startsWith('runtime-no-framework-') && issue.resource && frameworkIdx > -1) {
-      const resource = issue.resource;
-
-      // First try direct match — is this resource ensured by name before framework?
-      for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-        if (m && m[1] === resource && i < frameworkIdx) {
-          return this.moveResourceLine(lines, cfgPath, resource, 'after', frameworkIdx);
-        }
-      }
-
-      // Otherwise find the folder that contains it (e.g. ox_doorlock is in [ox])
-      // Common patterns: ox_ prefix → [ox], qbx_ prefix → [qbx], esx_ prefix → [esx]
-      const folderGuesses: string[] = [];
-      if (resource.startsWith('ox_')) folderGuesses.push('[ox]');
-      if (resource.startsWith('qbx_')) folderGuesses.push('[qbx]');
-      if (resource.startsWith('qb-') || resource.startsWith('qb_')) folderGuesses.push('[qb]');
-      if (resource.startsWith('esx_')) folderGuesses.push('[esx]');
-
-      for (const folder of folderGuesses) {
-        for (let i = 0; i < lines.length; i++) {
-          const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-          if (m && m[1] === folder && i < frameworkIdx) {
-            return this.moveResourceLine(lines, cfgPath, folder, 'after', frameworkIdx);
-          }
-        }
-      }
+    // "runtime-no-framework-X" — X started before the framework was up.
+    // Re-ensure it after the framework block. Never move whole folders —
+    // that's what kept breaking [ox] (it holds oxmysql/ox_lib too).
+    if (issue.id.startsWith('runtime-no-framework-') && issue.resource) {
+      const frameworkIdx = this.findFrameworkLine(lines);
+      if (frameworkIdx === -1) return false;
+      const blockEnd = this.frameworkBlockEnd(lines);
+      return this.placeResource(cfgPath, lines, issue.resource, 'after', blockEnd > -1 ? blockEnd : frameworkIdx);
     }
 
     return false;
-  }
-
-  private moveResourceLine(lines: string[], cfgPath: string, resource: string, direction: 'before' | 'after', targetIdx: number): boolean {
-    let sourceIdx = -1;
-    let sourceLine = '';
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^\s*(?:ensure|start)\s+(\S+)/);
-      if (m && m[1] === resource) { sourceIdx = i; sourceLine = lines[i]; break; }
-    }
-    if (sourceIdx === -1) return false;
-
-    // Remove from current position
-    lines.splice(sourceIdx, 1);
-    // Adjust target if it shifted
-    if (sourceIdx < targetIdx) targetIdx--;
-
-    // Insert at new position
-    const insertIdx = direction === 'before' ? targetIdx : targetIdx + 1;
-    lines.splice(insertIdx, 0, sourceLine);
-
-    fs.writeFileSync(cfgPath, lines.join('\n'), 'utf-8');
-    console.log(`[HealthFix] Moved ${resource} ${direction} line ${targetIdx} in server.cfg`);
-    return true;
   }
 }

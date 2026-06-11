@@ -1,6 +1,6 @@
 {
   "name": "fivem-server-builder",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Professional desktop application for creating, managing, and maintaining FiveM servers",
   "main": "dist/main/main.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "framer-motion": "^10.18.0",
     "glob": "^10.3.10",
     "lucide-react": "^0.303.0",
+    "mysql2": "^3.22.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.4.1",

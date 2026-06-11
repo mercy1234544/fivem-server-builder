@@ -9,6 +9,7 @@ import { HealthScanner } from './services/HealthScanner';
 import { GitManager } from './services/GitManager';
 import { FileManager } from './services/FileManager';
 import { ArtifactDownloader } from './services/ArtifactDownloader';
+import { DatabaseManager } from './services/DatabaseManager';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 
@@ -20,6 +21,7 @@ let healthScanner: HealthScanner;
 let gitManager: GitManager;
 let fileManager: FileManager;
 let artifactDownloader: ArtifactDownloader;
+let databaseManager: DatabaseManager;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -58,6 +60,9 @@ function initializeServices() {
   gitManager = new GitManager();
   fileManager = new FileManager();
   artifactDownloader = new ArtifactDownloader();
+  databaseManager = new DatabaseManager();
+  serverManager.setDatabaseManager(databaseManager);
+  healthScanner.setDatabaseManager(databaseManager);
 }
 
 function registerIpcHandlers() {
@@ -99,6 +104,12 @@ function registerIpcHandlers() {
   ipcMain.handle('server:update', (_, id, data) => serverManager.updateServer(id, data));
   ipcMain.handle('server:delete', (_, id) => serverManager.deleteServer(id));
   ipcMain.handle('server:start', async (_, id) => {
+    // Best-effort: make sure the local database is up before the server
+    // boots (starts an existing service or our portable MariaDB — no
+    // downloads here, the Health Scanner / wizard handle installs)
+    try {
+      await databaseManager.ensureRunning(false);
+    } catch {}
     const result = await serverManager.startServer(id);
     return result;
   });
@@ -1038,4 +1049,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  try { databaseManager?.shutdown(); } catch {}
 });

@@ -7,6 +7,7 @@ import { BrowserWindow } from 'electron';
 import axios from 'axios';
 import extractZip from 'extract-zip';
 import { ArtifactDownloader } from './ArtifactDownloader';
+import { DatabaseManager } from './DatabaseManager';
 
 export interface ServerConfig {
   name: string;
@@ -127,6 +128,11 @@ export class ServerManager {
   private servers: Map<string, Server> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
   private consoleLogs: Map<string, string[]> = new Map();
+  private databaseManager: DatabaseManager | null = null;
+
+  setDatabaseManager(dbManager: DatabaseManager) {
+    this.databaseManager = dbManager;
+  }
 
   constructor(userDataPath: string) {
     this.dataPath = path.join(userDataPath, 'data');
@@ -285,6 +291,33 @@ export class ServerManager {
       if (!fs.existsSync(fp)) fs.mkdirSync(fp, { recursive: true });
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 2.5: Set up the database (MariaDB/MySQL)
+    // Starts an existing service, or downloads portable MariaDB if none
+    // is installed. Creates the server's database so SQL imports work.
+    // ═══════════════════════════════════════════════════════════════════
+    const dbName = (config.name.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '') || 'fivem').slice(0, 60);
+    let dbReady = false;
+    if (this.databaseManager && config.framework !== 'blank') {
+      sendProgress('Setting up database (MySQL/MariaDB)...', 0, 100);
+      try {
+        const dbResult = await this.databaseManager.ensureRunning(true, (msg, pct) => sendProgress(msg, pct, 100));
+        if (dbResult.success) {
+          dbReady = await this.databaseManager.createDatabase(dbName);
+          if (dbReady) {
+            sendProgress(`✓ Database "${dbName}" ready (${dbResult.method})`, 100, 100);
+          } else {
+            sendProgress('Warning: MySQL is running but database creation failed — check credentials', 100, 100);
+          }
+        } else {
+          sendProgress(`Warning: Could not set up database — ${dbResult.error}. Run Health Scanner to fix later.`, 100, 100);
+        }
+      } catch (err: any) {
+        console.error('[Build] Database setup failed:', err.message);
+        sendProgress(`Warning: Database setup failed — ${err.message}`, 100, 100);
+      }
+    }
+
     if (config.framework === 'qbcore' || config.framework === 'esx' || config.framework === 'qbox') {
       sendProgress('Fetching official framework recipe...', 0, 100);
 
@@ -401,7 +434,29 @@ export class ServerManager {
               await new Promise(r => setTimeout(r, seconds * 1000));
               break;
             }
-            // skip: connect_database, query_database, replace_string (user handles DB in txAdmin)
+            case 'connect_database': {
+              // Database already set up in STEP 2.5 — nothing to do
+              break;
+            }
+            case 'query_database': {
+              if (!dbReady || !this.databaseManager) {
+                console.warn('[Recipe] query_database skipped — database not ready');
+                break;
+              }
+              // Recipes use either `file: ./path.sql` or inline `query: ...`
+              const sqlFileRef = task.file && task.file !== 'true' ? task.file
+                : (task.query && task.query.endsWith('.sql') ? task.query : null);
+              if (sqlFileRef) {
+                const sqlPath = path.join(config.installPath, sqlFileRef);
+                sendProgress(`Importing SQL schema: ${path.basename(sqlFileRef)}...`, completed, totalDownloads);
+                const ok = await this.databaseManager.importSqlFile(dbName, sqlPath);
+                if (ok) sendProgress(`✓ Imported ${path.basename(sqlFileRef)} into "${dbName}"`, completed, totalDownloads);
+              } else if (task.query) {
+                await this.databaseManager.importSql(dbName, task.query);
+              }
+              break;
+            }
+            // skip: replace_string (we generate our own server.cfg)
           }
         } catch (err: any) {
           console.error(`[Recipe] Task FAILED (${task.action}):`, task, err.message);
@@ -498,7 +553,7 @@ export class ServerManager {
     // broken {{template}} variables gets replaced.
     // ═══════════════════════════════════════════════════════════════════
     const cfgPath = path.join(config.installPath, 'server.cfg');
-    const cleanCfg = this.generateServerCfg(config);
+    const cleanCfg = this.generateServerCfg(config, dbName);
     fs.writeFileSync(cfgPath, cleanCfg, 'utf-8');
     console.log('[Build] Generated server.cfg for framework:', config.framework);
 
@@ -770,7 +825,7 @@ export class ServerManager {
     return tasks;
   }
 
-  private generateServerCfg(config: { name: string; framework: string; licenseKey?: string }): string {
+  private generateServerCfg(config: { name: string; framework: string; licenseKey?: string }, dbName?: string): string {
     const lines: string[] = [];
 
     // Endpoints — must be at top for txAdmin
@@ -798,6 +853,15 @@ export class ServerManager {
       `set onesync on`,
       ``,
     );
+
+    // Database connection — set up automatically by the builder
+    if (dbName && config.framework !== 'blank') {
+      lines.push(
+        `# Database (managed by FiveM Server Builder)`,
+        `set mysql_connection_string "mysql://root@localhost:3306/${dbName}?charset=utf8mb4"`,
+        ``,
+      );
+    }
 
     // Base FiveM resources
     lines.push(
@@ -836,10 +900,18 @@ export class ServerManager {
         `exec ox.cfg`,
         ``,
         `# Resources`,
+        `# [ox] first — contains oxmysql + ox_lib which the framework needs`,
         `ensure [ox]`,
         `ensure qbx_core`,
         `ensure [qbx]`,
         `ensure [standalone]`,
+        ``,
+        `# Re-ensure framework-dependent ox resources AFTER the framework`,
+        `# (they live in [ox] which loads first — re-ensuring restarts them`,
+        `#  once qbx_core is up, which clears "no compatible framework" warnings)`,
+        `ensure ox_inventory`,
+        `ensure ox_doorlock`,
+        `ensure ox_target`,
         ``,
         `## Permissions`,
         `exec permissions.cfg`,
