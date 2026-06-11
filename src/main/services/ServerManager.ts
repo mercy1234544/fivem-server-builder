@@ -630,15 +630,18 @@ export class ServerManager {
       if (startResult.success) {
         server.status = 'running';
         this.saveServers();
-        sendProgress('Waiting for txAdmin to start...', 99, 100);
-        const txReady = await this.waitForTxAdmin(40120, 120000);
-        if (txReady) {
-          sendProgress('Server build complete! Opening txAdmin...', 100, 100);
-          const { shell } = require('electron');
-          shell.openExternal('http://localhost:40120');
-        } else {
-          sendProgress('Server build complete! Open txAdmin manually: localhost:40120', 100, 100);
-        }
+        // Don't block the build on txAdmin — finish immediately and open
+        // the browser in the background the moment txAdmin responds.
+        sendProgress('Server build complete! txAdmin will open automatically...', 100, 100);
+        this.waitForTxAdmin(40120, 180000).then((txReady) => {
+          if (txReady) {
+            console.log('[Build] txAdmin is up — opening browser');
+            const { shell } = require('electron');
+            shell.openExternal('http://localhost:40120');
+          } else {
+            console.warn('[Build] txAdmin did not respond within 3 minutes');
+          }
+        }).catch(() => {});
       } else {
         sendProgress(`Server build complete! Auto-start failed: ${startResult.error}`, 100, 100);
       }
@@ -774,12 +777,15 @@ export class ServerManager {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       try {
-        await axios.get(`http://localhost:${port}`, { timeout: 2000 });
+        // 127.0.0.1 explicitly — "localhost" can resolve to IPv6 ::1 on
+        // Windows while txAdmin only listens on IPv4, making detection
+        // fail forever even though txAdmin is up.
+        await axios.get(`http://127.0.0.1:${port}`, { timeout: 2000 });
         return true;
       } catch (err: any) {
         if (err.response) return true; // Got a response (even 401/403 means txAdmin is up)
       }
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, 1000));
     }
     return false;
   }
