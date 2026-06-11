@@ -78,6 +78,29 @@ export class HealthScanner {
     return names;
   }
 
+  /** Read a resource's fxmanifest.lua content ('' if not found). */
+  private readResourceManifest(resourcesDir: string, resourceName: string): string {
+    if (!resourceName || !fs.existsSync(resourcesDir)) return '';
+    const search = (dir: string, depth: number): string | null => {
+      if (depth > 4) return null;
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const full = path.join(dir, entry.name);
+          if (entry.name === resourceName) {
+            const manifest = path.join(full, 'fxmanifest.lua');
+            if (fs.existsSync(manifest)) return fs.readFileSync(manifest, 'utf-8');
+            return null;
+          }
+          const found = search(full, depth + 1);
+          if (found !== null) return found;
+        }
+      } catch {}
+      return null;
+    };
+    return search(resourcesDir, 0) || '';
+  }
+
   /** Parse ensure/start lines from server.cfg with their line numbers. */
   private parseEnsureLines(lines: string[]): { name: string; lineIdx: number }[] {
     const out: { name: string; lineIdx: number }[] = [];
@@ -553,10 +576,18 @@ export class HealthScanner {
     const frameworkIdx = Math.max(...frameworks.map(f => effIdx(f)));
     if (frameworkIdx === -1) return; // no framework — nothing to order
 
+    // FXServer auto-starts resources listed as `dependency` in a manifest
+    // BEFORE the resource that needs them. qbx_core/qb-core/es_extended all
+    // declare oxmysql (and usually ox_lib) — in that case load position in
+    // server.cfg doesn't matter and we must not flag it.
+    const frameworkName = frameworks.find(f => effIdx(f) === frameworkIdx) || '';
+    const fwManifest = this.readResourceManifest(resourcesDir, frameworkName);
+    const fwAutoStarts = (dep: string) => fwManifest.includes(dep);
+
     // oxmysql must load before framework (folder-aware: being inside an
     // [ox] folder that loads before the framework is perfectly fine)
     const oxmysqlIdx = effIdx('oxmysql');
-    if (oxmysqlIdx > -1 && oxmysqlIdx > frameworkIdx) {
+    if (oxmysqlIdx > -1 && oxmysqlIdx > frameworkIdx && !fwAutoStarts('oxmysql')) {
       issues.push({
         id: 'startup-order-mysql',
         severity: 'error',
@@ -569,13 +600,32 @@ export class HealthScanner {
 
     // ox_lib should load before framework
     const oxlibIdx = effIdx('ox_lib');
-    if (oxlibIdx > -1 && oxlibIdx > frameworkIdx) {
+    if (oxlibIdx > -1 && oxlibIdx > frameworkIdx && !fwAutoStarts('ox_lib')) {
       issues.push({
         id: 'startup-order-oxlib',
         severity: 'warning',
         category: 'Startup Order',
         message: 'ox_lib should start before framework',
         suggestion: 'Will move ox_lib above your framework in server.cfg',
+        autoFixable: true,
+      });
+    }
+
+    // ox_target must load before ox_inventory (inventory only warns, but
+    // targeting silently breaks). When both sit in the same [ox] folder
+    // they start alphabetically — inventory first — so this needs an
+    // explicit "ensure ox_target" earlier, exactly like the official
+    // Qbox cfg does.
+    const oxTargetIdx = effIdx('ox_target');
+    const oxInvIdx = effIdx('ox_inventory');
+    if (oxTargetIdx > -1 && oxInvIdx > -1 && oxTargetIdx >= oxInvIdx) {
+      issues.push({
+        id: 'startup-order-target-before-inventory',
+        severity: 'warning',
+        category: 'Startup Order',
+        message: 'ox_target must start before ox_inventory',
+        resource: 'ox_target',
+        suggestion: 'Will add "ensure ox_target" before ox_inventory in server.cfg (official Qbox order)',
         autoFixable: true,
       });
     }
@@ -799,7 +849,12 @@ export class HealthScanner {
 
       // "Warning: X is not loaded - it should start before Y"
       const orderMatch = line.match(/Warning: (\S+) is not loaded.*should start before (\S+)/);
-      if (orderMatch) orderWarnings.push({ resource: orderMatch[1], needsBefore: orderMatch[2] });
+      if (orderMatch) {
+        orderWarnings.push({
+          resource: orderMatch[1].replace(/[.,!:;]+$/, ''),
+          needsBefore: orderMatch[2].replace(/[.,!:;]+$/, ''),
+        });
+      }
 
       // "Warning: no compatible framework was loaded"
       if (line.includes('no compatible framework was loaded')) {
@@ -1365,6 +1420,17 @@ export class HealthScanner {
     if (issue.id.startsWith('startup-order-reensure-') && issue.resource) {
       const blockEnd = this.frameworkBlockEnd(lines);
       return this.placeResource(cfgPath, lines, issue.resource, 'after', blockEnd > -1 ? blockEnd : frameworkIdx);
+    }
+
+    // ox_target must be ensured before ox_inventory loads
+    if (issue.id === 'startup-order-target-before-inventory') {
+      const serverPath = path.dirname(cfgPath);
+      const resourcesDir = path.join(serverPath, 'resources');
+      const ensures = this.parseEnsureLines(lines);
+      const folderCache = new Map<string, string[]>();
+      const invIdx = this.effectiveLineIdx(ensures, resourcesDir, 'ox_inventory', folderCache);
+      if (invIdx === -1) return false;
+      return this.placeResource(cfgPath, lines, 'ox_target', 'before', invIdx);
     }
 
     return false;

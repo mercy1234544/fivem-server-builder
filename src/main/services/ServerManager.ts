@@ -825,8 +825,29 @@ export class ServerManager {
     return tasks;
   }
 
-  private generateServerCfg(config: { name: string; framework: string; licenseKey?: string }, dbName?: string): string {
+  /** Recursively check whether a bracket folder exists under resources/. */
+  private findFolderRecursive(dir: string, folderName: string, depth = 0): boolean {
+    if (depth > 4) return false;
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name === folderName) return true;
+        if (this.findFolderRecursive(path.join(dir, entry.name), folderName, depth + 1)) return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  private generateServerCfg(config: { name: string; framework: string; licenseKey?: string; installPath?: string }, dbName?: string): string {
     const lines: string[] = [];
+
+    // Disk-aware ensures — only reference folders/resources that exist.
+    // Without an installPath (shouldn't happen) we assume they exist.
+    const resourcesDir = config.installPath ? path.join(config.installPath, 'resources') : null;
+    const hasFolder = (folder: string) =>
+      !resourcesDir || !fs.existsSync(resourcesDir) || this.findFolderRecursive(resourcesDir, folder);
+    const hasRes = (name: string) =>
+      !resourcesDir || !fs.existsSync(resourcesDir) || this.findResourceRecursive(resourcesDir, name);
 
     // Endpoints — must be at top for txAdmin
     lines.push(
@@ -863,14 +884,15 @@ export class ServerManager {
       );
     }
 
-    // Base FiveM resources
+    // Base FiveM resources. Qbox replaces basic-gamemode's spawn logic,
+    // so the official Qbox cfg does not run it.
     lines.push(
       `# Base FiveM Resources (from cfx-server-data)`,
       `ensure mapmanager`,
       `ensure chat`,
       `ensure spawnmanager`,
       `ensure sessionmanager`,
-      `ensure basic-gamemode`,
+      ...(config.framework === 'qbox' ? [] : [`ensure basic-gamemode`]),
       `ensure hardcap`,
       `ensure baseevents`,
       ``,
@@ -899,47 +921,59 @@ export class ServerManager {
         `# Ox resources config`,
         `exec ox.cfg`,
         ``,
-        `# Resources`,
-        `# [ox] first — contains oxmysql + ox_lib which the framework needs`,
-        `ensure [ox]`,
+        `# Resources — official Qbox boot order:`,
+        `# ox_lib first, then the framework (oxmysql auto-starts as a`,
+        `# qbx_core dependency), then ox_target BEFORE [ox] so ox_inventory`,
+        `# finds it, then the resource folders.`,
+        `ensure ox_lib`,
         `ensure qbx_core`,
+        `ensure ox_target`,
+        `ensure [ox]`,
         `ensure [qbx]`,
         `ensure [standalone]`,
-        ``,
-        `# Re-ensure framework-dependent ox resources AFTER the framework`,
-        `# (they live in [ox] which loads first — re-ensuring restarts them`,
-        `#  once qbx_core is up, which clears "no compatible framework" warnings)`,
-        `ensure ox_inventory`,
-        `ensure ox_doorlock`,
-        `ensure ox_target`,
+        ...(hasFolder('[voice]') ? [`ensure [voice]`] : []),
+        ...(hasFolder('[assets]') ? [`ensure [assets]`] : []),
+        ...(hasFolder('[npwd-apps]') ? [`ensure [npwd-apps]`] : []),
+        ...(hasRes('qbx_npwd') ? [`ensure qbx_npwd`] : []),
+        ...(hasRes('npwd') ? [`ensure npwd`] : []),
         ``,
         `## Permissions`,
         `exec permissions.cfg`,
         ``,
       );
     } else if (config.framework === 'esx') {
+      // ESX Legacy recipe boot order: database first, then es_extended,
+      // then the [esx] resource folders.
+      const esxDb = hasRes('oxmysql') ? 'oxmysql' : (hasRes('mysql-async') ? 'mysql-async' : 'oxmysql');
       lines.push(
         `# ESX config`,
         `set es_enableCustomData 1`,
         `set mysql_slow_query_warning 150`,
         ``,
-        `# Resources`,
-        `ensure oxmysql`,
+        `# Resources — ESX Legacy boot order`,
+        `ensure ${esxDb}`,
+        ...(hasRes('ox_lib') ? [`ensure ox_lib`] : []),
         `ensure es_extended`,
         `ensure [esx]`,
-        `ensure [standalone]`,
+        ...(hasFolder('[esx_addons]') ? [`ensure [esx_addons]`] : []),
+        ...(hasFolder('[hud]') ? [`ensure [hud]`] : []),
+        ...(hasFolder('[standalone]') ? [`ensure [standalone]`] : []),
+        ...(hasFolder('[voice]') ? [`ensure [voice]`] : []),
         ``,
       );
     } else if (config.framework === 'qbcore') {
+      // Official QBCore recipe boot order — oxmysql auto-starts as a
+      // qb-core manifest dependency.
       lines.push(
         `# QB-Core config`,
         `setr qb_locale "en"`,
         ``,
-        `# Resources`,
-        `ensure oxmysql`,
+        `# Resources — official QBCore boot order`,
         `ensure qb-core`,
         `ensure [qb]`,
         `ensure [standalone]`,
+        ...(hasFolder('[voice]') ? [`ensure [voice]`] : []),
+        ...(hasFolder('[defaultmaps]') ? [`ensure [defaultmaps]`] : []),
         ``,
       );
     }
