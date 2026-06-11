@@ -57,8 +57,26 @@ export default function HealthScanner() {
   const [loading, setLoading] = useState(false);
   const [fixing, setFixing] = useState<string | null>(null);
   const [fixingAll, setFixingAll] = useState(false);
+  const [fixProgress, setFixProgress] = useState('');
 
   const activeServer = servers.find(s => s.id === activeServerId);
+
+  // Live progress from long-running fixes (e.g. downloading MariaDB)
+  React.useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.health?.onFixProgress) return;
+    const cleanup = api.health.onFixProgress((data: { message: string }) => {
+      setFixProgress(data.message);
+    });
+    return cleanup;
+  }, []);
+
+  // A fix call can return the new { success, error } object or a legacy boolean
+  const fixResultOk = (result: any): { ok: boolean; error?: string } => {
+    if (result === true) return { ok: true };
+    if (result && typeof result === 'object') return { ok: !!result.success, error: result.error };
+    return { ok: false, error: 'Fix did not apply' };
+  };
 
   const runScan = async () => {
     if (!activeServer) return;
@@ -88,40 +106,61 @@ export default function HealthScanner() {
 
     setFixingAll(true);
     let fixed = 0;
+    const failures: string[] = [];
     for (const issue of fixable) {
       setFixing(issue.id);
+      setFixProgress('');
       try {
         if (window.electronAPI) {
-          await window.electronAPI.health.fix(activeServer.installPath, issue);
+          const result = await window.electronAPI.health.fix(activeServer.installPath, issue);
+          const { ok, error } = fixResultOk(result);
+          if (ok) fixed++;
+          else failures.push(`${issue.message}: ${error}`);
         }
-        fixed++;
-      } catch {}
+      } catch (err: any) {
+        failures.push(`${issue.message}: ${err?.message || 'error'}`);
+      }
     }
     setFixing(null);
     setFixingAll(false);
+    setFixProgress('');
 
     // Re-scan to get fresh results
     setLoading(true);
     try {
       const result = await window.electronAPI.health.scan(activeServer.installPath);
       setReport(result);
-      logAction('Fix All', `Fixed ${fixed} issues, re-scanned`, 'success');
+      logAction('Fix All', `Fixed ${fixed}/${fixable.length} issues, re-scanned`, failures.length ? 'warning' : 'success');
     } catch {
       setReport(prev => prev ? { ...prev, issues: prev.issues.filter(i => !i.autoFixable) } : null);
     }
     setLoading(false);
-    toast.success(`Fixed ${fixed} issue${fixed !== 1 ? 's' : ''}`);
+
+    if (fixed > 0) toast.success(`Fixed ${fixed} issue${fixed !== 1 ? 's' : ''}`);
+    for (const f of failures.slice(0, 3)) toast.error(f, { duration: 8000 });
+    if (failures.length > 3) toast.error(`...and ${failures.length - 3} more fixes failed`, { duration: 8000 });
   };
 
   const fixIssue = async (issue: HealthIssue) => {
     if (!activeServer) return;
     setFixing(issue.id);
+    setFixProgress('');
     try {
+      let ok = true;
+      let error: string | undefined;
       if (window.electronAPI) {
-        await window.electronAPI.health.fix(activeServer.installPath, issue);
+        const result = await window.electronAPI.health.fix(activeServer.installPath, issue);
+        ({ ok, error } = fixResultOk(result));
       } else {
         await new Promise(r => setTimeout(r, 600));
       }
+
+      if (!ok) {
+        toast.error(error || 'Could not fix this issue', { duration: 8000 });
+        logAction('Fix Failed', `${issue.message} — ${error}`, 'error');
+        return;
+      }
+
       setReport(prev => prev ? {
         ...prev,
         issues: prev.issues.filter(i => i.id !== issue.id),
@@ -133,10 +172,11 @@ export default function HealthScanner() {
       } : null);
       toast.success(`Fixed: ${issue.message}`);
       logAction('Issue Fixed', issue.message, 'success');
-    } catch {
-      toast.error('Could not fix this issue');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not fix this issue');
     } finally {
       setFixing(null);
+      setFixProgress('');
     }
   };
 
@@ -167,6 +207,16 @@ export default function HealthScanner() {
           {loading ? <Loader2 size={16} className="animate-spin" /> : <HeartPulse size={16} />}
           {loading ? 'Scanning...' : 'Run Scan'}
         </button>
+      </div>
+
+      {/* Live progress while a fix runs (e.g. downloading MariaDB) */}
+      {(fixing || fixingAll) && fixProgress && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600/10 border border-primary-500/30 text-sm text-primary-300">
+          <Loader2 size={14} className="animate-spin shrink-0" />
+          <span>{fixProgress}</span>
+        </div>
+      )}
+      <div className="hidden">
       </div>
 
       {!report && !loading && (

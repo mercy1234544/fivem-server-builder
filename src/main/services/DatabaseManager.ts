@@ -107,13 +107,25 @@ export class DatabaseManager {
       if (!exists) continue;
 
       console.log(`[Database] Found service "${name}" — attempting to start`);
-      const started = await new Promise<boolean>((resolve) => {
+      let started = await new Promise<boolean>((resolve) => {
         execFile('net', ['start', name], (err, stdout, stderr) => {
           // "already been started" also counts as success
           const out = `${stdout}${stderr}`;
           resolve(!err || out.includes('already been started'));
         });
       });
+
+      // Starting services needs admin — retry elevated (shows a UAC prompt)
+      if (!started) {
+        console.log(`[Database] Plain start failed — retrying "${name}" elevated (UAC)`);
+        started = await new Promise<boolean>((resolve) => {
+          execFile('powershell', [
+            '-NoProfile', '-Command',
+            `Start-Process -FilePath net -ArgumentList 'start','${name}' -Verb RunAs -Wait`,
+          ], { timeout: 60000 }, (err) => resolve(!err));
+        });
+      }
+
       if (started && await this.waitForDb(15000)) return true;
     }
     return false;

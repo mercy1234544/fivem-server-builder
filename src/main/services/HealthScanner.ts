@@ -5,6 +5,7 @@ import axios from 'axios';
 import extractZip from 'extract-zip';
 import os from 'os';
 import { DatabaseManager } from './DatabaseManager';
+import { BrowserWindow } from 'electron';
 
 export interface HealthIssue {
   id: string;
@@ -32,9 +33,21 @@ export interface HealthReport {
 
 export class HealthScanner {
   private dbManager: DatabaseManager | null = null;
+  private fixError = '';
 
   setDatabaseManager(dbManager: DatabaseManager) {
     this.dbManager = dbManager;
+  }
+
+  /** Send live fix progress to the renderer (shown in the Health Scanner UI). */
+  private sendFixProgress(message: string) {
+    console.log(`[HealthFix] ${message}`);
+    try {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('health:fixProgress', { message });
+      }
+    } catch {}
   }
 
   // ─── Folder-aware ensure order helpers ─────────────────────────────────
@@ -318,8 +331,8 @@ export class HealthScanner {
           message: `${entry.name} uses deprecated __resource.lua`,
           resource: entry.name,
           file: oldManifest,
-          suggestion: 'Migrate to fxmanifest.lua format',
-          autoFixable: false,
+          suggestion: 'Will migrate to fxmanifest.lua (rename + add fx_version/game headers)',
+          autoFixable: true,
         });
       } else {
         const hasSubResources = fs.readdirSync(fullPath, { withFileTypes: true })
@@ -471,8 +484,8 @@ export class HealthScanner {
           severity: 'warning',
           category: 'Dependencies',
           message: `Resource folder "${resourceName}" is ensured but not found`,
-          suggestion: `Create the ${resourceName} folder in resources or remove it from server.cfg`,
-          autoFixable: false,
+          suggestion: `Will comment out "ensure ${resourceName}" in server.cfg`,
+          autoFixable: true,
         });
         continue;
       }
@@ -483,8 +496,8 @@ export class HealthScanner {
           severity: 'error',
           category: 'Dependencies',
           message: `Resource "${resourceName}" is ensured but not found in resources directory`,
-          suggestion: `Install ${resourceName} or remove it from server.cfg`,
-          autoFixable: false,
+          suggestion: `Will comment out "ensure ${resourceName}" in server.cfg (install the resource and re-enable it later)`,
+          autoFixable: true,
         });
       }
     }
@@ -1017,8 +1030,30 @@ export class HealthScanner {
     }
   }
 
-  async fixIssue(serverPath: string, issue: HealthIssue, serverManager?: any): Promise<boolean> {
-    if (!issue.autoFixable) return false;
+  /**
+   * Fix an issue and report honestly whether it worked. Returns
+   * { success, error } — the renderer must NOT pretend a failed fix
+   * succeeded.
+   */
+  async fixIssue(serverPath: string, issue: HealthIssue, serverManager?: any): Promise<{ success: boolean; error?: string }> {
+    this.fixError = '';
+    try {
+      const ok = await this.doFix(serverPath, issue, serverManager);
+      return {
+        success: ok,
+        error: ok ? undefined : (this.fixError || `No fix could be applied for "${issue.message}" — ${issue.suggestion || 'manual fix needed'}`),
+      };
+    } catch (err: any) {
+      console.error(`[HealthFix] Fix threw for ${issue.id}:`, err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
+  private async doFix(serverPath: string, issue: HealthIssue, serverManager?: any): Promise<boolean> {
+    if (!issue.autoFixable) {
+      this.fixError = 'This issue is not auto-fixable';
+      return false;
+    }
 
     const cfgPath = path.join(serverPath, 'server.cfg');
 
@@ -1046,6 +1081,67 @@ export class HealthScanner {
     // Fix missing resources dir
     if (issue.id === 'missing-resources-dir') {
       fs.mkdirSync(path.join(serverPath, 'resources'), { recursive: true });
+      return true;
+    }
+
+    // Migrate deprecated __resource.lua to fxmanifest.lua
+    if (issue.id.startsWith('deprecated-manifest-') && issue.file) {
+      if (!fs.existsSync(issue.file)) {
+        this.fixError = `__resource.lua not found at ${issue.file}`;
+        return false;
+      }
+      const dir = path.dirname(issue.file);
+      const fxPath = path.join(dir, 'fxmanifest.lua');
+      let content = fs.readFileSync(issue.file, 'utf-8');
+      // resource_manifest_version is replaced by fx_version
+      content = content.split('\n')
+        .filter(l => !l.trim().startsWith('resource_manifest_version'))
+        .join('\n');
+      let header = '';
+      if (!/fx_version/.test(content)) header += `fx_version 'cerulean'\n`;
+      if (!/^\s*games?\s/m.test(content)) header += `game 'gta5'\n`;
+      fs.writeFileSync(fxPath, header + (header ? '\n' : '') + content, 'utf-8');
+      fs.unlinkSync(issue.file);
+      this.sendFixProgress(`Migrated ${issue.resource || path.basename(dir)} to fxmanifest.lua`);
+      return true;
+    }
+
+    // Missing resource that's still ensured — comment out the ensure line
+    if (issue.id.startsWith('missing-resource-')) {
+      const resName = issue.id
+        .replace('missing-resource-folder-', '')
+        .replace('missing-resource-', '');
+      // server.cfg + any exec'd cfg files
+      const cfgFiles = [cfgPath];
+      if (fs.existsSync(cfgPath)) {
+        const mainCfg = fs.readFileSync(cfgPath, 'utf-8');
+        const execPattern = /^\s*exec\s+["']?(\S+?)["']?\s*$/gm;
+        let m;
+        while ((m = execPattern.exec(mainCfg)) !== null) {
+          const extra = path.join(serverPath, m[1]);
+          if (fs.existsSync(extra)) cfgFiles.push(extra);
+        }
+      }
+      let commented = false;
+      for (const file of cfgFiles) {
+        if (!fs.existsSync(file)) continue;
+        const lines = fs.readFileSync(file, 'utf-8').split('\n');
+        let changed = false;
+        for (let i = 0; i < lines.length; i++) {
+          const m = lines[i].trim().match(/^(?:ensure|start)\s+(\S+)/);
+          if (m && m[1] === resName) {
+            lines[i] = `# ${lines[i].trim()}  # disabled by Health Scanner — resource not installed`;
+            changed = true;
+            commented = true;
+          }
+        }
+        if (changed) fs.writeFileSync(file, lines.join('\n'), 'utf-8');
+      }
+      if (!commented) {
+        this.fixError = `Could not find an "ensure ${resName}" line to disable`;
+        return false;
+      }
+      this.sendFixProgress(`Disabled "ensure ${resName}" — resource is not installed`);
       return true;
     }
 
@@ -1168,14 +1264,19 @@ export class HealthScanner {
    * the connection string in server.cfg to known-good local credentials.
    */
   private async fixDatabase(serverPath: string, rewriteConnString: boolean): Promise<boolean> {
-    if (!this.dbManager) return false;
+    if (!this.dbManager) {
+      this.fixError = 'Database manager is not available';
+      return false;
+    }
 
-    const result = await this.dbManager.ensureRunning(true);
+    this.sendFixProgress('Checking for MySQL/MariaDB...');
+    const result = await this.dbManager.ensureRunning(true, (msg) => this.sendFixProgress(msg));
     if (!result.success) {
+      this.fixError = `Database setup failed: ${result.error}`;
       console.error('[HealthFix] Database setup failed:', result.error);
       return false;
     }
-    console.log(`[HealthFix] Database running (${result.method})`);
+    this.sendFixProgress(`Database is running (${result.method})`);
 
     // Work out the database name — from the existing connection string,
     // falling back to the server folder name
@@ -1190,7 +1291,12 @@ export class HealthScanner {
       dbName = path.basename(serverPath).toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 60) || 'fivem';
     }
 
-    await this.dbManager.createDatabase(dbName);
+    this.sendFixProgress(`Creating database "${dbName}"...`);
+    const created = await this.dbManager.createDatabase(dbName);
+    if (!created) {
+      this.fixError = `MySQL is running but creating database "${dbName}" failed — check the user/password in mysql_connection_string`;
+      return false;
+    }
 
     if (rewriteConnString || !connMatch) {
       const cfgPath = path.join(serverPath, 'server.cfg');
@@ -1216,7 +1322,10 @@ export class HealthScanner {
     // "restart:resource1,resource2" — restart resources on the running server
     if (fixAction.startsWith('restart:')) {
       const resources = fixAction.slice(8).split(',');
-      if (!serverManager) return false;
+      if (!serverManager) {
+        this.fixError = 'Cannot restart resources — server manager unavailable';
+        return false;
+      }
       const serverId = serverManager.getServerId(serverPath);
       if (!serverId || !serverManager.isRunning(serverId)) {
         console.log('[HealthFix] Server not running — restart resources will apply on next boot');
@@ -1244,6 +1353,7 @@ export class HealthScanner {
     const resourcesDir = path.join(serverPath, 'resources');
     const configPath = this.findConfigFile(resourcesDir, resource, key);
     if (!configPath) {
+      this.fixError = `Could not find a config file in ${resource} containing "${key}"`;
       console.log(`[HealthFix] Could not find config for ${resource} with key ${key}`);
       return false;
     }

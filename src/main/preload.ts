@@ -40,6 +40,11 @@ const electronAPI = {
   health: {
     scan: (serverPath: string) => ipcRenderer.invoke('health:scan', serverPath),
     fix: (serverPath: string, issue: any) => ipcRenderer.invoke('health:fix', serverPath, issue),
+    onFixProgress: (callback: (data: { message: string }) => void) => {
+      const handler = (_: any, data: any) => callback(data);
+      ipcRenderer.on('health:fixProgress', handler);
+      return () => { ipcRenderer.removeListener('health:fixProgress', handler); };
+    },
   },
 
   // Backup
