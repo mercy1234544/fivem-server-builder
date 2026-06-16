@@ -13,8 +13,9 @@ export interface SystemStats {
 export interface Pm2Process {
   name: string;
   pm_id?: number;
-  pm2_env?: { status?: string };
+  pm2_env?: { status?: string; name?: string };
   status?: string;
+  [key: string]: any;
 }
 
 const BRIDGE_CONFIG_KEY = 'fivem-bridge-config';
@@ -31,25 +32,19 @@ export function saveBridgeConfig(cfg: BridgeConfig) {
   localStorage.setItem(BRIDGE_CONFIG_KEY, JSON.stringify(cfg));
 }
 
-// All HTTP goes through Electron main process (Node.js/axios) — no CORS issues
 function ipcRequest(host: string, apiKey: string, method: string, path: string, body?: any): Promise<any> {
   const api = (window as any).electronAPI;
   if (!api?.bridge?.request) {
-    // Non-Electron fallback
     return fetch(`http://${host}${path}`, {
       method,
       headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
-    }).then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    });
+    }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
   }
   return api.bridge.request({ host, apiKey, method, path, body });
 }
 
-// Safely coerce any value to a finite number with a fallback
-function num(v: any, fallback = 0): number {
+function toNum(v: any, fallback = 0): number {
   const n = Number(v);
   return isFinite(n) ? n : fallback;
 }
@@ -62,47 +57,70 @@ export class BridgeApi {
   }
 
   async ping(): Promise<boolean> {
-    try {
-      await this.req('GET', '/stats');
-      return true;
-    } catch {
-      return false;
-    }
+    try { await this.req('GET', '/stats'); return true; } catch { return false; }
   }
 
   async getStats(): Promise<SystemStats> {
     const d: any = await this.req('GET', '/stats');
-    // Normalize — bridge may use different field names
-    const cpu = num(d?.cpu ?? d?.cpu_percent ?? d?.cpu_usage ?? d?.cpuPercent);
-    const ram_used = num(d?.ram_used ?? d?.memory_used ?? d?.ramUsed ?? d?.ram?.used);
-    const ram_total = num(d?.ram_total ?? d?.memory_total ?? d?.ramTotal ?? d?.ram?.total, 1);
-    const ram_percent = num(
-      d?.ram_percent ?? d?.memory_percent ?? d?.ramPercent ?? d?.ram?.percent ??
-      (ram_total > 0 ? (ram_used / ram_total) * 100 : 0)
-    );
+
+    // CPU — handle fraction (0–1) and percent (0–100)
+    let cpu = toNum(d?.cpu ?? d?.cpu_percent ?? d?.cpu_usage ?? d?.cpuPercent ?? d?.CPU);
+    if (cpu > 0 && cpu < 1) cpu *= 100; // fraction → percent
+
+    // RAM — handle bytes, MB, GB
+    let ram_used  = toNum(d?.ram_used  ?? d?.memory_used  ?? d?.ramUsed  ?? d?.ram?.used  ?? d?.used_memory);
+    let ram_total = toNum(d?.ram_total ?? d?.memory_total ?? d?.ramTotal ?? d?.ram?.total ?? d?.total_memory, 1);
+    if (ram_total <= 0) ram_total = 1;
+
+    // Auto-scale: bytes → GB, MB → GB
+    if (ram_total > 1_000_000) {       // looks like bytes
+      ram_used  = ram_used  / 1_073_741_824;
+      ram_total = ram_total / 1_073_741_824;
+    } else if (ram_total > 512) {      // looks like MB
+      ram_used  = ram_used  / 1024;
+      ram_total = ram_total / 1024;
+    }
+
+    let ram_percent = toNum(d?.ram_percent ?? d?.memory_percent ?? d?.ramPercent ?? d?.ram?.percent);
+    if (ram_percent === 0 && ram_total > 0) ram_percent = (ram_used / ram_total) * 100;
+    if (ram_percent > 0 && ram_percent <= 1) ram_percent *= 100; // fraction → percent
+
     return { cpu, ram_used, ram_total, ram_percent };
   }
 
   async pm2List(): Promise<Pm2Process[]> {
     const d: any = await this.req('GET', '/pm2/list');
-    const arr = d?.processes ?? d?.data ?? d;
-    return Array.isArray(arr) ? arr : [];
-  }
-
-  async detectServers(): Promise<any[]> {
-    const d: any = await this.req('GET', '/servers/detect');
-    const arr = d?.servers ?? d;
-    return Array.isArray(arr) ? arr : [];
+    const arr = Array.isArray(d) ? d
+              : Array.isArray(d?.processes) ? d.processes
+              : Array.isArray(d?.data) ? d.data
+              : Array.isArray(d?.list) ? d.list
+              : [];
+    return arr;
   }
 
   async getResources(resourcesPath: string): Promise<string[]> {
     const d: any = await this.req('GET', `/resources?path=${encodeURIComponent(resourcesPath)}`);
-    const arr = d?.resources ?? d;
-    return Array.isArray(arr) ? arr : [];
+    const arr = Array.isArray(d) ? d : Array.isArray(d?.resources) ? d.resources : [];
+    return arr.map(String).filter(Boolean);
   }
 
   async getServerCfg(cfgPath: string): Promise<string> {
     const d: any = await this.req('GET', `/servercfg?path=${encodeURIComponent(cfgPath)}`);
+    return String(d?.content ?? d?.data ?? d ?? '');
+  }
+
+  async writeFile(filePath: string, content: string): Promise<void> {
+    await this.req('POST', '/writefile', { path: filePath, content });
+  }
+
+  async listFiles(dirPath: string): Promise<string[]> {
+    const d: any = await this.req('GET', `/files?path=${encodeURIComponent(dirPath)}`);
+    const arr = Array.isArray(d) ? d : Array.isArray(d?.files) ? d.files : [];
+    return arr.map(String);
+  }
+
+  async readFile(filePath: string): Promise<string> {
+    const d: any = await this.req('GET', `/file?path=${encodeURIComponent(filePath)}`);
     return String(d?.content ?? d?.data ?? d ?? '');
   }
 
@@ -118,12 +136,24 @@ export class BridgeApi {
     await this.req('POST', '/server/restart', { process_name: processName });
   }
 
-  async writeFile(filePath: string, content: string): Promise<void> {
-    await this.req('POST', '/writefile', { path: filePath, content });
+  // Send a command to FXServer console or shell — what /execute accepts
+  async execute(cmd: string): Promise<string> {
+    const d: any = await this.req('POST', '/execute', { cmd });
+    return String(d?.output ?? d?.result ?? d?.response ?? d?.stdout ?? '');
   }
 
-  // WebSocket stays in renderer — WS has no CORS
   createWebSocket(): WebSocket {
     return new WebSocket(`ws://${this.host}?key=${encodeURIComponent(this.apiKey)}`);
   }
+}
+
+// Determine PM2 process status from whatever shape the bridge returns
+export function parsePm2Status(proc: any): 'online' | 'stopped' | 'error' | 'unknown' {
+  const s = String(
+    proc?.pm2_env?.status ?? proc?.status ?? proc?.state ?? proc?.pm_status ?? ''
+  ).toLowerCase().trim();
+  if (['online', 'running', 'active', 'started', 'up'].includes(s)) return 'online';
+  if (['stopped', 'stopping', 'inactive', 'idle', 'down', 'offline'].includes(s)) return 'stopped';
+  if (['errored', 'error', 'failed', 'crashed', 'restart_retries'].includes(s)) return 'error';
+  return 'unknown';
 }
