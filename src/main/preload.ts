@@ -145,6 +145,12 @@ const electronAPI = {
     },
   },
 
+  // Bridge API proxy (avoids CORS in renderer)
+  bridge: {
+    request: (opts: { host: string; apiKey: string; method: string; path: string; body?: any }) =>
+      ipcRenderer.invoke('bridge:request', opts),
+  },
+
   // Build progress (server creation)
   onBuildProgress: (callback: (data: { current: number; total: number; resource: string; message: string }) => void) => {
     const handler = (_: any, data: any) => callback(data);

@@ -13,9 +13,7 @@ export interface SystemStats {
 export interface Pm2Process {
   name: string;
   pm_id?: number;
-  pm2_env?: {
-    status?: string;
-  };
+  pm2_env?: { status?: string };
   status?: string;
 }
 
@@ -33,108 +31,81 @@ export function saveBridgeConfig(cfg: BridgeConfig) {
   localStorage.setItem(BRIDGE_CONFIG_KEY, JSON.stringify(cfg));
 }
 
+// All HTTP calls go through the Electron main process (Node.js / axios)
+// so Chromium's CORS restrictions in the renderer never block them.
+function ipcRequest(host: string, apiKey: string, method: string, path: string, body?: any) {
+  const api = (window as any).electronAPI;
+  if (!api?.bridge?.request) {
+    // fallback for browser / dev without Electron (won't work if bridge has no CORS headers)
+    return fetch(`http://${host}${path}`, {
+      method,
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    });
+  }
+  return api.bridge.request({ host, apiKey, method, path, body });
+}
+
 export class BridgeApi {
   constructor(public host: string, public apiKey: string) {}
 
-  private get baseUrl() {
-    return `http://${this.host}`;
-  }
-
-  private get headers(): Record<string, string> {
-    return { 'x-api-key': this.apiKey, 'Content-Type': 'application/json' };
+  private req<T>(method: string, path: string, body?: any): Promise<T> {
+    return ipcRequest(this.host, this.apiKey, method, path, body) as Promise<T>;
   }
 
   async ping(): Promise<boolean> {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(`${this.baseUrl}/stats`, {
-        headers: this.headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      return res.ok;
+      await this.req('GET', '/stats');
+      return true;
     } catch {
       return false;
     }
   }
 
   async getStats(): Promise<SystemStats> {
-    const res = await fetch(`${this.baseUrl}/stats`, { headers: this.headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    return this.req('GET', '/stats');
   }
 
   async pm2List(): Promise<Pm2Process[]> {
-    const res = await fetch(`${this.baseUrl}/pm2/list`, { headers: this.headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.processes ?? data ?? [];
+    const data: any = await this.req('GET', '/pm2/list');
+    return data?.processes ?? data ?? [];
   }
 
   async detectServers(): Promise<any[]> {
-    const res = await fetch(`${this.baseUrl}/servers/detect`, { headers: this.headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.servers ?? data ?? [];
+    const data: any = await this.req('GET', '/servers/detect');
+    return data?.servers ?? data ?? [];
   }
 
   async getResources(resourcesPath: string): Promise<string[]> {
-    const res = await fetch(
-      `${this.baseUrl}/resources?path=${encodeURIComponent(resourcesPath)}`,
-      { headers: this.headers }
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.resources ?? [];
+    const data: any = await this.req('GET', `/resources?path=${encodeURIComponent(resourcesPath)}`);
+    return data?.resources ?? [];
   }
 
   async getServerCfg(cfgPath: string): Promise<string> {
-    const res = await fetch(
-      `${this.baseUrl}/servercfg?path=${encodeURIComponent(cfgPath)}`,
-      { headers: this.headers }
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.content ?? '';
+    const data: any = await this.req('GET', `/servercfg?path=${encodeURIComponent(cfgPath)}`);
+    return data?.content ?? '';
   }
 
   async startServer(processName: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/server/start`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ process_name: processName }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await this.req('POST', '/server/start', { process_name: processName });
   }
 
   async stopServer(processName: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/server/stop`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ process_name: processName }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await this.req('POST', '/server/stop', { process_name: processName });
   }
 
   async restartServer(processName: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/server/restart`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ process_name: processName }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await this.req('POST', '/server/restart', { process_name: processName });
   }
 
   async writeFile(filePath: string, content: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/writefile`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ path: filePath, content }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await this.req('POST', '/writefile', { path: filePath, content });
   }
 
+  // WebSocket stays in the renderer — WS has no CORS
   createWebSocket(): WebSocket {
     return new WebSocket(`ws://${this.host}?key=${encodeURIComponent(this.apiKey)}`);
   }

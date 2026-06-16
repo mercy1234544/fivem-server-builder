@@ -294,6 +294,27 @@ function registerIpcHandlers() {
     return importResource(opts);
   });
 
+  // ── Bridge API proxy ──────────────────────────────────────────────────────
+  // Routes all bridge HTTP calls through the main process so Chromium CORS
+  // restrictions in the renderer never block requests to the Linux bridge.
+  ipcMain.handle('bridge:request', async (_, opts: {
+    host: string;
+    apiKey: string;
+    method: string;
+    path: string;
+    body?: any;
+  }) => {
+    const { host, apiKey, method, path: urlPath, body } = opts;
+    const response = await axios({
+      method,
+      url: `http://${host}${urlPath}`,
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+      data: body,
+      timeout: 10000,
+    });
+    return response.data;
+  });
+
   // Scan server for installed resources (names only, quick)
   ipcMain.handle('import:scanInstalled', async (_, serverPath: string) => {
     const resourcesDir = path.join(serverPath, 'resources');
