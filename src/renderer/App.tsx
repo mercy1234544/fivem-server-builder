@@ -18,6 +18,7 @@ import ImportResources from './pages/ImportResources';
 import ResourceUpdater from './pages/ResourceUpdater';
 import VehiclePackManager from './pages/VehiclePackManager';
 import ServerConsole from './pages/ServerConsole';
+import LinuxServers from './pages/LinuxServers';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -62,6 +63,7 @@ export default function App() {
               <Route path="/updater" element={<ResourceUpdater />} />
               <Route path="/vehicles" element={<VehiclePackManager />} />
               <Route path="/console" element={<ServerConsole />} />
+              <Route path="/linux" element={<LinuxServers />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </AnimatePresence>
