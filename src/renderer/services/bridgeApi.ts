@@ -199,10 +199,13 @@ export class BridgeApi {
         );
       }
     } catch {}
-    // ls -p: directories get trailing slash
+    // ls -p: trailing slash = dir. Use TERM=dumb to suppress colors without --color flag.
     try {
-      const raw = await this.execute(`ls -p --color=never "${dirPath}" 2>/dev/null`);
-      const lines = raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('ls:') && !l.includes('No such'));
+      const raw = await this.execute(`TERM=dumb ls -p "${dirPath}" 2>&1`);
+      if (raw.includes('No such file') || raw.includes('cannot access') || raw.includes('Permission denied')) {
+        throw new Error(raw.trim().split('\n')[0]);
+      }
+      const lines = raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('ls:'));
       if (lines.length > 0) {
         return lines.map(l => ({
           name: l.replace(/\/$/, ''),
@@ -210,7 +213,7 @@ export class BridgeApi {
           path: `${dirPath}/${l.replace(/\/$/, '')}`,
         }));
       }
-    } catch {}
+    } catch (e) { throw e; }
     return [];
   }
 
@@ -244,6 +247,39 @@ export class BridgeApi {
     if (out.toLowerCase().includes('error') && !out.toLowerCase().includes('restarted')) {
       throw new Error(out.slice(0, 200));
     }
+  }
+
+  async uploadAndExtract(
+    content: ArrayBuffer,
+    fileName: string,
+    resourcesPath: string,
+    onProgress?: (pct: number) => void,
+  ): Promise<string> {
+    const bytes = new Uint8Array(content);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+
+    const stamp = Date.now();
+    const tmpB64 = `/tmp/fivem_${stamp}.b64`;
+    const tmpZip = `/tmp/fivem_${stamp}.zip`;
+    const folderName = fileName.replace(/\.(zip|rar|7z)$/i, '').replace(/[^a-zA-Z0-9_.\-]/g, '_');
+    const destPath = `${resourcesPath}/${folderName}`;
+
+    const CHUNK = 28000;
+    const totalChunks = Math.ceil(b64.length / CHUNK);
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = b64.slice(i * CHUNK, (i + 1) * CHUNK);
+      const op = i === 0 ? '>' : '>>';
+      await this.execute(`printf '%s' '${chunk}' ${op} '${tmpB64}'`);
+      onProgress?.(Math.round(((i + 1) / totalChunks) * 75));
+    }
+
+    const out = await this.execute(
+      `base64 -d '${tmpB64}' > '${tmpZip}' 2>&1 && mkdir -p '${destPath}' && unzip -o '${tmpZip}' -d '${destPath}' 2>&1; rm -f '${tmpB64}' '${tmpZip}'`,
+    );
+    onProgress?.(100);
+    return out || `Installed to ${destPath}`;
   }
 
   createWebSocket(): WebSocket {
