@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { Component, useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -19,10 +19,38 @@ import {
   EyeOff,
   Globe,
   Activity,
+  AlertTriangle,
 } from 'lucide-react';
 import { BridgeApi, loadBridgeConfig, saveBridgeConfig } from '../services/bridgeApi';
 import type { SystemStats, Pm2Process } from '../services/bridgeApi';
 
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+// Prevents a render crash in this page from wiping the whole app.
+interface EBState { error: Error | null }
+class LinuxErrorBoundary extends Component<{ children: React.ReactNode }, EBState> {
+  state: EBState = { error: null };
+  static getDerivedStateFromError(e: Error): EBState { return { error: e }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-8">
+          <AlertTriangle size={40} className="text-red-400" />
+          <p className="text-surface-200 font-semibold">Something crashed on this page</p>
+          <p className="text-xs text-surface-500 max-w-sm break-all">{this.state.error.message}</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="mt-2 text-xs btn-secondary px-4 py-2"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface LinuxServer {
   name: string;
   framework: string;
@@ -51,53 +79,60 @@ const KNOWN_SERVERS: Omit<LinuxServer, 'status'>[] = [
 
 const FRAMEWORK_BADGE: Record<string, string> = {
   QBCore: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
-  Qbox: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
-  ESX: 'bg-green-500/20 text-green-300 border border-green-500/30',
+  Qbox:   'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+  ESX:    'bg-green-500/20 text-green-300 border border-green-500/30',
 };
 
 const STATUS_CFG = {
   online:  { dot: 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]', text: 'Running',  textCls: 'text-green-400' },
-  stopped: { dot: 'bg-surface-600',                                        text: 'Stopped',  textCls: 'text-surface-500' },
-  error:   { dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]',      text: 'Error',    textCls: 'text-red-400' },
-  unknown: { dot: 'bg-amber-500/60',                                        text: 'Unknown', textCls: 'text-amber-400/70' },
-};
+  stopped: { dot: 'bg-surface-600',                                       text: 'Stopped',  textCls: 'text-surface-500' },
+  error:   { dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]',     text: 'Error',    textCls: 'text-red-400' },
+  unknown: { dot: 'bg-amber-500/60',                                       text: 'Unknown', textCls: 'text-amber-400/70' },
+} as const;
 
 type Tab = 'overview' | 'console' | 'resources' | 'config';
 
 function pm2Status(proc: Pm2Process): LinuxServer['status'] {
-  const s = proc.pm2_env?.status ?? proc.status ?? '';
+  const s = String(proc?.pm2_env?.status ?? proc?.status ?? '').toLowerCase();
   if (s === 'online') return 'online';
   if (s === 'stopped' || s === 'stopping') return 'stopped';
   if (s === 'errored') return 'error';
   return 'unknown';
 }
 
-export default function LinuxServers() {
+// Safe number formatter — never throws
+function fmt(n: number | undefined | null, decimals = 1): string {
+  const v = Number(n);
+  return isFinite(v) ? v.toFixed(decimals) : '—';
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+function LinuxServersInner() {
   const saved = loadBridgeConfig();
-  const [host, setHost] = useState(saved.host);
+  const [host, setHost]     = useState(saved.host);
   const [apiKey, setApiKey] = useState(saved.apiKey);
   const [showKey, setShowKey] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected]   = useState(false);
   const [connecting, setConnecting] = useState(false);
 
-  const bridgeRef = useRef<BridgeApi | null>(null);
+  const bridgeRef   = useRef<BridgeApi | null>(null);
+  const wsRef       = useRef<WebSocket | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logsEndRef  = useRef<HTMLDivElement>(null);
+
   const [servers, setServers] = useState<LinuxServer[]>(
     KNOWN_SERVERS.map(s => ({ ...s, status: 'unknown' as const }))
   );
   const [selected, setSelected] = useState<LinuxServer | null>(null);
-  const [stats, setStats] = useState<SystemStats | null>(null);
+  const [stats, setStats]       = useState<SystemStats | null>(null);
 
-  const [tab, setTab] = useState<Tab>('overview');
-  const [logs, setLogs] = useState<string[]>([]);
-  const [resources, setResources] = useState<string[]>([]);
-  const [cfgContent, setCfgContent] = useState('');
+  const [tab, setTab]                   = useState<Tab>('overview');
+  const [logs, setLogs]                 = useState<string[]>([]);
+  const [resources, setResources]       = useState<string[]>([]);
+  const [cfgContent, setCfgContent]     = useState('');
   const [loadingResources, setLoadingResources] = useState(false);
-  const [loadingCfg, setLoadingCfg] = useState(false);
+  const [loadingCfg, setLoadingCfg]     = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  const logsEndRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Auto-scroll console
   useEffect(() => {
@@ -105,11 +140,13 @@ export default function LinuxServers() {
   }, [logs]);
 
   // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close();
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+  useEffect(() => () => {
+    wsRef.current?.close();
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  }, []);
+
+  const addLog = useCallback((line: unknown) => {
+    setLogs(prev => [...prev.slice(-999), String(line)]);
   }, []);
 
   const refreshStatuses = useCallback(async (api: BridgeApi) => {
@@ -117,25 +154,26 @@ export default function LinuxServers() {
       const procs = await api.pm2List();
       setServers(prev =>
         prev.map(srv => {
-          const proc = procs.find((p: Pm2Process) => p.name === srv.processName);
-          return { ...srv, status: proc ? pm2Status(proc) : 'unknown' };
+          const proc = procs.find((p: Pm2Process) => p?.name === srv.processName);
+          return { ...srv, status: proc ? pm2Status(proc) : ('unknown' as const) };
         })
       );
-    } catch {}
+    } catch { /* silently ignore */ }
   }, []);
 
   const openWebSocket = useCallback((wsHost: string, key: string) => {
-    if (wsRef.current) wsRef.current.close();
-    const ws = new WebSocket(`ws://${wsHost}?key=${encodeURIComponent(key)}`);
-    ws.onopen  = () => addLog('[WS] Connected — live logs streaming');
-    ws.onmessage = (e) => addLog(e.data);
-    ws.onerror = () => addLog('[WS] Connection error');
-    ws.onclose = () => addLog('[WS] Disconnected');
-    wsRef.current = ws;
-  }, []);
-
-  const addLog = (line: string) =>
-    setLogs(prev => [...prev.slice(-999), String(line)]);
+    try {
+      if (wsRef.current) wsRef.current.close();
+      const ws = new WebSocket(`ws://${wsHost}?key=${encodeURIComponent(key)}`);
+      ws.onopen    = () => addLog('[WS] Connected — live logs streaming');
+      ws.onmessage = (e) => addLog(e.data);
+      ws.onerror   = () => addLog('[WS] WebSocket error');
+      ws.onclose   = () => addLog('[WS] Disconnected');
+      wsRef.current = ws;
+    } catch (err) {
+      addLog(`[WS] Failed to open: ${err}`);
+    }
+  }, [addLog]);
 
   const connect = async () => {
     const h = host.trim();
@@ -152,27 +190,27 @@ export default function LinuxServers() {
       setConnected(true);
       toast.success('Connected to bridge');
 
-      // Initial load
-      try { setStats(await api.getStats()); } catch {}
+      // Initial stats + status
+      try { setStats(await api.getStats()); } catch (e) { console.warn('[Bridge] getStats failed:', e); }
       await refreshStatuses(api);
 
-      // Auto-refresh every 5 s
+      // 5-second refresh loop
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(async () => {
         try { setStats(await api.getStats()); } catch {}
-        await refreshStatuses(api);
+        try { await refreshStatuses(api); } catch {}
       }, 5000);
 
       openWebSocket(h, k);
     } catch (err: any) {
-      toast.error(err.message || 'Connection failed');
+      toast.error(err?.message || 'Connection failed');
     } finally {
       setConnecting(false);
     }
   };
 
   const disconnect = () => {
-    wsRef.current?.close();
+    try { wsRef.current?.close(); } catch {}
     wsRef.current = null;
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = null;
@@ -192,11 +230,11 @@ export default function LinuxServers() {
     setCfgContent('');
   };
 
-  // Keep `selected` in sync with updated statuses
+  // Keep selected in sync with refreshed statuses
   useEffect(() => {
     if (!selected) return;
     const updated = servers.find(s => s.processName === selected.processName);
-    if (updated) setSelected(updated);
+    if (updated && updated.status !== selected.status) setSelected(updated);
   }, [servers]);
 
   const serverAction = async (action: 'start' | 'stop' | 'restart') => {
@@ -207,9 +245,9 @@ export default function LinuxServers() {
       if (action === 'stop')    await bridgeRef.current.stopServer(selected.processName);
       if (action === 'restart') await bridgeRef.current.restartServer(selected.processName);
       toast.success(`Server ${action === 'restart' ? 'restarting' : action + 'ed'}`);
-      setTimeout(() => refreshStatuses(bridgeRef.current!), 2500);
+      setTimeout(() => { if (bridgeRef.current) refreshStatuses(bridgeRef.current); }, 2500);
     } catch (err: any) {
-      toast.error(err.message || `Failed to ${action} server`);
+      toast.error(err?.message || `Failed to ${action} server`);
     } finally {
       setActionLoading(null);
     }
@@ -219,8 +257,7 @@ export default function LinuxServers() {
     if (!bridgeRef.current || !selected) return;
     setLoadingResources(true);
     try {
-      const list = await bridgeRef.current.getResources(selected.resourcesPath);
-      setResources(list);
+      setResources(await bridgeRef.current.getResources(selected.resourcesPath));
     } catch { toast.error('Failed to load resources'); }
     finally { setLoadingResources(false); }
   };
@@ -229,38 +266,26 @@ export default function LinuxServers() {
     if (!bridgeRef.current || !selected) return;
     setLoadingCfg(true);
     try {
-      const content = await bridgeRef.current.getServerCfg(selected.cfgPath);
-      setCfgContent(content);
+      setCfgContent(await bridgeRef.current.getServerCfg(selected.cfgPath));
     } catch { toast.error('Failed to load server.cfg'); }
     finally { setLoadingCfg(false); }
   };
 
-  // Load tab data on demand
   useEffect(() => {
     if (!connected || !selected) return;
     if (tab === 'resources' && resources.length === 0) loadResources();
     if (tab === 'config' && !cfgContent) loadCfg();
   }, [tab, selected]);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
-
+  // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="h-full flex flex-col overflow-hidden"
-    >
-      {/* ── Connection Bar ────────────────────────────────────────────── */}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col overflow-hidden">
+
+      {/* Connection Bar */}
       <div className="shrink-0 flex items-center gap-2.5 px-4 py-2.5 border-b border-overlay-6 bg-surface-950/60 backdrop-blur-sm">
-        {/* Status dot */}
-        <div
-          className={`w-2.5 h-2.5 rounded-full shrink-0 transition-colors duration-300 ${
-            connected ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'bg-red-500'
-          }`}
-        />
+        <div className={`w-2.5 h-2.5 rounded-full shrink-0 transition-all ${connected ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'bg-red-500'}`} />
         <span className="text-xs font-semibold text-surface-400 shrink-0 mr-1">Bridge</span>
 
-        {/* Host input */}
         <div className="flex items-center gap-1.5 bg-overlay-4 border border-overlay-6 rounded-lg px-2.5 py-1.5">
           <Globe size={12} className="text-surface-500 shrink-0" />
           <input
@@ -272,7 +297,6 @@ export default function LinuxServers() {
           />
         </div>
 
-        {/* API key input */}
         <div className="flex items-center gap-1.5 bg-overlay-4 border border-overlay-6 rounded-lg px-2.5 py-1.5">
           <span className="text-[10px] font-medium text-surface-500 shrink-0">KEY</span>
           <input
@@ -283,63 +307,51 @@ export default function LinuxServers() {
             disabled={connected}
             className="w-28 text-sm bg-transparent text-surface-200 placeholder-surface-600 focus:outline-none disabled:opacity-50"
           />
-          <button
-            onClick={() => setShowKey(v => !v)}
-            className="text-surface-500 hover:text-surface-300 transition-colors"
-          >
+          <button onClick={() => setShowKey(v => !v)} className="text-surface-500 hover:text-surface-300 transition-colors">
             {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
           </button>
         </div>
 
-        {/* Connect / Disconnect */}
         {connected ? (
-          <button
-            onClick={disconnect}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-600/30 transition-all"
-          >
+          <button onClick={disconnect} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-600/30 transition-all">
             <WifiOff size={12} /> Disconnect
           </button>
         ) : (
-          <button
-            onClick={connect}
-            disabled={connecting}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-primary disabled:opacity-50"
-          >
+          <button onClick={connect} disabled={connecting} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-primary disabled:opacity-50">
             {connecting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
             {connecting ? 'Connecting…' : 'Connect'}
           </button>
         )}
 
-        {/* Live stats pill */}
         {stats && (
           <div className="ml-auto flex items-center gap-4">
             <div className="flex items-center gap-1.5 text-xs text-surface-400">
               <Cpu size={12} className="text-primary-400" />
               <span>CPU</span>
-              <span className="font-semibold text-surface-200">{stats.cpu.toFixed(1)}%</span>
+              <span className="font-semibold text-surface-200">{fmt(stats.cpu)}%</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-surface-400">
               <HardDrive size={12} className="text-indigo-400" />
               <span>RAM</span>
               <span className="font-semibold text-surface-200">
-                {stats.ram_used.toFixed(1)}/{stats.ram_total.toFixed(1)} GB
+                {fmt(stats.ram_used)}/{fmt(stats.ram_total)} GB
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Body ─────────────────────────────────────────────────────── */}
+      {/* Body */}
       <div className="flex-1 flex overflow-hidden">
+
         {/* Server List */}
         <div className="w-52 shrink-0 flex flex-col border-r border-overlay-6 bg-surface-950/20 overflow-y-auto">
           <div className="px-3 pt-3 pb-1">
             <span className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">Servers</span>
           </div>
-
           <div className="px-2 space-y-1 pb-3">
             {servers.map(srv => {
-              const sc = STATUS_CFG[srv.status];
+              const sc = STATUS_CFG[srv.status] ?? STATUS_CFG.unknown;
               const fw = FRAMEWORK_BADGE[srv.framework] ?? 'bg-surface-700/40 text-surface-400 border border-surface-600/30';
               const isActive = selected?.processName === srv.processName;
               return (
@@ -359,20 +371,15 @@ export default function LinuxServers() {
                     {isActive && <ChevronRight size={12} className="text-primary-400 shrink-0" />}
                   </div>
                   <div className="flex items-center gap-2 pl-4">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${fw}`}>
-                      {srv.framework}
-                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${fw}`}>{srv.framework}</span>
                     <span className={`text-[10px] ${sc.textCls}`}>{sc.text}</span>
                   </div>
                 </button>
               );
             })}
           </div>
-
           {!connected && (
-            <p className="text-center text-xs text-surface-600 mt-2 px-3">
-              Connect above to manage servers
-            </p>
+            <p className="text-center text-xs text-surface-600 mt-2 px-3">Connect above to manage servers</p>
           )}
         </div>
 
@@ -388,37 +395,38 @@ export default function LinuxServers() {
             </div>
           ) : (
             <>
-              {/* Panel Header */}
+              {/* Header */}
               <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b border-overlay-6">
                 <div>
                   <h2 className="font-semibold text-surface-100">{selected.name}</h2>
                   <p className="text-xs text-surface-500 mt-0.5 font-mono">{selected.processName}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={() => serverAction('start')}
-                    disabled={!!actionLoading || selected.status === 'online'}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-600/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading === 'start' ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                    Start
-                  </button>
-                  <button
-                    onClick={() => serverAction('stop')}
-                    disabled={!!actionLoading || selected.status === 'stopped'}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-600/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading === 'stop' ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
-                    Stop
-                  </button>
-                  <button
-                    onClick={() => serverAction('restart')}
-                    disabled={!!actionLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-600/20 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-600/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading === 'restart' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    Restart
-                  </button>
+                  {(['start', 'stop', 'restart'] as const).map(action => {
+                    const disabled =
+                      !!actionLoading ||
+                      (action === 'start' && selected.status === 'online') ||
+                      (action === 'stop'  && selected.status === 'stopped');
+                    const styles = {
+                      start:   'bg-green-600/20 text-green-400 border-green-500/30 hover:bg-green-600/30',
+                      stop:    'bg-red-600/20 text-red-400 border-red-500/30 hover:bg-red-600/30',
+                      restart: 'bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30',
+                    };
+                    const Icon = action === 'start' ? Play : action === 'stop' ? Square : RefreshCw;
+                    return (
+                      <button
+                        key={action}
+                        onClick={() => serverAction(action)}
+                        disabled={disabled}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed capitalize ${styles[action]}`}
+                      >
+                        {actionLoading === action
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <Icon size={12} />}
+                        {action}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -434,10 +442,10 @@ export default function LinuxServers() {
                         : 'text-surface-400 hover:text-surface-200 hover:bg-overlay-4'
                     }`}
                   >
-                    {t === 'overview'   && <Activity size={12} />}
-                    {t === 'console'    && <Terminal size={12} />}
-                    {t === 'resources'  && <Package size={12} />}
-                    {t === 'config'     && <FileCode size={12} />}
+                    {t === 'overview'  && <Activity size={12} />}
+                    {t === 'console'   && <Terminal size={12} />}
+                    {t === 'resources' && <Package size={12} />}
+                    {t === 'config'    && <FileCode size={12} />}
                     {t.charAt(0).toUpperCase() + t.slice(1)}
                   </button>
                 ))}
@@ -446,62 +454,54 @@ export default function LinuxServers() {
               {/* Tab Content */}
               <div className="flex-1 overflow-auto p-5">
 
-                {/* ── Overview ── */}
                 {tab === 'overview' && (
                   <div className="space-y-4 max-w-2xl">
-                    {/* Status card */}
+                    {/* Status */}
                     <div className="glass-panel p-4 flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${STATUS_CFG[selected.status].dot}`} />
+                      <div className={`w-3 h-3 rounded-full ${(STATUS_CFG[selected.status] ?? STATUS_CFG.unknown).dot}`} />
                       <span className="text-sm font-medium text-surface-200">
                         {selected.name} is{' '}
-                        <span className={STATUS_CFG[selected.status].textCls}>
-                          {STATUS_CFG[selected.status].text}
+                        <span className={(STATUS_CFG[selected.status] ?? STATUS_CFG.unknown).textCls}>
+                          {(STATUS_CFG[selected.status] ?? STATUS_CFG.unknown).text}
                         </span>
                       </span>
-                      <div className="ml-auto flex items-center gap-2">
-                        <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${FRAMEWORK_BADGE[selected.framework] ?? 'bg-surface-700/40 text-surface-400 border border-surface-600/30'}`}>
-                          {selected.framework}
-                        </span>
-                      </div>
+                      <span className={`ml-auto text-[10px] px-2 py-0.5 rounded font-medium ${FRAMEWORK_BADGE[selected.framework] ?? 'bg-surface-700/40 text-surface-400 border border-surface-600/30'}`}>
+                        {selected.framework}
+                      </span>
                     </div>
 
-                    {/* CPU + RAM */}
+                    {/* Stats */}
                     {stats ? (
                       <div className="grid grid-cols-2 gap-4">
                         <div className="glass-panel p-4">
                           <div className="flex items-center gap-2 mb-3">
                             <Cpu size={15} className="text-primary-400" />
                             <span className="text-sm font-medium text-surface-200">CPU</span>
-                            <span className="ml-auto text-lg font-bold text-primary-300">
-                              {stats.cpu.toFixed(1)}%
-                            </span>
+                            <span className="ml-auto text-lg font-bold text-primary-300">{fmt(stats.cpu)}%</span>
                           </div>
                           <div className="h-2 bg-surface-800 rounded-full overflow-hidden">
                             <motion.div
-                              animate={{ width: `${Math.min(stats.cpu, 100)}%` }}
+                              animate={{ width: `${Math.min(Math.max(Number(stats.cpu) || 0, 0), 100)}%` }}
                               transition={{ duration: 0.5 }}
                               className="h-full bg-gradient-to-r from-primary-700 to-primary-400 rounded-full"
                             />
                           </div>
                         </div>
-
                         <div className="glass-panel p-4">
                           <div className="flex items-center gap-2 mb-3">
                             <HardDrive size={15} className="text-indigo-400" />
                             <span className="text-sm font-medium text-surface-200">RAM</span>
-                            <span className="ml-auto text-lg font-bold text-indigo-300">
-                              {stats.ram_percent.toFixed(0)}%
-                            </span>
+                            <span className="ml-auto text-lg font-bold text-indigo-300">{fmt(stats.ram_percent, 0)}%</span>
                           </div>
                           <div className="h-2 bg-surface-800 rounded-full overflow-hidden">
                             <motion.div
-                              animate={{ width: `${Math.min(stats.ram_percent, 100)}%` }}
+                              animate={{ width: `${Math.min(Math.max(Number(stats.ram_percent) || 0, 0), 100)}%` }}
                               transition={{ duration: 0.5 }}
                               className="h-full bg-gradient-to-r from-indigo-700 to-indigo-400 rounded-full"
                             />
                           </div>
                           <p className="text-[11px] text-surface-500 mt-1.5 text-right">
-                            {stats.ram_used.toFixed(1)} / {stats.ram_total.toFixed(1)} GB
+                            {fmt(stats.ram_used)} / {fmt(stats.ram_total)} GB
                           </p>
                         </div>
                       </div>
@@ -511,7 +511,7 @@ export default function LinuxServers() {
                       </div>
                     )}
 
-                    {/* Paths info */}
+                    {/* Paths */}
                     <div className="glass-panel p-4 space-y-2">
                       <div className="flex items-start gap-3">
                         <Package size={13} className="text-surface-500 shrink-0 mt-0.5" />
@@ -531,30 +531,22 @@ export default function LinuxServers() {
                   </div>
                 )}
 
-                {/* ── Console ── */}
                 {tab === 'console' && (
                   <div className="h-full flex flex-col min-h-0">
                     <div className="flex items-center justify-between mb-2 shrink-0">
-                      <p className="text-xs text-surface-500">
-                        {logs.length} lines — live WebSocket feed
-                      </p>
-                      <button
-                        onClick={() => setLogs([])}
-                        className="text-xs text-surface-500 hover:text-surface-300 transition-colors"
-                      >
+                      <p className="text-xs text-surface-500">{logs.length} lines — live WebSocket</p>
+                      <button onClick={() => setLogs([])} className="text-xs text-surface-500 hover:text-surface-300 transition-colors">
                         Clear
                       </button>
                     </div>
-                    <div className="flex-1 min-h-[300px] overflow-auto font-mono text-xs bg-black/50 rounded-xl border border-overlay-6 p-3 space-y-px">
+                    <div className="flex-1 min-h-[300px] overflow-auto font-mono text-xs bg-black/50 rounded-xl border border-overlay-6 p-3">
                       {logs.length === 0 ? (
                         <p className="text-surface-600 text-center mt-10">
                           {connected ? 'Waiting for log output…' : 'Connect to see live logs'}
                         </p>
                       ) : (
                         logs.map((line, i) => (
-                          <div key={i} className="text-green-300/80 leading-5 break-all whitespace-pre-wrap">
-                            {line}
-                          </div>
+                          <div key={i} className="text-green-300/80 leading-5 break-all whitespace-pre-wrap">{line}</div>
                         ))
                       )}
                       <div ref={logsEndRef} />
@@ -562,23 +554,17 @@ export default function LinuxServers() {
                   </div>
                 )}
 
-                {/* ── Resources ── */}
                 {tab === 'resources' && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-sm text-surface-400">
                         {resources.length > 0 ? `${resources.length} resources` : 'Resources'}
                       </p>
-                      <button
-                        onClick={loadResources}
-                        disabled={loadingResources}
-                        className="flex items-center gap-1.5 text-xs btn-secondary px-3 py-1.5"
-                      >
+                      <button onClick={loadResources} disabled={loadingResources} className="flex items-center gap-1.5 text-xs btn-secondary px-3 py-1.5">
                         {loadingResources ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                         Refresh
                       </button>
                     </div>
-
                     {loadingResources ? (
                       <div className="flex items-center justify-center py-16">
                         <Loader2 size={28} className="animate-spin text-primary-500" />
@@ -591,12 +577,9 @@ export default function LinuxServers() {
                     ) : (
                       <div className="grid grid-cols-3 gap-2">
                         {resources.map((name, i) => (
-                          <div
-                            key={i}
-                            className="flex items-center gap-2 px-3 py-2 bg-overlay-4 border border-overlay-6 rounded-xl"
-                          >
+                          <div key={i} className="flex items-center gap-2 px-3 py-2 bg-overlay-4 border border-overlay-6 rounded-xl">
                             <Package size={12} className="text-surface-600 shrink-0" />
-                            <span className="text-xs text-surface-300 truncate">{name}</span>
+                            <span className="text-xs text-surface-300 truncate">{String(name)}</span>
                           </div>
                         ))}
                       </div>
@@ -604,28 +587,22 @@ export default function LinuxServers() {
                   </div>
                 )}
 
-                {/* ── Config ── */}
                 {tab === 'config' && (
                   <div className="h-full flex flex-col min-h-0">
                     <div className="flex items-center justify-between mb-3 shrink-0">
                       <p className="text-xs text-surface-500 font-mono truncate max-w-lg">{selected.cfgPath}</p>
-                      <button
-                        onClick={loadCfg}
-                        disabled={loadingCfg}
-                        className="flex items-center gap-1.5 text-xs btn-secondary px-3 py-1.5 shrink-0 ml-2"
-                      >
+                      <button onClick={loadCfg} disabled={loadingCfg} className="flex items-center gap-1.5 text-xs btn-secondary px-3 py-1.5 shrink-0 ml-2">
                         {loadingCfg ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                         Reload
                       </button>
                     </div>
-
                     {loadingCfg ? (
                       <div className="flex items-center justify-center flex-1 py-16">
                         <Loader2 size={28} className="animate-spin text-primary-500" />
                       </div>
                     ) : (
                       <pre className="flex-1 font-mono text-xs bg-black/50 rounded-xl border border-overlay-6 p-4 overflow-auto text-green-300/80 whitespace-pre leading-5 min-h-[300px]">
-                        {cfgContent || '# No content — click Reload to load server.cfg'}
+                        {cfgContent || '# Click Reload to load server.cfg'}
                       </pre>
                     )}
                   </div>
@@ -637,5 +614,14 @@ export default function LinuxServers() {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// Wrap with error boundary so a render crash can't wipe the whole app
+export default function LinuxServers() {
+  return (
+    <LinuxErrorBoundary>
+      <LinuxServersInner />
+    </LinuxErrorBoundary>
   );
 }

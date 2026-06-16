@@ -31,12 +31,11 @@ export function saveBridgeConfig(cfg: BridgeConfig) {
   localStorage.setItem(BRIDGE_CONFIG_KEY, JSON.stringify(cfg));
 }
 
-// All HTTP calls go through the Electron main process (Node.js / axios)
-// so Chromium's CORS restrictions in the renderer never block them.
-function ipcRequest(host: string, apiKey: string, method: string, path: string, body?: any) {
+// All HTTP goes through Electron main process (Node.js/axios) — no CORS issues
+function ipcRequest(host: string, apiKey: string, method: string, path: string, body?: any): Promise<any> {
   const api = (window as any).electronAPI;
   if (!api?.bridge?.request) {
-    // fallback for browser / dev without Electron (won't work if bridge has no CORS headers)
+    // Non-Electron fallback
     return fetch(`http://${host}${path}`, {
       method,
       headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
@@ -49,11 +48,17 @@ function ipcRequest(host: string, apiKey: string, method: string, path: string, 
   return api.bridge.request({ host, apiKey, method, path, body });
 }
 
+// Safely coerce any value to a finite number with a fallback
+function num(v: any, fallback = 0): number {
+  const n = Number(v);
+  return isFinite(n) ? n : fallback;
+}
+
 export class BridgeApi {
   constructor(public host: string, public apiKey: string) {}
 
   private req<T>(method: string, path: string, body?: any): Promise<T> {
-    return ipcRequest(this.host, this.apiKey, method, path, body) as Promise<T>;
+    return ipcRequest(this.host, this.apiKey, method, path, body);
   }
 
   async ping(): Promise<boolean> {
@@ -66,27 +71,39 @@ export class BridgeApi {
   }
 
   async getStats(): Promise<SystemStats> {
-    return this.req('GET', '/stats');
+    const d: any = await this.req('GET', '/stats');
+    // Normalize — bridge may use different field names
+    const cpu = num(d?.cpu ?? d?.cpu_percent ?? d?.cpu_usage ?? d?.cpuPercent);
+    const ram_used = num(d?.ram_used ?? d?.memory_used ?? d?.ramUsed ?? d?.ram?.used);
+    const ram_total = num(d?.ram_total ?? d?.memory_total ?? d?.ramTotal ?? d?.ram?.total, 1);
+    const ram_percent = num(
+      d?.ram_percent ?? d?.memory_percent ?? d?.ramPercent ?? d?.ram?.percent ??
+      (ram_total > 0 ? (ram_used / ram_total) * 100 : 0)
+    );
+    return { cpu, ram_used, ram_total, ram_percent };
   }
 
   async pm2List(): Promise<Pm2Process[]> {
-    const data: any = await this.req('GET', '/pm2/list');
-    return data?.processes ?? data ?? [];
+    const d: any = await this.req('GET', '/pm2/list');
+    const arr = d?.processes ?? d?.data ?? d;
+    return Array.isArray(arr) ? arr : [];
   }
 
   async detectServers(): Promise<any[]> {
-    const data: any = await this.req('GET', '/servers/detect');
-    return data?.servers ?? data ?? [];
+    const d: any = await this.req('GET', '/servers/detect');
+    const arr = d?.servers ?? d;
+    return Array.isArray(arr) ? arr : [];
   }
 
   async getResources(resourcesPath: string): Promise<string[]> {
-    const data: any = await this.req('GET', `/resources?path=${encodeURIComponent(resourcesPath)}`);
-    return data?.resources ?? [];
+    const d: any = await this.req('GET', `/resources?path=${encodeURIComponent(resourcesPath)}`);
+    const arr = d?.resources ?? d;
+    return Array.isArray(arr) ? arr : [];
   }
 
   async getServerCfg(cfgPath: string): Promise<string> {
-    const data: any = await this.req('GET', `/servercfg?path=${encodeURIComponent(cfgPath)}`);
-    return data?.content ?? '';
+    const d: any = await this.req('GET', `/servercfg?path=${encodeURIComponent(cfgPath)}`);
+    return String(d?.content ?? d?.data ?? d ?? '');
   }
 
   async startServer(processName: string): Promise<void> {
@@ -105,7 +122,7 @@ export class BridgeApi {
     await this.req('POST', '/writefile', { path: filePath, content });
   }
 
-  // WebSocket stays in the renderer — WS has no CORS
+  // WebSocket stays in renderer — WS has no CORS
   createWebSocket(): WebSocket {
     return new WebSocket(`ws://${this.host}?key=${encodeURIComponent(this.apiKey)}`);
   }
