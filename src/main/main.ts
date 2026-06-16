@@ -1056,8 +1056,11 @@ app.whenReady().then(() => {
     return app.getVersion();
   });
 
-  // Start auto-updater
+  // Start auto-updater — check immediately on launch, then every 15 min
   setupAutoUpdater();
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
