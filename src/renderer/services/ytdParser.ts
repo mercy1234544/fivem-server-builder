@@ -124,6 +124,39 @@ export function decodeDDS(dds: Uint8Array): { width: number; height: number; rgb
   return null;
 }
 
+/** Decode raw (non-DDS) texture block data of a known format into RGBA. */
+export function decodeRawTexture(
+  data: Uint8Array, width: number, height: number,
+  format: 'DXT1' | 'DXT3' | 'DXT5' | 'BGRA8' | 'RGBA8'
+): Uint8ClampedArray | null {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  const bw = Math.max(1, (width + 3) >> 2);
+  const bh = Math.max(1, (height + 3) >> 2);
+  try {
+    if (format === 'DXT1') {
+      if (data.length < bw * bh * 8) return null;
+      for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++)
+        decodeDXT1Block(data, (by * bw + bx) * 8, rgba, bx * 4, by * 4, width);
+    } else if (format === 'DXT5' || format === 'DXT3') {
+      if (data.length < bw * bh * 16) return null;
+      for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++)
+        decodeDXT5Block(data, (by * bw + bx) * 16, rgba, bx * 4, by * 4, width);
+    } else if (format === 'BGRA8') {
+      if (data.length < width * height * 4) return null;
+      for (let i = 0; i < width * height; i++) {
+        rgba[i * 4] = data[i * 4 + 2]; rgba[i * 4 + 1] = data[i * 4 + 1];
+        rgba[i * 4 + 2] = data[i * 4]; rgba[i * 4 + 3] = data[i * 4 + 3];
+      }
+    } else {
+      if (data.length < width * height * 4) return null;
+      rgba.set(data.subarray(0, width * height * 4));
+    }
+    return rgba;
+  } catch {
+    return null;
+  }
+}
+
 export function ddsToImageData(dds: Uint8Array): ImageData | null {
   const result = decodeDDS(dds);
   if (!result) return null;

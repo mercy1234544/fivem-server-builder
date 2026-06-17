@@ -10,6 +10,7 @@ import { GitManager } from './services/GitManager';
 import { FileManager } from './services/FileManager';
 import { ArtifactDownloader } from './services/ArtifactDownloader';
 import { DatabaseManager } from './services/DatabaseManager';
+import { VehicleResourceScanner } from './services/VehicleResourceScanner';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 
@@ -22,6 +23,7 @@ let gitManager: GitManager;
 let fileManager: FileManager;
 let artifactDownloader: ArtifactDownloader;
 let databaseManager: DatabaseManager;
+const vehicleResourceScanner = new VehicleResourceScanner();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -174,6 +176,23 @@ function registerIpcHandlers() {
       filters: [{ name: 'Vehicle Pack (folder or ZIP)', extensions: ['zip'] }],
     });
     return result.filePaths || [];
+  });
+
+  // Livery Editor — folder-first vehicle detection + binary file reads
+  ipcMain.handle('livery:pickFolder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Select a FiveM vehicle resource folder',
+      properties: ['openDirectory'],
+    });
+    return result.filePaths?.[0] || null;
+  });
+
+  ipcMain.handle('livery:scanFolder', (_, dir: string) => {
+    return vehicleResourceScanner.scan(dir);
+  });
+
+  ipcMain.handle('livery:readBinary', (_, filePath: string) => {
+    return vehicleResourceScanner.readBinaryBase64(filePath);
   });
 
   // Resource Management

@@ -138,6 +138,18 @@ interface ElectronAPI {
       Promise<{ success: boolean; error?: string; generatedManifest?: boolean }>;
   };
 
+  livery: {
+    pickFolder: () => Promise<string | null>;
+    scanFolder: (dir: string) => Promise<{
+      root: string;
+      vehicles: {
+        name: string; yft: string | null; hiYft: string | null; ytds: string[]; dir: string;
+      }[];
+      meta: { handling: string[]; carvariations: string[]; vehiclelayouts: string[]; vehicles: string[] };
+    }>;
+    readBinary: (filePath: string) => Promise<string>;
+  };
+
   appUpdater: {
     check: () => Promise<any>;
     download: () => Promise<{ success: boolean; error?: string }>;
