@@ -23,7 +23,7 @@ import {
   RefreshCw,
   Car,
   Terminal,
-  Globe,
+  Palette,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 
@@ -50,6 +50,7 @@ const navSections: NavSection[] = [
       { path: '/import', label: 'Import', icon: Import, accent: 'text-cyan-400' },
       { path: '/updater', label: 'Updater', icon: RefreshCw, accent: 'text-emerald-400' },
       { path: '/vehicles', label: 'Vehicle Packs', icon: Car, accent: 'text-amber-400' },
+      { path: '/livery', label: 'Livery Editor', icon: Palette, accent: 'text-pink-400' },
     ],
   },
   {
@@ -60,12 +61,6 @@ const navSections: NavSection[] = [
       { path: '/backups', label: 'Backups', icon: Archive },
       { path: '/files', label: 'File Explorer', icon: FolderOpen },
       { path: '/editor', label: 'Server.cfg', icon: FileCode },
-    ],
-  },
-  {
-    label: 'Linux',
-    items: [
-      { path: '/linux', label: 'Linux Servers', icon: Globe, accent: 'text-cyan-400' },
     ],
   },
   {

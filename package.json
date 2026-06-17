@@ -1,6 +1,6 @@
 {
   "name": "fivem-server-builder",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "description": "Professional desktop application for creating, managing, and maintaining FiveM servers",
   "main": "dist/main/main.js",
   "scripts": {
@@ -31,6 +31,7 @@
     "react-router-dom": "^6.21.1",
     "simple-git": "^3.22.0",
     "tailwind-merge": "^2.2.0",
+    "three": "^0.184.0",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
@@ -38,6 +39,7 @@
     "@types/node": "^20.10.8",
     "@types/react": "^18.2.47",
     "@types/react-dom": "^18.2.18",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
