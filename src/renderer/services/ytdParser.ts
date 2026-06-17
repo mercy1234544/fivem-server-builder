@@ -187,3 +187,50 @@ export function extractTexturesFromBuffer(buffer: ArrayBuffer): ExtractedTexture
   }
   return results;
 }
+
+// ─── RSC7 (GTA resource container) support ──────────────────────────────────
+// Real .ytd files are wrapped in an RSC7 header and raw-deflate compressed.
+// We transparently decompress before scanning for embedded DDS textures.
+
+const RSC7_MAGIC = 0x37435352; // 'RSC7'
+
+function isRSC7(bytes: Uint8Array): boolean {
+  return bytes.length > 16 && (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] * 16777216)) >>> 0 === RSC7_MAGIC;
+}
+
+async function inflateRaw(data: Uint8Array): Promise<Uint8Array | null> {
+  if (typeof (globalThis as any).DecompressionStream === 'undefined') return null;
+  try {
+    const ds = new (globalThis as any).DecompressionStream('deflate-raw');
+    const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    const stream = new Response(new Blob([ab]).stream().pipeThrough(ds));
+    const buf = await stream.arrayBuffer();
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract textures from a .ytd/.dds buffer, transparently handling RSC7
+ * compression. Always async because decompression uses streams.
+ */
+export async function extractTexturesFromYTD(buffer: ArrayBuffer): Promise<ExtractedTexture[]> {
+  const bytes = new Uint8Array(buffer);
+
+  // Direct embedded-DDS scan first (works for uncompressed / hand-built YTDs).
+  const direct = extractTexturesFromBuffer(buffer);
+  if (direct.length > 0) return direct;
+
+  // RSC7-wrapped: decompress the payload (skip the 16-byte header) and rescan.
+  if (isRSC7(bytes)) {
+    const payload = bytes.subarray(16);
+    const inflated = await inflateRaw(payload);
+    if (inflated && inflated.length > 128) {
+      const ab = inflated.buffer.slice(inflated.byteOffset, inflated.byteOffset + inflated.byteLength) as ArrayBuffer;
+      return extractTexturesFromBuffer(ab);
+    }
+  }
+
+  return [];
+}

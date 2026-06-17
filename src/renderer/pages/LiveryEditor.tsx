@@ -1,626 +1,579 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import * as THREE from 'three';
 import {
-  Upload, Eye, EyeOff, Trash2, ChevronUp, ChevronDown,
-  Download, Image as ImageIcon, Palette, ZoomIn, ZoomOut,
-  RotateCcw, Plus, Car,
+  Upload, Eye, EyeOff, Trash2, ChevronUp, ChevronDown, Download, Palette,
+  ZoomIn, ZoomOut, RotateCcw, Plus, Car, Box, Grid3x3, Type, Brush,
+  MousePointer, Image as ImageIcon, Layers as LayersIcon, ChevronRight, Square,
 } from 'lucide-react';
-import { extractTexturesFromBuffer, ddsToImageData } from '../services/ytdParser';
-import type { ExtractedTexture } from '../services/ytdParser';
+import { ddsToImageData, extractTexturesFromYTD } from '../services/ytdParser';
+import {
+  loadVehicleGLB, slotUVEdges, slotTextureToImageData,
+  type LoadedVehicle, type VehicleMaterialSlot,
+} from '../services/glbVehicle';
+import { VehicleViewer } from '../services/vehicleViewer';
+import { EXPORTERS, downloadResult } from '../services/liveryExport';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Layer model ─────────────────────────────────────────────────────────────
+type LayerKind = 'base' | 'image' | 'paint' | 'text' | 'fill';
 interface Layer {
   id: string;
   name: string;
+  kind: LayerKind;
   visible: boolean;
-  opacity: number; // 0–100
+  opacity: number;
   blendMode: GlobalCompositeOperation;
-  imageData: ImageData | null;
-  img: HTMLImageElement | null;
+  canvas: HTMLCanvasElement;
   x: number; y: number; w: number; h: number;
-  locked: boolean;
+  // text-only
+  text?: string; fontSize?: number; color?: string;
+}
+
+interface SlotEdit {
+  layers: Layer[];
+  canvas: HTMLCanvasElement;   // composited output (the live texture)
+  w: number; h: number;
+  uvEdges: Float32Array;
 }
 
 const BLEND_MODES: GlobalCompositeOperation[] = [
-  'source-over','multiply','screen','overlay','darken','lighten',
-  'color-dodge','color-burn','hard-light','soft-light','difference','exclusion',
+  'source-over', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
+  'color-dodge', 'hard-light', 'soft-light', 'difference', 'exclusion',
 ];
 
-function makeLayer(name: string, overrides: Partial<Layer> = {}): Layer {
-  return {
-    id: Math.random().toString(36).slice(2),
-    name, visible: true, opacity: 100,
-    blendMode: 'source-over', imageData: null, img: null,
-    x: 0, y: 0, w: 2048, h: 2048, locked: false,
-    ...overrides,
-  };
+function newCanvas(w: number, h: number): HTMLCanvasElement {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
+}
+function uid() { return Math.random().toString(36).slice(2); }
+
+function canvasFromImageData(id: ImageData): HTMLCanvasElement {
+  const c = newCanvas(id.width, id.height);
+  c.getContext('2d')!.putImageData(id, 0, 0);
+  return c;
 }
 
-// ── Three.js 3D Preview ───────────────────────────────────────────────────────
-function ThreePreview({ sourceCanvas }: { sourceCanvas: HTMLCanvasElement | null }) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<{
-    renderer: THREE.WebGLRenderer;
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    texture: THREE.CanvasTexture;
-    animId: number;
-    controls: { isDragging: boolean; lastX: number; lastY: number };
-    group: THREE.Group;
-    autoRotate: boolean;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!mountRef.current) return;
-    const w = mountRef.current.clientWidth;
-    const h = mountRef.current.clientHeight;
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.shadowMap.enabled = true;
-    mountRef.current.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f1117);
-    scene.fog = new THREE.Fog(0x0f1117, 12, 28);
-
-    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-    camera.position.set(6, 3, 6);
-    camera.lookAt(0, 0, 0);
-
-    // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const sun = new THREE.DirectionalLight(0xfff8e7, 1.4);
-    sun.position.set(5, 8, 5);
-    sun.castShadow = true;
-    scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x8090ff, 0.4);
-    fill.position.set(-5, 2, -3);
-    scene.add(fill);
-
-    // Ground grid
-    const grid = new THREE.GridHelper(20, 20, 0x222233, 0x1a1a2e);
-    grid.position.y = -0.9;
-    scene.add(grid);
-
-    // Texture from canvas
-    const placeholder = document.createElement('canvas');
-    placeholder.width = placeholder.height = 4;
-    const pctx = placeholder.getContext('2d')!;
-    pctx.fillStyle = '#333';
-    pctx.fillRect(0, 0, 4, 4);
-    const texture = new THREE.CanvasTexture(sourceCanvas || placeholder);
-    texture.colorSpace = THREE.SRGBColorSpace;
-
-    const bodyMat  = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.35, metalness: 0.55 });
-    const darkMat  = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.9 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0x334466, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 });
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.95 });
-    const rimMat   = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.2, metalness: 0.9 });
-
-    const group = new THREE.Group();
-
-    // Main body
-    const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.85, 1.95), bodyMat);
-    body.position.y = 0;
-    body.castShadow = true;
-    group.add(body);
-
-    // Front hood
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 1.88), bodyMat);
-    hood.position.set(-1.4, 0.48, 0);
-    group.add(hood);
-
-    // Rear trunk
-    const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 1.88), bodyMat);
-    trunk.position.set(1.55, 0.52, 0);
-    group.add(trunk);
-
-    // Cabin
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.82, 1.72), bodyMat);
-    cabin.position.set(0.1, 0.84, 0);
-    group.add(cabin);
-
-    // Windshields
-    const wshield = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 1.64), glassMat);
-    wshield.position.set(-0.97, 0.84, 0);
-    group.add(wshield);
-    const rshield = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.52, 1.64), glassMat);
-    rshield.position.set(1.16, 0.84, 0);
-    group.add(rshield);
-
-    // Side windows
-    [-0.87, 0.87].forEach(z => {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.52, 0.06), glassMat);
-      win.position.set(0.1, 0.9, z);
-      group.add(win);
-    });
-
-    // Door panels (slight indents)
-    [-0.98, 0.98].forEach(z => {
-      const door = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.55, 0.04), bodyMat);
-      door.position.set(0.1, 0.0, z);
-      group.add(door);
-    });
-
-    // Wheels
-    const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.28, 28);
-    const innerGeo  = new THREE.CylinderGeometry(0.26, 0.26, 0.3, 20);
-    [[-1.4,-0.44,1.06],[1.4,-0.44,1.06],[-1.4,-0.44,-1.06],[1.4,-0.44,-1.06]].forEach(([x,y,z])=>{
-      const w = new THREE.Mesh(wheelGeo, wheelMat);
-      w.rotation.x = Math.PI/2; w.position.set(x,y,z); w.castShadow=true;
-      group.add(w);
-      const rim = new THREE.Mesh(innerGeo, rimMat);
-      rim.rotation.x = Math.PI/2; rim.position.set(x,y,z+0.01);
-      group.add(rim);
-    });
-
-    // Headlights
-    const lightGeo = new THREE.BoxGeometry(0.12, 0.12, 0.36);
-    const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffee, emissive: 0xffffaa, emissiveIntensity: 0.6 });
-    [0.6,-0.6].forEach(z=>{
-      const l = new THREE.Mesh(lightGeo, lightMat);
-      l.position.set(-2.12, 0.08, z);
-      group.add(l);
-    });
-
-    // Tail lights
-    const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1100, emissive: 0xff0000, emissiveIntensity: 0.5 });
-    [0.6,-0.6].forEach(z=>{
-      const l = new THREE.Mesh(lightGeo, tailMat);
-      l.position.set(2.12, 0.08, z);
-      group.add(l);
-    });
-
-    // Underbody
-    const under = new THREE.Mesh(new THREE.BoxGeometry(4.1, 0.08, 1.85), darkMat);
-    under.position.y = -0.46;
-    group.add(under);
-
-    group.position.y = -0.05;
-    scene.add(group);
-
-    // Mouse controls
-    const controls = { isDragging: false, lastX: 0, lastY: 0 };
-    const el = renderer.domElement;
-    el.onmouseup   = () => { controls.isDragging=false; };
-    el.onmouseleave= () => { controls.isDragging=false; };
-    el.onmousemove = (e: MouseEvent) => {
-      if (!controls.isDragging) return;
-      const dx=e.clientX-controls.lastX; const dy=e.clientY-controls.lastY;
-      group.rotation.y += dx*0.012; group.rotation.x += dy*0.006;
-      group.rotation.x = Math.max(-0.6, Math.min(0.6, group.rotation.x));
-      controls.lastX=e.clientX; controls.lastY=e.clientY;
-    };
-    el.onwheel = (e: WheelEvent) => { camera.position.z = Math.max(3, Math.min(14, camera.position.z + e.deltaY*0.008)); };
-
-    let animId = 0;
-    const ref = { autoRotate: true };
-    el.onmousedown = (e: MouseEvent) => { ref.autoRotate=false; controls.isDragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; };
-
-    const animate = () => {
-      animId = requestAnimationFrame(animate);
-      if (ref.autoRotate) group.rotation.y += 0.004;
-      renderer.render(scene, camera);
-    };
-    animate();
-
-    sceneRef.current = { renderer, scene, camera, texture, animId, controls, group, autoRotate: true };
-
-    return () => {
-      cancelAnimationFrame(animId);
-      renderer.dispose();
-      mountRef.current?.removeChild(renderer.domElement);
-    };
-  }, []);
-
-  // Update texture when canvas changes
-  useEffect(() => {
-    if (!sceneRef.current || !sourceCanvas) return;
-    sceneRef.current.texture.image = sourceCanvas;
-    sceneRef.current.texture.needsUpdate = true;
-  }, [sourceCanvas]);
-
-  const resetView = () => {
-    if (!sceneRef.current) return;
-    sceneRef.current.group.rotation.set(0,0,0);
-    sceneRef.current.camera.position.set(6,3,6);
-    sceneRef.current.autoRotate = true;
-  };
-
-  return (
-    <div className="relative w-full h-full">
-      <div ref={mountRef} className="w-full h-full rounded-xl overflow-hidden cursor-grab active:cursor-grabbing" />
-      <button onClick={resetView}
-        className="absolute top-2 right-2 p-1.5 bg-surface-900/80 border border-overlay-6 rounded-lg text-surface-400 hover:text-surface-200 transition-all backdrop-blur-sm"
-        title="Reset view">
-        <RotateCcw size={13} />
-      </button>
-      <div className="absolute bottom-2 left-2 text-[10px] text-surface-600 pointer-events-none">Drag to rotate • Scroll to zoom</div>
-    </div>
-  );
+function renderTextLayer(layer: Layer) {
+  const ctx = layer.canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+  ctx.fillStyle = layer.color || '#ffffff';
+  ctx.font = `bold ${layer.fontSize || 80}px Arial, sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(layer.text || 'TEXT', 20, 20);
 }
 
-// ── Canvas compositer ─────────────────────────────────────────────────────────
-function compositeToCanvas(layers: Layer[], out: HTMLCanvasElement) {
-  const W = out.width; const H = out.height;
-  const ctx = out.getContext('2d')!;
-  ctx.clearRect(0, 0, W, H);
-  // Checkerboard for transparent areas
-  const pat = document.createElement('canvas'); pat.width=pat.height=16;
-  const pc = pat.getContext('2d')!;
-  pc.fillStyle='#1a1a2e'; pc.fillRect(0,0,16,16);
-  pc.fillStyle='#222235'; pc.fillRect(0,0,8,8); pc.fillRect(8,8,8,8);
-  ctx.fillStyle = ctx.createPattern(pat,'repeat')!;
-  ctx.fillRect(0,0,W,H);
-  for (const layer of layers) {
-    if (!layer.visible) continue;
-    ctx.save();
-    ctx.globalAlpha = layer.opacity / 100;
-    ctx.globalCompositeOperation = layer.blendMode;
-    if (layer.imageData) ctx.putImageData(layer.imageData, layer.x, layer.y);
-    else if (layer.img) ctx.drawImage(layer.img, layer.x, layer.y, layer.w, layer.h);
-    ctx.restore();
-  }
-}
-
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Component ────────────────────────────────────────────────────────────────
 export default function LiveryEditor() {
-  const [textures, setTextures]       = useState<ExtractedTexture[]>([]);
-  const [selectedTex, setSelectedTex] = useState<number>(-1);
-  const [layers, setLayers]           = useState<Layer[]>([]);
-  const [activeLayer, setActiveLayer] = useState<string | null>(null);
-  const [zoom, setZoom]               = useState(0.35);
-  const [pan, setPan]                 = useState({ x: 0, y: 0 });
-  const [isDraggingPan, setIsDraggingPan] = useState(false);
-  const [lastPan, setLastPan]         = useState({ x: 0, y: 0 });
-  const [importing, setImporting]     = useState(false);
+  const [vehicle, setVehicle] = useState<LoadedVehicle | null>(null);
+  const [vehicleName, setVehicleName] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
+  const [tool, setTool] = useState<'select' | 'brush'>('select');
+  const [brushColor, setBrushColor] = useState('#ff3344');
+  const [brushSize, setBrushSize] = useState(24);
+  const [showUV, setShowUV] = useState(true);
+  const [wireframe, setWireframe] = useState(false);
+  const [zoom, setZoom] = useState(0.4);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [busy, setBusy] = useState(false);
+  const [exporterId, setExporterId] = useState('png');
+  const [, force] = useState(0);
+  const rerender = () => force((n) => n + 1);
 
-  const outputCanvas = useRef<HTMLCanvasElement>(document.createElement('canvas'));
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const layerInputRef= useRef<HTMLInputElement>(null);
-  const [previewTick, setPreviewTick] = useState(0);
+  const edits = useRef<Map<string, SlotEdit>>(new Map());
+  const viewerRef = useRef<VehicleViewer | null>(null);
+  const viewerMount = useRef<HTMLDivElement>(null);
+  const centerCanvas = useRef<HTMLCanvasElement>(null);   // visible composite
+  const uvOverlay = useRef<HTMLCanvasElement>(null);      // UV wireframe
+  const glbInput = useRef<HTMLInputElement>(null);
+  const texInput = useRef<HTMLInputElement>(null);
 
-  // Initialize output canvas
+  const painting = useRef(false);
+  const panning = useRef(false);
+  const lastPt = useRef({ x: 0, y: 0 });
+
+  // ── Viewer lifecycle ───────────────────────────────────────────────────────
   useEffect(() => {
-    outputCanvas.current.width  = 2048;
-    outputCanvas.current.height = 2048;
+    if (!viewerMount.current) return;
+    const v = new VehicleViewer(viewerMount.current);
+    v.onPickSlot = (id) => selectSlot(id);
+    viewerRef.current = v;
+    return () => { v.dispose(); viewerRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-composite whenever layers change
-  useEffect(() => {
-    compositeToCanvas(layers, outputCanvas.current);
-    // Mirror to the visible canvas
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d')!;
-      canvasRef.current.width  = outputCanvas.current.width;
-      canvasRef.current.height = outputCanvas.current.height;
-      ctx.drawImage(outputCanvas.current, 0, 0);
+  // ── Slot editing helpers ────────────────────────────────────────────────────
+  const slotById = (id: string | null) =>
+    vehicle?.slots.find((s) => s.id === id) || null;
+
+  function ensureEdit(slot: VehicleMaterialSlot): SlotEdit {
+    let e = edits.current.get(slot.id);
+    if (e) return e;
+    const base = slotTextureToImageData(slot);
+    const w = base?.width || 1024;
+    const h = base?.height || 1024;
+    const layers: Layer[] = [];
+    if (base) {
+      layers.push({
+        id: uid(), name: 'Base texture', kind: 'base', visible: true,
+        opacity: 100, blendMode: 'source-over',
+        canvas: canvasFromImageData(base), x: 0, y: 0, w, h,
+      });
     }
-    setPreviewTick(t => t + 1);
-  }, [layers]);
+    e = { layers, canvas: newCanvas(w, h), w, h, uvEdges: slotUVEdges(slot) };
+    edits.current.set(slot.id, e);
+    composite(slot.id);
+    return e;
+  }
 
-  const addLayerFromImageData = (name: string, id: ImageData) => {
-    const layer = makeLayer(name, {
-      imageData: id, x: 0, y: 0, w: id.width, h: id.height,
-    });
-    setLayers(prev => [layer, ...prev]);
-    setActiveLayer(layer.id);
-  };
+  function composite(slotId: string) {
+    const e = edits.current.get(slotId);
+    if (!e) return;
+    const ctx = e.canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, e.w, e.h);
+    for (const layer of e.layers) {
+      if (!layer.visible) continue;
+      ctx.save();
+      ctx.globalAlpha = layer.opacity / 100;
+      ctx.globalCompositeOperation = layer.blendMode;
+      ctx.drawImage(layer.canvas, layer.x, layer.y, layer.w, layer.h);
+      ctx.restore();
+    }
+    // Push live to 3D + redraw center view if this is the selected slot.
+    const slot = slotById(slotId);
+    if (slot) viewerRef.current?.setSlotTexture(slot, e.canvas);
+    if (slotId === selectedSlot) drawCenter(e);
+  }
 
-  const addLayerFromImg = (name: string, img: HTMLImageElement, x=0, y=0) => {
-    const layer = makeLayer(name, { img, x, y, w: img.naturalWidth, h: img.naturalHeight });
-    setLayers(prev => [layer, ...prev]);
-    setActiveLayer(layer.id);
-  };
+  function drawCenter(e: SlotEdit) {
+    const cv = centerCanvas.current;
+    if (!cv) return;
+    cv.width = e.w; cv.height = e.h;
+    const ctx = cv.getContext('2d')!;
+    // checkerboard
+    const pat = newCanvas(16, 16); const pc = pat.getContext('2d')!;
+    pc.fillStyle = '#1a1c26'; pc.fillRect(0, 0, 16, 16);
+    pc.fillStyle = '#232533'; pc.fillRect(0, 0, 8, 8); pc.fillRect(8, 8, 8, 8);
+    ctx.fillStyle = ctx.createPattern(pat, 'repeat')!;
+    ctx.fillRect(0, 0, e.w, e.h);
+    ctx.drawImage(e.canvas, 0, 0);
+    drawUV(e);
+  }
 
-  // Import YTD / DDS / PNG
-  const importFile = useCallback(async (file: File) => {
-    setImporting(true);
+  function drawUV(e: SlotEdit) {
+    const ov = uvOverlay.current;
+    if (!ov) return;
+    ov.width = e.w; ov.height = e.h;
+    const ctx = ov.getContext('2d')!;
+    ctx.clearRect(0, 0, e.w, e.h);
+    if (!showUV || e.uvEdges.length === 0) return;
+    ctx.strokeStyle = 'rgba(80,200,255,0.55)';
+    ctx.lineWidth = Math.max(1, e.w / 1024);
+    ctx.beginPath();
+    const u = e.uvEdges;
+    for (let i = 0; i < u.length; i += 4) {
+      ctx.moveTo(u[i] * e.w, u[i + 1] * e.h);
+      ctx.lineTo(u[i + 2] * e.w, u[i + 3] * e.h);
+    }
+    ctx.stroke();
+  }
+
+  function selectSlot(id: string) {
+    const slot = slotById(id);
+    if (!slot) return;
+    setSelectedSlot(id);
+    const e = ensureEdit(slot);
+    setActiveLayerId(e.layers[e.layers.length - 1]?.id ?? null);
+    requestAnimationFrame(() => { drawCenter(e); });
+    rerender();
+  }
+
+  useEffect(() => {
+    if (selectedSlot) {
+      const e = edits.current.get(selectedSlot);
+      if (e) drawCenter(e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showUV, selectedSlot]);
+
+  // ── Imports ─────────────────────────────────────────────────────────────────
+  const importGLB = useCallback(async (file: File) => {
+    setBusy(true);
     try {
-      const name = file.name.toLowerCase();
-      if (name.endsWith('.ytd') || name.endsWith('.dds')) {
-        const buf = await file.arrayBuffer();
-        if (name.endsWith('.dds')) {
-          const bytes = new Uint8Array(buf);
-          const id = ddsToImageData(bytes);
-          if (!id) { toast.error('Could not decode DDS file'); return; }
-          // Set canvas size to match
-          outputCanvas.current.width  = id.width;
-          outputCanvas.current.height = id.height;
-          setTextures([{ index:0, name:file.name, width:id.width, height:id.height, format:'DXT1', mips:1, ddsBytes:bytes }]);
-          setSelectedTex(0);
-          addLayerFromImageData(file.name, id);
-          toast.success(`Loaded ${id.width}×${id.height} DDS texture`);
-        } else {
-          const extracted = extractTexturesFromBuffer(buf);
-          if (extracted.length === 0) { toast.error('No DDS textures found in YTD'); return; }
-          setTextures(extracted);
-          setSelectedTex(0);
-          const first = extracted[0];
-          const id = ddsToImageData(first.ddsBytes);
-          if (id) {
-            outputCanvas.current.width  = id.width;
-            outputCanvas.current.height = id.height;
-            addLayerFromImageData(`${first.name} (base)`, id);
-          }
-          toast.success(`Extracted ${extracted.length} texture${extracted.length>1?'s':''} from YTD`);
-        }
-      } else if (name.match(/\.(png|jpg|jpeg|webp|bmp)$/)) {
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => {
-          addLayerFromImg(file.name, img);
-          URL.revokeObjectURL(url);
-          toast.success(`Added ${file.name} as new layer`);
-        };
-        img.src = url;
-      } else {
-        toast.error('Supported formats: .ytd, .dds, .png, .jpg');
-      }
+      const buf = await file.arrayBuffer();
+      const v = await loadVehicleGLB(buf);
+      if (!v.slots.length) { toast.error('No materials found in model'); return; }
+      edits.current.clear();
+      setVehicle(v);
+      setVehicleName(file.name.replace(/\.(glb|gltf)$/i, ''));
+      viewerRef.current?.setVehicle(v);
+      viewerRef.current?.setWireframe(wireframe);
+      // auto-select first paint/livery slot
+      const first = v.slots[0];
+      setTimeout(() => selectSlot(first.id), 0);
+      toast.success(`Loaded ${v.slots.length} material slots`);
     } catch (e: any) {
-      toast.error(e?.message || 'Import failed');
-    } finally { setImporting(false); }
-  }, []);
+      toast.error(`Could not load model: ${e?.message || e}`);
+    } finally { setBusy(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wireframe]);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    Array.from(e.dataTransfer.files).forEach(importFile);
-  };
-
-  const loadTexture = (tex: ExtractedTexture, idx: number) => {
-    setSelectedTex(idx);
-    const id = ddsToImageData(tex.ddsBytes);
-    if (!id) { toast.error('Could not decode texture'); return; }
-    outputCanvas.current.width  = id.width;
-    outputCanvas.current.height = id.height;
-    const existing = layers.find(l => l.name.includes('base'));
-    if (existing) {
-      setLayers(prev => prev.map(l => l.id===existing.id ? {...l, imageData:id, w:id.width, h:id.height} : l));
-    } else {
-      addLayerFromImageData(`${tex.name} (base)`, id);
+  const importTexture = useCallback(async (file: File) => {
+    const slot = slotById(selectedSlot);
+    if (!slot) { toast.error('Select a material slot first'); return; }
+    const e = ensureEdit(slot);
+    const name = file.name.toLowerCase();
+    try {
+      if (name.endsWith('.dds') || name.endsWith('.ytd')) {
+        const buf = await file.arrayBuffer();
+        let id: ImageData | null = null;
+        if (name.endsWith('.dds')) {
+          id = ddsToImageData(new Uint8Array(buf));
+        } else {
+          const tex = await extractTexturesFromYTD(buf);
+          if (tex.length) id = ddsToImageData(tex[0].ddsBytes);
+        }
+        if (!id) { toast.error('Could not decode texture'); return; }
+        addLayer(e, { kind: 'image', name: file.name, canvas: canvasFromImageData(id), w: id.width, h: id.height });
+        toast.success(`Added ${file.name}`);
+      } else if (name.match(/\.(png|jpe?g|webp|bmp)$/)) {
+        const img = await loadImage(file);
+        const c = newCanvas(img.naturalWidth, img.naturalHeight);
+        c.getContext('2d')!.drawImage(img, 0, 0);
+        addLayer(e, { kind: 'image', name: file.name, canvas: c, w: img.naturalWidth, h: img.naturalHeight });
+        toast.success(`Added ${file.name}`);
+      } else {
+        toast.error('Supported: .dds .ytd .png .jpg');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Import failed');
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSlot, vehicle]);
 
-  const updateLayer = (id: string, changes: Partial<Layer>) => {
-    setLayers(prev => prev.map(l => l.id===id ? {...l,...changes} : l));
-  };
+  function routeFile(file: File) {
+    const n = file.name.toLowerCase();
+    if (n.endsWith('.glb') || n.endsWith('.gltf')) importGLB(file);
+    else importTexture(file);
+  }
 
-  const deleteLayer = (id: string) => {
-    setLayers(prev => prev.filter(l => l.id!==id));
-    if (activeLayer === id) setActiveLayer(null);
-  };
+  // ── Layer ops ───────────────────────────────────────────────────────────────
+  function addLayer(e: SlotEdit, partial: Partial<Layer> & { kind: LayerKind; canvas: HTMLCanvasElement; w: number; h: number }) {
+    const layer: Layer = {
+      id: uid(), name: partial.name || partial.kind, visible: true, opacity: 100,
+      blendMode: 'source-over', x: 0, y: 0,
+      ...partial,
+    } as Layer;
+    e.layers.push(layer);
+    setActiveLayerId(layer.id);
+    composite(slotIdOf(e));
+    rerender();
+  }
 
-  const moveLayer = (id: string, dir: -1 | 1) => {
-    setLayers(prev => {
-      const arr = [...prev];
-      const i = arr.findIndex(l => l.id===id);
-      const j = i + dir;
-      if (j < 0 || j >= arr.length) return arr;
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-      return arr;
-    });
-  };
+  function slotIdOf(e: SlotEdit): string {
+    for (const [id, v] of edits.current) if (v === e) return id;
+    return selectedSlot || '';
+  }
 
-  const addImageLayer = () => layerInputRef.current?.click();
+  function addTextLayer() {
+    const slot = slotById(selectedSlot); if (!slot) return;
+    const e = ensureEdit(slot);
+    const c = newCanvas(e.w, e.h);
+    const layer: Layer = {
+      id: uid(), name: 'Text', kind: 'text', visible: true, opacity: 100,
+      blendMode: 'source-over', canvas: c, x: 0, y: 0, w: e.w, h: e.h,
+      text: 'TEXT', fontSize: Math.round(e.h / 12), color: '#ffffff',
+    };
+    renderTextLayer(layer);
+    e.layers.push(layer);
+    setActiveLayerId(layer.id);
+    composite(slot.id); rerender();
+  }
 
-  const exportPNG = () => {
-    const a = document.createElement('a');
-    a.href = outputCanvas.current.toDataURL('image/png');
-    a.download = `livery_${Date.now()}.png`;
-    a.click();
-    toast.success('Exported as PNG');
-  };
+  function addFillLayer() {
+    const slot = slotById(selectedSlot); if (!slot) return;
+    const e = ensureEdit(slot);
+    const c = newCanvas(e.w, e.h);
+    const ctx = c.getContext('2d')!; ctx.fillStyle = brushColor; ctx.fillRect(0, 0, e.w, e.h);
+    addLayer(e, { kind: 'fill', name: 'Fill', canvas: c, w: e.w, h: e.h, opacity: 60 });
+  }
 
-  // Canvas pan/zoom
-  const onCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || e.altKey) {
-      setIsDraggingPan(true);
-      setLastPan({ x: e.clientX, y: e.clientY });
-      e.preventDefault();
+  function addPaintLayer(): Layer | null {
+    const slot = slotById(selectedSlot); if (!slot) return null;
+    const e = ensureEdit(slot);
+    const c = newCanvas(e.w, e.h);
+    const layer: Layer = {
+      id: uid(), name: 'Paint', kind: 'paint', visible: true, opacity: 100,
+      blendMode: 'source-over', canvas: c, x: 0, y: 0, w: e.w, h: e.h,
+    };
+    e.layers.push(layer); setActiveLayerId(layer.id); rerender();
+    return layer;
+  }
+
+  function updateLayer(id: string, changes: Partial<Layer>) {
+    const e = edits.current.get(selectedSlot || ''); if (!e) return;
+    const layer = e.layers.find((l) => l.id === id); if (!layer) return;
+    Object.assign(layer, changes);
+    if (layer.kind === 'text') renderTextLayer(layer);
+    composite(selectedSlot!); rerender();
+  }
+
+  function deleteLayer(id: string) {
+    const e = edits.current.get(selectedSlot || ''); if (!e) return;
+    e.layers = e.layers.filter((l) => l.id !== id);
+    if (activeLayerId === id) setActiveLayerId(e.layers[e.layers.length - 1]?.id ?? null);
+    composite(selectedSlot!); rerender();
+  }
+
+  function moveLayer(id: string, dir: -1 | 1) {
+    const e = edits.current.get(selectedSlot || ''); if (!e) return;
+    const i = e.layers.findIndex((l) => l.id === id); const j = i + dir;
+    if (j < 0 || j >= e.layers.length) return;
+    [e.layers[i], e.layers[j]] = [e.layers[j], e.layers[i]];
+    composite(selectedSlot!); rerender();
+  }
+
+  // ── Center canvas interaction (pan / brush) ─────────────────────────────────
+  function canvasPoint(ev: React.PointerEvent): { x: number; y: number } | null {
+    const cv = centerCanvas.current; if (!cv) return null;
+    const rect = cv.getBoundingClientRect();
+    return {
+      x: ((ev.clientX - rect.left) / rect.width) * cv.width,
+      y: ((ev.clientY - rect.top) / rect.height) * cv.height,
+    };
+  }
+
+  function paintAt(ev: React.PointerEvent) {
+    const e = edits.current.get(selectedSlot || ''); if (!e) return;
+    let layer = e.layers.find((l) => l.id === activeLayerId && l.kind === 'paint');
+    if (!layer) layer = addPaintLayer() || undefined;
+    if (!layer) return;
+    const p = canvasPoint(ev); if (!p) return;
+    const ctx = layer.canvas.getContext('2d')!;
+    ctx.fillStyle = brushColor;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, brushSize, 0, Math.PI * 2);
+    ctx.fill();
+    composite(selectedSlot!);
+  }
+
+  const onPointerDown = (ev: React.PointerEvent) => {
+    if (ev.button === 1 || ev.altKey || tool === 'select') {
+      panning.current = true; lastPt.current = { x: ev.clientX, y: ev.clientY };
+    } else if (tool === 'brush') {
+      painting.current = true; paintAt(ev);
     }
+    (ev.target as Element).setPointerCapture?.(ev.pointerId);
   };
-  const onCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingPan) return;
-    setPan(p => ({ x: p.x + e.clientX - lastPan.x, y: p.y + e.clientY - lastPan.y }));
-    setLastPan({ x: e.clientX, y: e.clientY });
+  const onPointerMove = (ev: React.PointerEvent) => {
+    if (panning.current) {
+      setPan((p) => ({ x: p.x + ev.clientX - lastPt.current.x, y: p.y + ev.clientY - lastPt.current.y }));
+      lastPt.current = { x: ev.clientX, y: ev.clientY };
+    } else if (painting.current) paintAt(ev);
   };
-  const onCanvasMouseUp = () => setIsDraggingPan(false);
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    setZoom(z => Math.max(0.05, Math.min(4, z * (e.deltaY > 0 ? 0.9 : 1.1))));
-  };
+  const onPointerUp = () => { panning.current = false; painting.current = false; };
+  const onWheel = (ev: React.WheelEvent) => setZoom((z) => Math.max(0.05, Math.min(5, z * (ev.deltaY > 0 ? 0.9 : 1.1))));
 
-  const fmtColor = (f: string) => {
-    const m: Record<string,string> = { DXT1:'bg-blue-500/20 text-blue-300', DXT5:'bg-purple-500/20 text-purple-300', DXT3:'bg-indigo-500/20 text-indigo-300', RGBA8:'bg-green-500/20 text-green-300', BGRA8:'bg-emerald-500/20 text-emerald-300' };
-    return m[f] || 'bg-surface-700/30 text-surface-400';
-  };
+  // ── Export ──────────────────────────────────────────────────────────────────
+  async function doExport() {
+    const e = edits.current.get(selectedSlot || '');
+    const exporter = EXPORTERS.find((x) => x.id === exporterId);
+    if (!e || !exporter) { toast.error('Nothing to export'); return; }
+    if (!exporter.ready) { toast.error(exporter.label + ' not available yet'); return; }
+    try {
+      const slot = slotById(selectedSlot);
+      const base = `${vehicleName || 'livery'}_${slot?.name || 'texture'}`.replace(/[^\w.-]+/g, '_');
+      const res = await exporter.export(e.canvas, base);
+      downloadResult(res);
+      toast.success(`Exported ${res.filename}`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Export failed');
+    }
+  }
 
-  const activeLayerData = layers.find(l => l.id === activeLayer);
-  const hasContent = layers.length > 0;
+  function toggleWire() {
+    const next = !wireframe; setWireframe(next); viewerRef.current?.setWireframe(next);
+  }
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const curEdit = selectedSlot ? edits.current.get(selectedSlot) : null;
+  const curSlot = slotById(selectedSlot);
+  const activeLayer = curEdit?.layers.find((l) => l.id === activeLayerId) || null;
+
+  // group slots by section
+  const grouped: Record<string, VehicleMaterialSlot[]> = {};
+  vehicle?.slots.forEach((s) => { (grouped[s.section] ||= []).push(s); });
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col overflow-hidden">
-
       {/* Top bar */}
-      <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b border-overlay-6 bg-surface-950/60 backdrop-blur-sm">
+      <div className="shrink-0 flex items-center gap-3 px-5 py-2.5 border-b border-overlay-6 bg-surface-950/60 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-pink-500/15 border border-pink-500/25 flex items-center justify-center">
             <Palette size={16} className="text-pink-400" />
           </div>
           <div>
             <h1 className="text-sm font-bold text-surface-100">Livery Editor</h1>
-            <p className="text-[10px] text-surface-500">Import YTD · Edit Layers · 3D Preview</p>
+            <p className="text-[10px] text-surface-500">{vehicle ? `${vehicleName} · ${vehicle.slots.length} materials` : 'OpenIV-style · real vehicle geometry'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={() => fileInputRef.current?.click()} disabled={importing}
+          <button onClick={() => glbInput.current?.click()} disabled={busy}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-secondary">
-            <Upload size={12} /> Import YTD / DDS / PNG
+            <Box size={12} /> Import Vehicle (GLB)
           </button>
-          <button onClick={exportPNG} disabled={!hasContent}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-pink-600/20 text-pink-300 border border-pink-500/30 rounded-lg hover:bg-pink-600/30 transition-all disabled:opacity-40">
-            <Download size={12} /> Export PNG
+          <button onClick={() => texInput.current?.click()} disabled={!vehicle}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-secondary disabled:opacity-40">
+            <ImageIcon size={12} /> Add Texture
           </button>
+          <div className="flex items-center rounded-lg overflow-hidden border border-pink-500/30">
+            <select value={exporterId} onChange={(e) => setExporterId(e.target.value)}
+              className="px-2 py-1.5 text-xs bg-pink-600/15 text-pink-200 focus:outline-none">
+              {EXPORTERS.map((x) => <option key={x.id} value={x.id} disabled={!x.ready}>{x.label}{x.ready ? '' : ' (soon)'}</option>)}
+            </select>
+            <button onClick={doExport} disabled={!curEdit}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-pink-600/25 text-pink-200 hover:bg-pink-600/40 transition-all disabled:opacity-40">
+              <Download size={12} /> Export
+            </button>
+          </div>
         </div>
-        <input ref={fileInputRef} type="file" multiple accept=".ytd,.dds,.png,.jpg,.jpeg,.webp" className="hidden"
-          onChange={e => { Array.from(e.target.files||[]).forEach(importFile); e.target.value=''; }} />
-        <input ref={layerInputRef} type="file" multiple accept=".png,.jpg,.jpeg,.webp,.bmp" className="hidden"
-          onChange={e => { Array.from(e.target.files||[]).forEach(importFile); e.target.value=''; }} />
+        <input ref={glbInput} type="file" accept=".glb,.gltf" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) importGLB(f); e.target.value = ''; }} />
+        <input ref={texInput} type="file" multiple accept=".dds,.ytd,.png,.jpg,.jpeg,.webp" className="hidden"
+          onChange={(e) => { Array.from(e.target.files || []).forEach(importTexture); e.target.value = ''; }} />
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden" onDrop={(e) => { e.preventDefault(); Array.from(e.dataTransfer.files).forEach(routeFile); }} onDragOver={(e) => e.preventDefault()}>
 
-        {/* Left panel — Textures + Layers */}
-        <div className="w-56 shrink-0 flex flex-col border-r border-overlay-6 bg-surface-950/20 overflow-hidden">
-
-          {/* Texture list */}
-          <div className="shrink-0 border-b border-overlay-6">
-            <div className="px-3 pt-3 pb-1 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">Textures</span>
-              <span className="text-[10px] text-surface-600">{textures.length}</span>
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 180 }}>
-              {textures.length === 0 ? (
-                <p className="text-[11px] text-surface-600 px-3 pb-3">Import a .ytd or .dds file</p>
-              ) : textures.map((t, i) => (
-                <button key={i} onClick={() => loadTexture(t, i)}
-                  className={`w-full text-left px-3 py-2 flex items-center gap-2 transition-all ${selectedTex===i?'bg-primary-600/15 text-primary-300':'text-surface-400 hover:bg-overlay-4 hover:text-surface-200'}`}>
-                  <div className="w-8 h-8 rounded bg-surface-800 border border-overlay-6 shrink-0 overflow-hidden flex items-center justify-center">
-                    <ImageIcon size={12} className="text-surface-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium truncate">{t.name}</p>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <span className={`text-[9px] px-1 rounded ${fmtColor(t.format)}`}>{t.format}</span>
-                      <span className="text-[9px] text-surface-600">{t.width}×{t.height}</span>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+        {/* LEFT — materials + layers */}
+        <div className="w-60 shrink-0 flex flex-col border-r border-overlay-6 bg-surface-950/20 overflow-hidden">
+          <div className="shrink-0 px-3 pt-3 pb-1 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">Material Slots</span>
+            <span className="text-[10px] text-surface-600">{vehicle?.slots.length || 0}</span>
+          </div>
+          <div className="overflow-y-auto" style={{ maxHeight: '45%' }}>
+            {!vehicle && <p className="text-[11px] text-surface-600 px-3 pb-3">Import a GLB to list materials</p>}
+            {Object.entries(grouped).map(([section, slots]) => (
+              <div key={section} className="mb-1">
+                <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-surface-600 flex items-center gap-1">
+                  <ChevronRight size={9} /> {section}
+                </div>
+                {slots.map((s) => (
+                  <button key={s.id}
+                    onClick={() => selectSlot(s.id)}
+                    onMouseEnter={() => viewerRef.current?.highlightSlot(s.id)}
+                    onMouseLeave={() => viewerRef.current?.highlightSlot(null)}
+                    className={`w-full text-left pl-5 pr-3 py-1.5 flex items-center gap-2 transition-all ${selectedSlot === s.id ? 'bg-primary-600/15 text-primary-300' : 'text-surface-400 hover:bg-overlay-4 hover:text-surface-200'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.originalMap ? 'bg-emerald-400' : 'bg-surface-600'}`} />
+                    <span className="text-[11px] font-medium truncate">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
           </div>
 
-          {/* Layer list */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="shrink-0 px-3 pt-3 pb-1 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">Layers</span>
-              <div className="flex items-center gap-1">
-                <button onClick={addImageLayer} title="Add image layer"
-                  className="p-0.5 rounded text-surface-500 hover:text-primary-400 hover:bg-overlay-4 transition-all">
-                  <Plus size={13} />
-                </button>
+          {/* Layers */}
+          <div className="flex-1 flex flex-col overflow-hidden border-t border-overlay-6">
+            <div className="shrink-0 px-3 pt-2.5 pb-1 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-surface-600 flex items-center gap-1"><LayersIcon size={11} /> Layers</span>
+              <div className="flex items-center gap-0.5">
+                <button title="Add text" onClick={addTextLayer} disabled={!curSlot} className="p-1 rounded text-surface-500 hover:text-primary-400 disabled:opacity-30"><Type size={12} /></button>
+                <button title="Add fill" onClick={addFillLayer} disabled={!curSlot} className="p-1 rounded text-surface-500 hover:text-primary-400 disabled:opacity-30"><Square size={12} /></button>
+                <button title="Add image" onClick={() => texInput.current?.click()} disabled={!curSlot} className="p-1 rounded text-surface-500 hover:text-primary-400 disabled:opacity-30"><Plus size={13} /></button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-              {layers.length === 0 && (
-                <p className="text-[11px] text-surface-600 px-1 py-2">Import a file to start</p>
-              )}
-              {layers.map((layer, idx) => (
-                <div key={layer.id} onClick={() => setActiveLayer(layer.id)}
-                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${activeLayer===layer.id?'bg-primary-600/15 border border-primary-500/20':'hover:bg-overlay-4 border border-transparent'}`}>
-                  <button onClick={e => { e.stopPropagation(); updateLayer(layer.id,{visible:!layer.visible}); }}
-                    className="text-surface-500 hover:text-surface-200 shrink-0">
-                    {layer.visible ? <Eye size={12}/> : <EyeOff size={12} className="opacity-40"/>}
+              {!curSlot && <p className="text-[11px] text-surface-600 px-1 py-2">Select a material slot</p>}
+              {curEdit && [...curEdit.layers].reverse().map((layer) => (
+                <div key={layer.id} onClick={() => setActiveLayerId(layer.id)}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer group transition-all ${activeLayerId === layer.id ? 'bg-primary-600/15 border border-primary-500/20' : 'hover:bg-overlay-4 border border-transparent'}`}>
+                  <button onClick={(e) => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} className="text-surface-500 hover:text-surface-200 shrink-0">
+                    {layer.visible ? <Eye size={12} /> : <EyeOff size={12} className="opacity-40" />}
                   </button>
                   <div className="w-7 h-7 rounded bg-surface-800 border border-overlay-6 shrink-0 overflow-hidden">
-                    {layer.imageData ? (
-                      <LayerThumb imageData={layer.imageData} />
-                    ) : layer.img ? (
-                      <img src={layer.img.src} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-surface-700" />
-                    )}
+                    <ThumbCanvas source={layer.canvas} />
                   </div>
                   <span className="text-[11px] text-surface-300 truncate flex-1">{layer.name}</span>
-                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button onClick={e=>{e.stopPropagation();moveLayer(layer.id,-1);}} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronUp size={10}/></button>
-                    <button onClick={e=>{e.stopPropagation();moveLayer(layer.id,1);}} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronDown size={10}/></button>
-                    <button onClick={e=>{e.stopPropagation();deleteLayer(layer.id);}} className="p-0.5 text-surface-500 hover:text-red-400"><Trash2 size={10}/></button>
+                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
+                    <button onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, 1); }} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronUp size={10} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, -1); }} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronDown size={10} /></button>
+                    {layer.kind !== 'base' && <button onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} className="p-0.5 text-surface-500 hover:text-red-400"><Trash2 size={10} /></button>}
                   </div>
                 </div>
               ))}
             </div>
 
             {/* Layer properties */}
-            {activeLayerData && (
+            {activeLayer && (
               <div className="shrink-0 border-t border-overlay-6 p-3 space-y-2">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">Properties</p>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] text-surface-400">Opacity</span>
-                    <span className="text-[11px] text-surface-300 font-mono">{activeLayerData.opacity}%</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-surface-400">Opacity</span>
+                  <span className="text-[11px] text-surface-300 font-mono">{activeLayer.opacity}%</span>
+                </div>
+                <input type="range" min={0} max={100} value={activeLayer.opacity}
+                  onChange={(e) => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })}
+                  className="w-full h-1.5 accent-pink-500" />
+                <select value={activeLayer.blendMode} onChange={(e) => updateLayer(activeLayer.id, { blendMode: e.target.value as GlobalCompositeOperation })}
+                  className="w-full px-2 py-1 text-[11px] bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none">
+                  {BLEND_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                {activeLayer.kind === 'text' && (
+                  <div className="space-y-1.5 pt-1">
+                    <input value={activeLayer.text || ''} onChange={(e) => updateLayer(activeLayer.id, { text: e.target.value })}
+                      placeholder="Text" className="w-full px-2 py-1 text-[11px] bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none" />
+                    <div className="flex gap-1.5">
+                      <input type="number" value={activeLayer.fontSize || 80} onChange={(e) => updateLayer(activeLayer.id, { fontSize: Number(e.target.value) })}
+                        className="w-16 px-2 py-1 text-[11px] bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none" />
+                      <input type="color" value={activeLayer.color || '#ffffff'} onChange={(e) => updateLayer(activeLayer.id, { color: e.target.value })}
+                        className="flex-1 h-7 bg-overlay-4 border border-overlay-6 rounded cursor-pointer" />
+                    </div>
                   </div>
-                  <input type="range" min={0} max={100} value={activeLayerData.opacity}
-                    onChange={e=>updateLayer(activeLayerData.id,{opacity:Number(e.target.value)})}
-                    className="w-full h-1.5 rounded-full accent-pink-500" />
-                </div>
-                <div>
-                  <span className="text-[11px] text-surface-400">Blend</span>
-                  <select value={activeLayerData.blendMode}
-                    onChange={e=>updateLayer(activeLayerData.id,{blendMode:e.target.value as GlobalCompositeOperation})}
-                    className="w-full mt-1 px-2 py-1 text-[11px] bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none">
-                    {BLEND_MODES.map(m=><option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Center — Canvas editor */}
+        {/* CENTER — UV / texture editor */}
         <div className="flex-1 flex flex-col overflow-hidden bg-surface-950/30">
-          {/* Canvas toolbar */}
-          <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-overlay-6">
-            <button onClick={()=>setZoom(z=>Math.min(4,z*1.25))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded transition-all"><ZoomIn size={14}/></button>
-            <button onClick={()=>setZoom(z=>Math.max(0.05,z*0.8))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded transition-all"><ZoomOut size={14}/></button>
-            <span className="text-xs text-surface-500 font-mono w-12 text-center">{Math.round(zoom*100)}%</span>
-            <div className="w-px h-4 bg-overlay-6"/>
-            <button onClick={()=>{setZoom(0.35);setPan({x:0,y:0});}} className="text-xs text-surface-500 hover:text-surface-200 px-2 py-1 hover:bg-overlay-4 rounded">Fit</button>
-            <button onClick={()=>{setZoom(1);setPan({x:0,y:0});}} className="text-xs text-surface-500 hover:text-surface-200 px-2 py-1 hover:bg-overlay-4 rounded">1:1</button>
-            <div className="ml-auto text-[11px] text-surface-600">
-              {outputCanvas.current.width}×{outputCanvas.current.height}px — Alt+drag to pan · Scroll to zoom
-            </div>
+          <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-overlay-6">
+            <button onClick={() => setTool('select')} className={`p-1.5 rounded transition-all ${tool === 'select' ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`} title="Move / pan"><MousePointer size={14} /></button>
+            <button onClick={() => setTool('brush')} className={`p-1.5 rounded transition-all ${tool === 'brush' ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`} title="Brush"><Brush size={14} /></button>
+            {tool === 'brush' && (
+              <>
+                <input type="color" value={brushColor} onChange={(e) => setBrushColor(e.target.value)} className="w-6 h-6 rounded border border-overlay-6 cursor-pointer bg-transparent" />
+                <input type="range" min={2} max={120} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-20 accent-pink-500" />
+                <span className="text-[10px] text-surface-500 font-mono w-6">{brushSize}</span>
+              </>
+            )}
+            <div className="w-px h-4 bg-overlay-6 mx-1" />
+            <button onClick={() => setShowUV((v) => !v)} className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-all ${showUV ? 'bg-cyan-600/15 text-cyan-300' : 'text-surface-500 hover:text-surface-200'}`}><Grid3x3 size={13} /> UV</button>
+            <div className="w-px h-4 bg-overlay-6 mx-1" />
+            <button onClick={() => setZoom((z) => Math.min(5, z * 1.25))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded"><ZoomIn size={14} /></button>
+            <button onClick={() => setZoom((z) => Math.max(0.05, z * 0.8))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded"><ZoomOut size={14} /></button>
+            <span className="text-xs text-surface-500 font-mono w-12 text-center">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => { setZoom(0.4); setPan({ x: 0, y: 0 }); }} className="text-xs text-surface-500 hover:text-surface-200 px-2 py-1 hover:bg-overlay-4 rounded">Fit</button>
+            <span className="ml-auto text-[11px] text-surface-600">{curSlot ? `${curSlot.name} · ${curEdit?.w}×${curEdit?.h}` : 'No slot selected'}</span>
           </div>
 
-          {/* Canvas area */}
-          <div className="flex-1 overflow-hidden relative"
-            onMouseDown={onCanvasMouseDown} onMouseMove={onCanvasMouseMove}
-            onMouseUp={onCanvasMouseUp} onMouseLeave={onCanvasMouseUp}
-            onWheel={onWheel} onDrop={handleDrop} onDragOver={e=>e.preventDefault()}
-            style={{ cursor: isDraggingPan ? 'grabbing' : 'default' }}>
-            {!hasContent && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="border-2 border-dashed border-pink-500/20 rounded-2xl p-12 flex flex-col items-center text-center bg-pink-500/3">
-                  <div className="w-16 h-16 rounded-2xl bg-pink-500/15 border border-pink-500/20 flex items-center justify-center mb-4">
-                    <Palette size={28} className="text-pink-400"/>
-                  </div>
-                  <h3 className="text-base font-bold text-surface-100 mb-1.5">Drag & Drop to Start</h3>
-                  <p className="text-sm text-surface-400 mb-4">Import a YTD file to extract textures, or drop a PNG/DDS directly</p>
-                  <div className="flex flex-wrap gap-1.5 justify-center">
-                    {['.ytd','.dds','.png','.jpg'].map(t=><span key={t} className="text-[11px] px-2.5 py-0.5 rounded-full bg-overlay-4 border border-overlay-6 text-surface-400">{t}</span>)}
-                  </div>
+          <div className="flex-1 overflow-hidden relative" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel}
+            style={{ cursor: tool === 'brush' ? 'crosshair' : panning.current ? 'grabbing' : 'grab' }}>
+            {!curEdit && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-8">
+                <div className="border-2 border-dashed border-pink-500/20 rounded-2xl p-10 flex flex-col items-center text-center bg-pink-500/3 max-w-md">
+                  <div className="w-16 h-16 rounded-2xl bg-pink-500/15 border border-pink-500/20 flex items-center justify-center mb-4"><Box size={28} className="text-pink-400" /></div>
+                  <h3 className="text-base font-bold text-surface-100 mb-1.5">Import a Vehicle Model</h3>
+                  <p className="text-sm text-surface-400 mb-3">Drop a <b className="text-surface-200">.glb</b> exported from CodeWalker or Sollumz/Blender. Real geometry, real UVs, real material slots — then edit each material's livery and watch it apply live.</p>
+                  <p className="text-[11px] text-surface-500">Tip: in CodeWalker, open the <code className="text-cyan-400">.yft</code> → Tools → Export to GLTF/GLB.</p>
                 </div>
               </div>
             )}
-            {hasContent && (
+            {curEdit && (
               <div className="absolute inset-0 overflow-hidden" style={{ pointerEvents: 'none' }}>
-                <div style={{
-                  position: 'absolute',
-                  left: '50%', top: '50%',
-                  transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
-                  transformOrigin: 'center center',
-                  pointerEvents: 'all',
-                }}>
-                  <div className="relative" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 20px 60px rgba(0,0,0,0.7)' }}>
-                    <canvas ref={canvasRef}
-                      width={outputCanvas.current.width} height={outputCanvas.current.height}
-                      style={{ display: 'block', imageRendering: zoom < 0.5 ? 'auto' : 'pixelated' }} />
+                <div style={{ position: 'absolute', left: '50%', top: '50%', transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`, transformOrigin: 'center center', pointerEvents: 'all' }}>
+                  <div className="relative" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.08), 0 20px 60px rgba(0,0,0,0.7)' }}>
+                    <canvas ref={centerCanvas} style={{ display: 'block', imageRendering: zoom < 0.5 ? 'auto' : 'pixelated' }} />
+                    <canvas ref={uvOverlay} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', imageRendering: 'pixelated' }} />
                   </div>
                 </div>
               </div>
@@ -628,54 +581,46 @@ export default function LiveryEditor() {
           </div>
         </div>
 
-        {/* Right panel — 3D Preview */}
-        <div className="w-72 shrink-0 flex flex-col border-l border-overlay-6 bg-surface-950/20">
-          <div className="shrink-0 px-4 py-3 border-b border-overlay-6 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Car size={14} className="text-pink-400" />
-              <span className="text-xs font-semibold text-surface-200">3D Preview</span>
+        {/* RIGHT — real 3D vehicle */}
+        <div className="w-80 shrink-0 flex flex-col border-l border-overlay-6 bg-surface-950/20">
+          <div className="shrink-0 px-4 py-2.5 border-b border-overlay-6 flex items-center justify-between">
+            <div className="flex items-center gap-2"><Car size={14} className="text-pink-400" /><span className="text-xs font-semibold text-surface-200">3D Vehicle</span></div>
+            <div className="flex items-center gap-1">
+              <button onClick={toggleWire} className={`p-1.5 rounded transition-all ${wireframe ? 'bg-cyan-600/15 text-cyan-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`} title="Wireframe"><Grid3x3 size={13} /></button>
+              <button onClick={() => viewerRef.current?.resetView()} className="p-1.5 rounded text-surface-500 hover:text-surface-200 hover:bg-overlay-4" title="Reset view"><RotateCcw size={13} /></button>
             </div>
-            <span className="text-[10px] text-surface-600">Real-time</span>
           </div>
-          <div className="flex-1 relative overflow-hidden" key={previewTick > 1 ? 'loaded' : 'init'}>
-            <ThreePreview sourceCanvas={hasContent ? outputCanvas.current : null} />
-          </div>
-          <div className="shrink-0 border-t border-overlay-6 p-3 space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">UV Reference</p>
-            <div className="grid grid-cols-2 gap-1.5 text-[10px] text-surface-500">
-              <div className="bg-overlay-4 border border-overlay-6 rounded-lg p-2">
-                <p className="text-surface-300 font-medium mb-0.5">Side L/R</p>
-                <p>Main livery area</p>
-              </div>
-              <div className="bg-overlay-4 border border-overlay-6 rounded-lg p-2">
-                <p className="text-surface-300 font-medium mb-0.5">Hood/Trunk</p>
-                <p>Top panels</p>
-              </div>
-              <div className="bg-overlay-4 border border-overlay-6 rounded-lg p-2">
-                <p className="text-surface-300 font-medium mb-0.5">Front/Rear</p>
-                <p>Bumper area</p>
-              </div>
-              <div className="bg-overlay-4 border border-overlay-6 rounded-lg p-2">
-                <p className="text-surface-300 font-medium mb-0.5">Roof</p>
-                <p>Upper surface</p>
-              </div>
-            </div>
+          <div ref={viewerMount} className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing" />
+          <div className="shrink-0 border-t border-overlay-6 px-3 py-2">
+            <p className="text-[10px] text-surface-500 leading-relaxed">
+              <b className="text-surface-300">Click</b> a part on the car to select its material · <b className="text-surface-300">hover</b> a slot on the left to highlight it here · edits apply live.
+            </p>
           </div>
         </div>
-
       </div>
     </motion.div>
   );
 }
 
-// Thumbnail for layer panel
-function LayerThumb({ imageData }: { imageData: ImageData }) {
+// ── Small helpers ─────────────────────────────────────────────────────────────
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { resolve(img); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = url;
+  });
+}
+
+function ThumbCanvas({ source }: { source: HTMLCanvasElement }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (!ref.current) return;
-    ref.current.width  = imageData.width;
-    ref.current.height = imageData.height;
-    ref.current.getContext('2d')!.putImageData(imageData, 0, 0);
-  }, [imageData]);
+    const c = ref.current; if (!c) return;
+    c.width = 56; c.height = 56;
+    const ctx = c.getContext('2d')!;
+    ctx.clearRect(0, 0, 56, 56);
+    try { ctx.drawImage(source, 0, 0, 56, 56); } catch { /* empty */ }
+  });
   return <canvas ref={ref} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />;
 }

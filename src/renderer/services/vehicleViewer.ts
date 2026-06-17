@@ -1,0 +1,198 @@
+// Imperative Three.js viewer for the real vehicle GLB.
+// Handles orbit/zoom/pan, studio HDR lighting (procedural, no asset), wireframe,
+// per-material live CanvasTexture override, raycast click->material, and highlight.
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import type { LoadedVehicle, VehicleMaterialSlot } from './glbVehicle';
+
+export type ViewMode = 'material' | 'wireframe' | 'uv';
+
+export class VehicleViewer {
+  private renderer: THREE.WebGLRenderer;
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private controls: OrbitControls;
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
+  private animId = 0;
+  private container: HTMLElement;
+  private resizeObs: ResizeObserver;
+
+  private vehicle: LoadedVehicle | null = null;
+  private overrideTex = new Map<string, THREE.CanvasTexture>();
+  private highlightId: string | null = null;
+  private wireframe = false;
+
+  onPickSlot: ((slotId: string) => void) | null = null;
+
+  constructor(container: HTMLElement) {
+    this.container = container;
+    const w = container.clientWidth || 1;
+    const h = container.clientHeight || 1;
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setSize(w, h);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    container.appendChild(this.renderer.domElement);
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x12141c);
+
+    // Procedural studio environment for nice PBR reflections (no external HDR file).
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    this.camera = new THREE.PerspectiveCamera(40, w / h, 0.05, 500);
+    this.camera.position.set(5, 2.4, 6);
+
+    // Key + fill + ground.
+    const key = new THREE.DirectionalLight(0xffffff, 2.0);
+    key.position.set(6, 10, 6);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far = 50;
+    const s = 8;
+    key.shadow.camera.left = -s; key.shadow.camera.right = s;
+    key.shadow.camera.top = s; key.shadow.camera.bottom = -s;
+    this.scene.add(key);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(14, 64),
+      new THREE.ShadowMaterial({ opacity: 0.35 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.01;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    const grid = new THREE.GridHelper(28, 28, 0x2a2d3a, 0x1c1e28);
+    (grid.material as THREE.Material).transparent = true;
+    (grid.material as THREE.Material).opacity = 0.5;
+    this.scene.add(grid);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = 1.5;
+    this.controls.maxDistance = 40;
+    this.controls.maxPolarAngle = Math.PI / 2 + 0.15;
+
+    this.renderer.domElement.addEventListener('click', this.handleClick);
+
+    this.resizeObs = new ResizeObserver(() => this.resize());
+    this.resizeObs.observe(container);
+
+    this.animate();
+  }
+
+  private animate = () => {
+    this.animId = requestAnimationFrame(this.animate);
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  private resize() {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  }
+
+  private handleClick = (e: MouseEvent) => {
+    if (!this.vehicle || !this.onPickSlot) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hits = this.raycaster.intersectObjects(this.vehicle.meshes, false);
+    if (!hits.length) return;
+    const mesh = hits[0].object as THREE.Mesh;
+    const slot = this.vehicle.slots.find((sl) => sl.meshes.includes(mesh));
+    if (slot) this.onPickSlot(slot.id);
+  };
+
+  setVehicle(vehicle: LoadedVehicle) {
+    if (this.vehicle) this.scene.remove(this.vehicle.root);
+    this.overrideTex.forEach((t) => t.dispose());
+    this.overrideTex.clear();
+    this.vehicle = vehicle;
+    this.scene.add(vehicle.root);
+    this.frame(vehicle);
+  }
+
+  private frame(vehicle: LoadedVehicle) {
+    const radius = Math.max(vehicle.size.x, vehicle.size.y, vehicle.size.z) || 4;
+    const dist = radius * 1.6;
+    this.camera.position.set(dist, radius * 0.55, dist);
+    this.controls.target.set(0, 0, 0);
+    this.controls.minDistance = radius * 0.4;
+    this.controls.maxDistance = radius * 8;
+    this.controls.update();
+  }
+
+  /** Push the edited canvas onto a specific material's map — live, no reload. */
+  setSlotTexture(slot: VehicleMaterialSlot, canvas: HTMLCanvasElement) {
+    let tex = this.overrideTex.get(slot.id);
+    if (!tex) {
+      tex = new THREE.CanvasTexture(canvas);
+      tex.flipY = false; // glTF UVs are not flipped
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      this.overrideTex.set(slot.id, tex);
+      slot.material.map = tex;
+      slot.material.needsUpdate = true;
+    }
+    tex.image = canvas;
+    tex.needsUpdate = true;
+  }
+
+  highlightSlot(slotId: string | null) {
+    if (!this.vehicle) return;
+    if (this.highlightId === slotId) return;
+    // reset previous
+    for (const slot of this.vehicle.slots) {
+      const on = slot.id === slotId;
+      slot.material.emissive = new THREE.Color(on ? 0x2266ff : 0x000000);
+      slot.material.emissiveIntensity = on ? 0.6 : 0;
+      slot.material.needsUpdate = true;
+    }
+    this.highlightId = slotId;
+  }
+
+  setWireframe(on: boolean) {
+    this.wireframe = on;
+    if (!this.vehicle) return;
+    for (const slot of this.vehicle.slots) {
+      slot.material.wireframe = on;
+      slot.material.needsUpdate = true;
+    }
+  }
+
+  isWireframe() { return this.wireframe; }
+
+  resetView() {
+    if (this.vehicle) this.frame(this.vehicle);
+  }
+
+  dispose() {
+    cancelAnimationFrame(this.animId);
+    this.resizeObs.disconnect();
+    this.renderer.domElement.removeEventListener('click', this.handleClick);
+    this.controls.dispose();
+    this.overrideTex.forEach((t) => t.dispose());
+    this.renderer.dispose();
+    if (this.renderer.domElement.parentElement === this.container) {
+      this.container.removeChild(this.renderer.domElement);
+    }
+  }
+}
