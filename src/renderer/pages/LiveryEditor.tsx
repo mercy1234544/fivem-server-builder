@@ -57,6 +57,9 @@ export default function LiveryEditor() {
   const [diagnostics, setDiagnostics] = useState<VehicleDiagnostics | null>(null);
   const [showDiag, setShowDiag] = useState(false);
   const [showAllTex, setShowAllTex] = useState(false);
+  const [view, setView] = useState<'browser' | 'editor'>('browser');
+  const replaceTargetRef = useRef<string | null>(null);
+  const replaceInput = useRef<HTMLInputElement>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [tool, setTool] = useState<'select' | 'brush'>('select');
   const [brushColor, setBrushColor] = useState('#ff3344');
@@ -120,6 +123,7 @@ export default function LiveryEditor() {
       setGeomReason(result.geometryReason);
       setDiagnostics(result.diagnostics);
       setPhase('edit');
+      setView('browser');
       if (tg.length) {
         setTimeout(() => selectTarget(tg[0].id, tg), 0);
       } else {
@@ -280,6 +284,44 @@ export default function LiveryEditor() {
     } catch (err: any) { toast.error(err?.message || 'Export failed'); }
   }
 
+  // ── Raw browser helpers ──────────────────────────────────────────────────────
+  function findTarget(name: string, w: number, h: number) {
+    return targets.find((t) => t.name === name && t.w === w && t.h === h) || null;
+  }
+  function openInEditor(name: string, w: number, h: number) {
+    const t = findTarget(name, w, h);
+    if (!t) { toast.error('This texture could not be decoded, so it can’t be opened'); return; }
+    selectTarget(t.id); setView('editor');
+  }
+  async function exportImageData(name: string, id: ImageData) {
+    const exporter = EXPORTERS.find((x) => x.id === exporterId) || EXPORTERS[0];
+    if (!exporter.ready) { toast.error(exporter.label + ' not available yet'); return; }
+    const c = newCanvas(id.width, id.height); c.getContext('2d')!.putImageData(id, 0, 0);
+    const base = `${activeVehicle?.name || 'livery'}_${name}`.replace(/[^\w.-]+/g, '_');
+    try { const res = await exporter.export(c, base); downloadResult(res); toast.success(`Exported ${res.filename}`); }
+    catch (err: any) { toast.error(err?.message || 'Export failed'); }
+  }
+  function startReplace(name: string, w: number, h: number) {
+    const t = findTarget(name, w, h);
+    if (!t) { toast.error('Only decoded textures can be replaced'); return; }
+    replaceTargetRef.current = t.id; replaceInput.current?.click();
+  }
+  async function applyReplace(file: File) {
+    const id = replaceTargetRef.current; replaceTargetRef.current = null;
+    const t = targetById(id); if (!t) return;
+    const e = ensureEdit(t);
+    try {
+      const img = await loadImage(file);
+      const c = newCanvas(t.w, t.h); const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, t.w, t.h);
+      const baseLayer = e.layers.find((l) => l.kind === 'base');
+      if (baseLayer) { baseLayer.canvas = c; }
+      else e.layers.unshift({ id: uid(), name: 'Base texture', kind: 'base', visible: true, opacity: 100, blendMode: 'source-over', canvas: c, x: 0, y: 0, w: t.w, h: t.h });
+      composite(t.id); rerender();
+      toast.success(`Replaced ${t.name}`);
+    } catch (err: any) { toast.error(err?.message || 'Replace failed'); }
+  }
+
   // Live-update the texture onto the real model when geometry exists.
   useEffect(() => {
     if (!geometry || !viewerRef.current || !selected) return;
@@ -309,6 +351,12 @@ export default function LiveryEditor() {
             <button onClick={() => setPhase('list')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-secondary"><ChevronLeft size={12} /> Vehicles</button>
           )}
           <button onClick={openFolder} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-secondary"><FolderOpen size={12} /> Open Vehicle Folder</button>
+          {phase === 'edit' && (
+            <div className="flex items-center rounded-lg overflow-hidden border border-overlay-6">
+              <button onClick={() => setView('browser')} className={`px-3 py-1.5 text-xs font-medium transition-all ${view === 'browser' ? 'bg-primary-600/25 text-primary-200' : 'text-surface-400 hover:bg-overlay-4'}`}>Browser</button>
+              <button onClick={() => setView('editor')} className={`px-3 py-1.5 text-xs font-medium transition-all ${view === 'editor' ? 'bg-primary-600/25 text-primary-200' : 'text-surface-400 hover:bg-overlay-4'}`}>Editor</button>
+            </div>
+          )}
           {(phase === 'edit' || phase === 'list') && diagnostics && (
             <button onClick={() => setShowDiag(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-cyan-600/15 text-cyan-300 border border-cyan-500/25 rounded-lg hover:bg-cyan-600/25 transition-all"><Stethoscope size={12} /> Diagnostics</button>
           )}
@@ -322,6 +370,7 @@ export default function LiveryEditor() {
           )}
         </div>
         <input ref={texInput} type="file" multiple accept=".dds,.ytd,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(importTexture); e.target.value = ''; }} />
+        <input ref={replaceInput} type="file" accept=".dds,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) applyReplace(f); e.target.value = ''; }} />
       </div>
 
       {/* EMPTY */}
@@ -367,8 +416,52 @@ export default function LiveryEditor() {
         </div>
       )}
 
+      {/* RAW TEXTURE BROWSER */}
+      {phase === 'edit' && view === 'browser' && (
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] uppercase tracking-widest text-surface-600">
+              Raw Texture Browser — {diagnostics?.summary.totalTexturesFound ?? 0} textures · {diagnostics?.summary.totalEditable ?? 0} decoded · {diagnostics?.summary.totalRejected ?? 0} failed
+            </p>
+            <p className="text-[10px] text-surface-600">Every texture in the YTD, no livery filtering</p>
+          </div>
+          {(!diagnostics || diagnostics.summary.totalTexturesFound === 0) && (
+            <div className="text-sm text-surface-500 py-10 text-center">No textures were found. Open <button className="text-cyan-400 underline" onClick={() => setShowDiag(true)}>Diagnostics</button> for details.</div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {diagnostics?.ytds.flatMap((y) => y.textures.map((rec) => ({ rec, ytd: y.fileName }))).map(({ rec, ytd }, i) => (
+              <div key={i} className={`rounded-xl border overflow-hidden flex flex-col ${rec.decoded ? 'border-overlay-6 bg-surface-900/40' : 'border-red-500/20 bg-red-500/5'}`}>
+                <div className="aspect-square bg-[repeating-conic-gradient(#1a1c26_0deg_90deg,#232533_90deg_180deg)] bg-[length:16px_16px] flex items-center justify-center relative">
+                  {rec.imageData
+                    ? <ThumbImageData id={rec.imageData} large />
+                    : <div className="flex flex-col items-center gap-1 text-red-400/70 p-2 text-center"><XCircle size={20} /><span className="text-[9px] leading-tight">{rec.format || 'undecoded'}</span></div>}
+                  {rec.livery && rec.decoded && <span className="absolute top-1 left-1 text-[8px] px-1 rounded bg-pink-500/30 text-pink-200">livery?</span>}
+                </div>
+                <div className="p-2 flex flex-col gap-1 flex-1">
+                  <p className="text-[11px] font-medium text-surface-200 truncate" title={rec.name}>{rec.name}</p>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className={`text-[9px] px-1 rounded ${rec.decoded ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'}`}>{rec.format || 'unknown'}</span>
+                    <span className="text-[9px] text-surface-500 font-mono">{rec.width}×{rec.height}</span>
+                    {rec.levels > 0 && <span className="text-[9px] text-surface-600">{rec.levels} mips</span>}
+                  </div>
+                  {!rec.decoded && <p className="text-[9px] text-red-300/80 leading-tight" title={rec.reason}>{rec.reason}</p>}
+                  <p className="text-[8px] text-surface-600 truncate" title={ytd}>{ytd}</p>
+                  {rec.decoded && (
+                    <div className="flex gap-1 mt-auto pt-1">
+                      <button onClick={() => openInEditor(rec.name, rec.width, rec.height)} className="flex-1 text-[10px] px-1.5 py-1 rounded bg-primary-600/20 text-primary-200 hover:bg-primary-600/30">Open</button>
+                      <button onClick={() => exportImageData(rec.name, rec.imageData!)} title="Export" className="px-1.5 py-1 rounded bg-overlay-4 text-surface-300 hover:text-surface-100"><Download size={11} /></button>
+                      <button onClick={() => startReplace(rec.name, rec.width, rec.height)} title="Replace" className="px-1.5 py-1 rounded bg-overlay-4 text-surface-300 hover:text-surface-100"><ImageIcon size={11} /></button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* EDIT */}
-      {phase === 'edit' && (
+      {phase === 'edit' && view === 'editor' && (
         <div className="flex-1 flex overflow-hidden" onDrop={(e) => { e.preventDefault(); Array.from(e.dataTransfer.files).forEach(importTexture); }} onDragOver={(e) => e.preventDefault()}>
           {/* LEFT — textures + layers */}
           <div className="w-60 shrink-0 flex flex-col border-r border-overlay-6 bg-surface-950/20 overflow-hidden">
@@ -689,10 +782,25 @@ function ThumbCanvas({ source }: { source: HTMLCanvasElement }) {
   useEffect(() => { const c = ref.current; if (!c) return; c.width = 56; c.height = 56; const ctx = c.getContext('2d')!; ctx.clearRect(0, 0, 56, 56); try { ctx.drawImage(source, 0, 0, 56, 56); } catch { /* */ } });
   return <canvas ref={ref} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />;
 }
-function ThumbImageData({ id }: { id: ImageData }) {
+function ThumbImageData({ id, large }: { id: ImageData; large?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => { const c = ref.current; if (!c) return; const tmp = document.createElement('canvas'); tmp.width = id.width; tmp.height = id.height; tmp.getContext('2d')!.putImageData(id, 0, 0); c.width = 56; c.height = 56; c.getContext('2d')!.drawImage(tmp, 0, 0, 56, 56); }, [id]);
-  return <canvas ref={ref} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />;
+  const px = large ? 256 : 56;
+  useEffect(() => {
+    const c = ref.current; if (!c) return;
+    const tmp = document.createElement('canvas'); tmp.width = id.width; tmp.height = id.height;
+    tmp.getContext('2d')!.putImageData(id, 0, 0);
+    c.width = px; c.height = px;
+    const ctx = c.getContext('2d')!; ctx.clearRect(0, 0, px, px);
+    // preserve aspect ratio for the large browser thumbnails
+    if (large) {
+      const s = Math.min(px / id.width, px / id.height);
+      const dw = id.width * s, dh = id.height * s;
+      ctx.drawImage(tmp, (px - dw) / 2, (px - dh) / 2, dw, dh);
+    } else {
+      ctx.drawImage(tmp, 0, 0, px, px);
+    }
+  }, [id, px, large]);
+  return <canvas ref={ref} className="w-full h-full object-contain" style={{ imageRendering: 'pixelated' }} />;
 }
 function LivePreview({ edit }: { edit: TargetEdit }) {
   const ref = useRef<HTMLCanvasElement>(null);

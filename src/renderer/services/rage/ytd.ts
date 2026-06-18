@@ -144,15 +144,20 @@ function parseTexture(r: ResourceReader, t: number, bufLen: number): {
     if (looksLikeName(r, p)) { name = r.str(p, 64); break; }
   }
 
-  // 4) Data pointer — scan 8-aligned slots for a pointer into the graphics segment.
-  let dataOff = -1;
-  for (let o = 0x40; o <= 0x68; o += 8) {
+  // 4) Data pointer — the grcTexturePC pixel pointer sits a little AFTER the format
+  //    block. Scan a wide 8-aligned window for graphics-segment pointers and pick the
+  //    one that can actually hold the top mip.
+  const need = topMipBytes(format!, width, height);
+  const cands: { off: number; avail: number }[] = [];
+  for (let o = 0x10; o + 8 <= 0xa0; o += 8) {
     const p = r.ptr(t + o);
     if (((p >>> 28) & 0xf) === 0x6) {
       const ro = r.resolve(p);
-      if (ro >= 0 && ro < bufLen) { dataOff = ro; break; }
+      if (ro >= 0 && ro < bufLen) cands.push({ off: ro, avail: bufLen - ro });
     }
   }
+  const fitting = cands.filter((c) => c.avail >= need).sort((a, b) => a.avail - b.avail);
+  const dataOff = fitting.length ? fitting[0].off : (cands.length ? cands.sort((a, b) => b.avail - a.avail)[0].off : -1);
 
   return { ok: true, name, width, height, formatCode, format, levels, dataOff, formatFieldOffset, reason: '' };
 }
@@ -235,7 +240,7 @@ function parseDictionary(res: NonNullable<Awaited<ReturnType<typeof unpackRSC7>>
     return;
   }
 
-  const dumpFirst = 6; // raw hex for the first few entries
+  const dumpFirst = 8; // raw hex for the first few entries
   for (let i = 0; i < count; i++) {
     const texPtr = r.ptr(entriesOff + i * 8);
     const t = r.resolve(texPtr);
@@ -245,7 +250,7 @@ function parseDictionary(res: NonNullable<Awaited<ReturnType<typeof unpackRSC7>>
     }
 
     const p = parseTexture(r, t, res.buffer.length);
-    const rawHex = i < dumpFirst ? hexDump(res.buffer, t, 0x70) : undefined;
+    const rawHex = i < dumpFirst ? hexDump(res.buffer, t, 0xa0) : undefined;
 
     if (!p.ok) {
       const rec = reject(i, p.name || `entry_${i}`, p.width, p.height, p.formatCode, p.format, t, p.reason);
