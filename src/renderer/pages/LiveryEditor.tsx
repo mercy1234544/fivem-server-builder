@@ -583,7 +583,7 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                 <div className="px-3 mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono">
                   {y.inflated && <span>sys {fmtBytes(y.systemSize || 0)} · gfx {fmtBytes(y.graphicsSize || 0)} · inflated {fmtBytes(y.decompressedSize || 0)}</span>}
                   <span>declared count: {y.declaredCount}</span>
-                  <span>entries resolved: {y.entriesResolved ? 'yes' : 'no'}</span>
+                  <span>entries @ {y.entriesOffset != null && y.entriesOffset >= 0 ? `0x${y.entriesOffset.toString(16)}` : 'unresolved'}</span>
                 </div>
                 {y.notes.map((n, j) => (
                   <p key={j} className="px-3 mt-1 text-[10px] text-amber-300/80">⚠ {n}</p>
@@ -591,18 +591,19 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                 {/* per-texture table */}
                 {y.textures.length > 0 && (
                   <div className="mt-2 mx-3 rounded-lg border border-overlay-6 overflow-hidden">
-                    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2 py-1 bg-surface-950/50 text-[9px] uppercase tracking-wide text-surface-600">
-                      <span>Texture</span><span>Size</span><span>Format</span><span>Status</span>
+                    <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-2 py-1 bg-surface-950/50 text-[9px] uppercase tracking-wide text-surface-600">
+                      <span>Texture</span><span>Size</span><span>Format</span><span>Fmt@</span><span>Status</span>
                     </div>
                     {y.textures.map((t, k) => (
-                      <div key={k} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2 py-1 text-[10px] border-t border-overlay-4 items-center">
+                      <div key={k} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-2 py-1 text-[10px] border-t border-overlay-4 items-center">
                         <span className="text-surface-300 truncate" title={t.reason}>{t.name}</span>
                         <span className="text-surface-500 font-mono">{t.width}×{t.height}</span>
                         <span className="text-surface-500 font-mono">{t.format || `0x${t.formatCode.toString(16)}`}</span>
+                        <span className="text-surface-600 font-mono">{t.formatFieldOffset != null ? `+0x${t.formatFieldOffset.toString(16)}` : '—'}</span>
                         <span className="flex items-center gap-1">
                           {t.decoded
                             ? <><CheckCircle2 size={11} className="text-emerald-400" /><span className="text-emerald-300">ok</span></>
-                            : <><XCircle size={11} className="text-red-400" /><span className="text-red-300 truncate" title={t.reason}>rejected</span></>}
+                            : <><XCircle size={11} className="text-red-400" /><span className="text-red-300 truncate" title={t.reason}>rej</span></>}
                         </span>
                       </div>
                     ))}
@@ -611,10 +612,34 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                 {/* rejection reasons */}
                 {y.textures.some((t) => !t.decoded) && (
                   <div className="mt-1.5 mx-3 space-y-0.5">
-                    {y.textures.filter((t) => !t.decoded).map((t, k) => (
+                    {y.textures.filter((t) => !t.decoded).slice(0, 12).map((t, k) => (
                       <p key={k} className="text-[9px] text-surface-500"><span className="text-red-300/80">{t.name}:</span> {t.reason}</p>
                     ))}
                   </div>
+                )}
+                {/* RAW INSPECTION */}
+                {(y.dictHeaderHex || y.textures.some((t) => t.rawHex)) && (
+                  <details className="mt-2 mx-3">
+                    <summary className="text-[10px] text-cyan-300 cursor-pointer hover:text-cyan-200">Raw byte inspection (dictionary header + first textures)</summary>
+                    <div className="mt-1.5 space-y-2">
+                      {y.dictHeaderHex && (
+                        <div>
+                          <p className="text-[9px] text-surface-500 mb-0.5">Dictionary header @ system 0x0 (Textures ptr @0x30, count @0x38):</p>
+                          <pre className="text-[9px] leading-tight text-surface-400 bg-black/40 rounded p-2 overflow-x-auto font-mono">{y.dictHeaderHex}</pre>
+                        </div>
+                      )}
+                      {y.textures.filter((t) => t.rawHex).map((t, k) => (
+                        <div key={k}>
+                          <p className="text-[9px] text-surface-500 mb-0.5">
+                            <span className="text-surface-300">{t.name}</span> @ 0x{(t.texOffset ?? 0).toString(16)} —
+                            Format <span className="text-cyan-300">{t.format || `0x${t.formatCode.toString(16)}`}</span> @ +0x{(t.formatFieldOffset ?? 0).toString(16)},
+                            dims {t.width}×{t.height}, derived Width@+0x{((t.formatFieldOffset ?? 8) - 8).toString(16)}
+                          </p>
+                          <pre className="text-[9px] leading-tight text-surface-400 bg-black/40 rounded p-2 overflow-x-auto font-mono">{t.rawHex}</pre>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 )}
               </div>
             ))}

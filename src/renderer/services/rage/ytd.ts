@@ -1,6 +1,11 @@
 // YTD (texture dictionary) parser built on the RAGE resource core.
-// Reads real grcTexture entries out of a genuine GTA .ytd and decodes them to RGBA.
-// Produces a full diagnostic report at every step — nothing fails silently.
+//
+// Reads real grcTexturePC entries out of a genuine GTA .ytd and decodes them to RGBA.
+// The texture struct is located SELF-DESCRIPTIVELY: we scan each entry for the
+// distinctive format code (DXT1/DXT5/BC7…) and derive Width/Height from the fixed
+// grcTexturePC field order (Width, Height, Depth, Stride, Format are contiguous, so
+// Width = Format-8). This avoids brittle hard-coded offsets that produced impossible
+// dimensions. Full diagnostics + raw hex are recorded for every step.
 
 import { unpackRSC7, ResourceReader, isRSC7 } from './resource';
 import { decodeRawTexture, extractTexturesFromYTD, ddsToImageData } from '../ytdParser';
@@ -12,6 +17,7 @@ export interface TextureRecord {
   height: number;
   formatCode: number;
   format: string | null;
+  levels: number;
   dataOffset: number;
   bytesNeeded: number;
   bytesAvailable: number;
@@ -19,6 +25,10 @@ export interface TextureRecord {
   editable: boolean;
   livery: boolean;
   reason: string;
+  // diagnostics
+  texOffset?: number;       // resolved struct offset in the decompressed buffer
+  formatFieldOffset?: number; // offset of Format within the struct (relative)
+  rawHex?: string;          // hex dump of the struct header (first ~0x70 bytes)
   imageData?: ImageData;
 }
 
@@ -32,6 +42,8 @@ export interface YtdReport {
   method: 'dictionary' | 'embedded-dds' | 'none';
   declaredCount: number;
   entriesResolved: boolean;
+  entriesOffset?: number;
+  dictHeaderHex?: string;
   textures: TextureRecord[];
   notes: string[];
 }
@@ -44,36 +56,105 @@ export interface VehicleTexture {
   imageData: ImageData;
 }
 
-// RAGE / D3D texture format codes -> our decoder format.
-function formatName(code: number): 'DXT1' | 'DXT3' | 'DXT5' | 'BGRA8' | 'RGBA8' | null {
-  switch (code >>> 0) {
-    case 0x31545844: return 'DXT1';  // 'DXT1'
-    case 0x33545844: return 'DXT3';  // 'DXT3'
-    case 0x35545844: return 'DXT5';  // 'DXT5'
-    case 21: return 'BGRA8';         // D3DFMT_A8R8G8B8
-    case 32: return 'RGBA8';         // D3DFMT_A8B8G8R8
-    default: return null;
+// Distinctive fourCC-style format codes — used to *locate* the Format field.
+const FORMAT_NAMES = new Map<number, string>([
+  [0x31545844, 'DXT1'], [0x33545844, 'DXT3'], [0x35545844, 'DXT5'],
+  [0x31495441, 'ATI1'], [0x32495441, 'ATI2'],
+  [0x55344342, 'BC4U'], [0x55354342, 'BC5U'], [0x20374342, 'BC7'],
+]);
+// Uncompressed format enum values (checked only at the located offset).
+const UNCOMPRESSED = new Map<number, string>([[21, 'A8R8G8B8'], [32, 'A8B8G8R8']]);
+
+// Map a format name to our decoder, or null if not yet decodable.
+function decoderFor(fmt: string): 'DXT1' | 'DXT3' | 'DXT5' | 'BGRA8' | 'RGBA8' | null {
+  switch (fmt) {
+    case 'DXT1': return 'DXT1';
+    case 'DXT3': return 'DXT3';
+    case 'DXT5': return 'DXT5';
+    case 'A8R8G8B8': return 'BGRA8';
+    case 'A8B8G8R8': return 'RGBA8';
+    default: return null; // BC7/ATI1/ATI2 — metadata only for now
   }
 }
 
-function fourCCName(code: number): string {
-  const c = code >>> 0;
-  const ascii = String.fromCharCode(c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, (c >> 24) & 0xff)
-    .replace(/[^\x20-\x7e]/g, '·');
-  return `0x${c.toString(16).toUpperCase().padStart(8, '0')} ("${ascii}")`;
-}
-
-function topMipBytes(format: string, w: number, h: number): number {
+function topMipBytes(fmt: string, w: number, h: number): number {
   const bw = Math.max(1, (w + 3) >> 2), bh = Math.max(1, (h + 3) >> 2);
-  if (format === 'DXT1') return bw * bh * 8;
-  if (format === 'DXT3' || format === 'DXT5') return bw * bh * 16;
+  if (fmt === 'DXT1') return bw * bh * 8;
+  if (fmt === 'DXT3' || fmt === 'DXT5' || fmt === 'BC7' || fmt === 'ATI2' || fmt === 'BC5U') return bw * bh * 16;
+  if (fmt === 'ATI1' || fmt === 'BC4U') return bw * bh * 8;
   return w * h * 4;
 }
 
 const LIVERY_RE = /sign|livery|liv\d|_l\d|lvl|decal|skin|paint|template|markings?/i;
-
 function classifyLivery(name: string, w: number, h: number): boolean {
   return LIVERY_RE.test(name) || (w >= 1024 && h >= 1024);
+}
+
+function hexDump(buf: Uint8Array, off: number, len: number): string {
+  const out: string[] = [];
+  for (let i = 0; i < len; i += 16) {
+    const row: string[] = [];
+    for (let j = 0; j < 16 && off + i + j < buf.length; j++) {
+      row.push(buf[off + i + j].toString(16).padStart(2, '0'));
+    }
+    out.push(`+0x${i.toString(16).padStart(2, '0')}  ${row.join(' ')}`);
+  }
+  return out.join('\n');
+}
+
+function looksLikeName(r: ResourceReader, off: number): boolean {
+  if (off < 0) return false;
+  const c0 = r.u8(off);
+  // GTA texture names start with a printable ASCII letter/digit/underscore.
+  return (c0 >= 0x30 && c0 <= 0x7a) && r.str(off, 4).length >= 2;
+}
+
+/** Locate and read a single grcTexturePC by scanning for its format field. */
+function parseTexture(r: ResourceReader, t: number, bufLen: number): {
+  ok: boolean; name: string; width: number; height: number; formatCode: number;
+  format: string | null; levels: number; dataOff: number; formatFieldOffset: number; reason: string;
+} {
+  // 1) Find the Format field (distinctive fourCC) within the struct window.
+  let formatFieldOffset = -1, formatCode = 0, format: string | null = null;
+  for (let o = 0x28; o <= 0x68; o += 4) {
+    const v = r.u32(t + o) >>> 0;
+    if (FORMAT_NAMES.has(v)) { formatFieldOffset = o; formatCode = v; format = FORMAT_NAMES.get(v)!; break; }
+    if (UNCOMPRESSED.has(v)) {
+      // Only accept an uncompressed code if the preceding dims look sane.
+      const w = r.u16(t + o - 8), h = r.u16(t + o - 6);
+      if (w >= 4 && w <= 8192 && h >= 4 && h <= 8192) { formatFieldOffset = o; formatCode = v; format = UNCOMPRESSED.get(v)!; break; }
+    }
+  }
+  if (formatFieldOffset < 0) {
+    return { ok: false, name: '', width: 0, height: 0, formatCode: 0, format: null, levels: 0, dataOff: -1, formatFieldOffset: -1, reason: 'Could not locate a known format code in the struct (entry may not be a texture, or count is too high)' };
+  }
+
+  // 2) Width/Height precede Format: Width(2) Height(2) Depth(2) Stride(2) Format(4).
+  const width = r.u16(t + formatFieldOffset - 8);
+  const height = r.u16(t + formatFieldOffset - 6);
+  const levels = r.u8(t + formatFieldOffset + 5);
+  if (width < 1 || height < 1 || width > 16384 || height > 16384) {
+    return { ok: false, name: '', width, height, formatCode, format, levels, dataOff: -1, formatFieldOffset, reason: `Format ${format} located at +0x${formatFieldOffset.toString(16)} but derived dimensions ${width}×${height} are invalid` };
+  }
+
+  // 3) Name pointer — try the usual slots, accept the one resolving to ASCII.
+  let name = `texture_${(t >>> 4) & 0xffff}`;
+  for (const no of [0x20, 0x28, 0x18, 0x10]) {
+    const p = r.resolve(r.ptr(t + no));
+    if (looksLikeName(r, p)) { name = r.str(p, 64); break; }
+  }
+
+  // 4) Data pointer — scan 8-aligned slots for a pointer into the graphics segment.
+  let dataOff = -1;
+  for (let o = 0x40; o <= 0x68; o += 8) {
+    const p = r.ptr(t + o);
+    if (((p >>> 28) & 0xf) === 0x6) {
+      const ro = r.resolve(p);
+      if (ro >= 0 && ro < bufLen) { dataOff = ro; break; }
+    }
+  }
+
+  return { ok: true, name, width, height, formatCode, format, levels, dataOff, formatFieldOffset, reason: '' };
 }
 
 /** Parse a YTD with full diagnostics. Never throws; records every decision. */
@@ -84,7 +165,6 @@ export async function parseYtdDetailed(buffer: ArrayBuffer): Promise<YtdReport> 
     declaredCount: 0, entriesResolved: false, textures: [], notes: [],
   };
 
-  // 1) Try the real grcTexture dictionary (preferred).
   if (report.isRSC7) {
     const res = await unpackRSC7(bytes);
     if (!res) {
@@ -95,11 +175,9 @@ export async function parseYtdDetailed(buffer: ArrayBuffer): Promise<YtdReport> 
       report.systemSize = res.systemSize;
       report.graphicsSize = res.graphicsSize;
       report.decompressedSize = res.buffer.length;
-      try {
-        parseDictionary(res, report);
-      } catch (e: any) {
-        report.notes.push(`Dictionary parse threw: ${e?.message || e}`);
-      }
+      report.dictHeaderHex = hexDump(res.buffer, 0, 0x40);
+      try { parseDictionary(res, report); }
+      catch (e: any) { report.notes.push(`Dictionary parse threw: ${e?.message || e}`); }
     }
   } else {
     report.notes.push('File does not start with the RSC7 magic. It may be an uncompressed or non-standard YTD.');
@@ -107,20 +185,19 @@ export async function parseYtdDetailed(buffer: ArrayBuffer): Promise<YtdReport> 
 
   const decodedFromDict = report.textures.filter((t) => t.decoded).length;
 
-  // 2) Fallback: embedded-DDS scan (for hand-built / modified dictionaries).
   if (decodedFromDict === 0) {
     try {
       const embedded = await extractTexturesFromYTD(buffer);
       if (embedded.length > 0) {
         report.method = 'embedded-dds';
         report.notes.push(`Dictionary yielded no decodable textures — fell back to embedded-DDS scan (${embedded.length} found).`);
-        embedded.forEach((t, i) => {
+        embedded.forEach((t) => {
           const id = ddsToImageData(t.ddsBytes);
           report.textures.push({
             index: report.textures.length, name: t.name, width: t.width, height: t.height,
-            formatCode: 0, format: t.format, dataOffset: -1,
-            bytesNeeded: 0, bytesAvailable: t.ddsBytes.length,
-            decoded: !!id, editable: !!id, livery: classifyLivery(t.name, t.width, t.height),
+            formatCode: 0, format: t.format, levels: 1, dataOffset: -1,
+            bytesNeeded: 0, bytesAvailable: t.ddsBytes.length, decoded: !!id, editable: !!id,
+            livery: classifyLivery(t.name, t.width, t.height),
             reason: id ? `Decoded embedded DDS (${t.format} ${t.width}×${t.height})` : 'Embedded DDS failed to decode',
             imageData: id || undefined,
           });
@@ -138,8 +215,7 @@ export async function parseYtdDetailed(buffer: ArrayBuffer): Promise<YtdReport> 
   return report;
 }
 
-function parseDictionary(res: Awaited<ReturnType<typeof unpackRSC7>>, report: YtdReport) {
-  if (!res) return;
+function parseDictionary(res: NonNullable<Awaited<ReturnType<typeof unpackRSC7>>>, report: YtdReport) {
   const r = new ResourceReader(res);
 
   // TextureDictionary: ResourcePointerList64<Texture> Textures @ 0x30.
@@ -147,74 +223,72 @@ function parseDictionary(res: Awaited<ReturnType<typeof unpackRSC7>>, report: Yt
   const count = r.u16(0x38);
   report.declaredCount = count;
   const entriesOff = r.resolve(listPtr);
+  report.entriesOffset = entriesOff;
   report.entriesResolved = entriesOff >= 0;
 
   if (entriesOff < 0) {
     report.notes.push(`Textures list pointer 0x${listPtr.toString(16)} did not resolve (systemSize=${res.systemSize}, buffer=${res.buffer.length}).`);
     return;
   }
-  if (count === 0 || count > 4096) {
-    report.notes.push(`Declared texture count is implausible (${count}). Dictionary offsets may be wrong for this file.`);
+  if (count === 0 || count > 8192) {
+    report.notes.push(`Declared texture count is implausible (${count}).`);
     return;
   }
 
+  const dumpFirst = 6; // raw hex for the first few entries
   for (let i = 0; i < count; i++) {
     const texPtr = r.ptr(entriesOff + i * 8);
     const t = r.resolve(texPtr);
     if (t < 0) {
-      report.textures.push(reject(i, 'unnamed', 0, 0, 0, -1, 0, 0, `Texture pointer 0x${texPtr.toString(16)} did not resolve`));
+      report.textures.push(reject(i, `entry_${i}`, 0, 0, 0, null, -1, `Texture pointer 0x${texPtr.toString(16)} did not resolve`));
       continue;
     }
-    const nameOff = r.resolve(r.ptr(t + 0x20));
-    const width = r.u16(t + 0x40);
-    const height = r.u16(t + 0x42);
-    const fmtCode = r.u32(t + 0x48);
-    const dataOff = r.resolve(r.ptr(t + 0x60));
-    const name = nameOff >= 0 ? (r.str(nameOff) || `texture_${i}`) : `texture_${i}`;
-    const fmt = formatName(fmtCode);
 
-    if (!fmt) {
-      report.textures.push(reject(i, name, width, height, fmtCode, dataOff, 0, 0, `Unsupported/Unknown format ${fourCCName(fmtCode)}`));
+    const p = parseTexture(r, t, res.buffer.length);
+    const rawHex = i < dumpFirst ? hexDump(res.buffer, t, 0x70) : undefined;
+
+    if (!p.ok) {
+      const rec = reject(i, p.name || `entry_${i}`, p.width, p.height, p.formatCode, p.format, t, p.reason);
+      rec.formatFieldOffset = p.formatFieldOffset >= 0 ? p.formatFieldOffset : undefined;
+      rec.rawHex = rawHex;
+      report.textures.push(rec);
       continue;
     }
-    if (width < 1 || height < 1 || width > 16384 || height > 16384) {
-      report.textures.push(reject(i, name, width, height, fmtCode, dataOff, 0, 0, `Implausible dimensions ${width}×${height} (offsets likely wrong)`));
-      continue;
-    }
-    const need = topMipBytes(fmt, width, height);
-    const avail = dataOff >= 0 ? res.buffer.length - dataOff : 0;
-    if (dataOff < 0) {
-      report.textures.push(reject(i, name, width, height, fmtCode, dataOff, need, 0, 'Pixel-data pointer did not resolve'));
-      continue;
-    }
-    if (need > avail) {
-      report.textures.push(reject(i, name, width, height, fmtCode, dataOff, need, avail, `Needs ${need} bytes but only ${avail} available past offset`));
-      continue;
-    }
-    const block = res.buffer.subarray(dataOff, dataOff + need);
-    const rgba = decodeRawTexture(block, width, height, fmt);
-    if (!rgba) {
-      report.textures.push(reject(i, name, width, height, fmtCode, dataOff, need, avail, 'Block decode returned null'));
-      continue;
-    }
-    report.textures.push({
-      index: i, name, width, height, formatCode: fmtCode, format: fmt,
-      dataOffset: dataOff, bytesNeeded: need, bytesAvailable: avail,
-      decoded: true, editable: true, livery: classifyLivery(name, width, height),
-      reason: `Accepted — decoded ${fmt} ${width}×${height}`,
-      imageData: new ImageData(Uint8ClampedArray.from(rgba) as any, width, height),
-    });
+
+    const dec = p.format ? decoderFor(p.format) : null;
+    const need = topMipBytes(p.format!, p.width, p.height);
+    const avail = p.dataOff >= 0 ? res.buffer.length - p.dataOff : 0;
+
+    const base: TextureRecord = {
+      index: i, name: p.name, width: p.width, height: p.height, formatCode: p.formatCode,
+      format: p.format, levels: p.levels, dataOffset: p.dataOff, bytesNeeded: need, bytesAvailable: avail,
+      decoded: false, editable: false, livery: classifyLivery(p.name, p.width, p.height),
+      reason: '', texOffset: t, formatFieldOffset: p.formatFieldOffset, rawHex,
+    };
+
+    if (!dec) { base.reason = `Metadata OK (${p.format} ${p.width}×${p.height}) — decoder for ${p.format} not implemented yet`; report.textures.push(base); continue; }
+    if (p.dataOff < 0) { base.reason = `Metadata OK (${p.format} ${p.width}×${p.height}) but pixel-data pointer not found`; report.textures.push(base); continue; }
+    if (need > avail) { base.reason = `Needs ${need} bytes but only ${avail} available past offset`; report.textures.push(base); continue; }
+
+    const block = res.buffer.subarray(p.dataOff, p.dataOff + need);
+    const rgba = decodeRawTexture(block, p.width, p.height, dec);
+    if (!rgba) { base.reason = 'Block decode returned null'; report.textures.push(base); continue; }
+
+    base.decoded = true; base.editable = true;
+    base.reason = `Accepted — decoded ${p.format} ${p.width}×${p.height} (Format @+0x${p.formatFieldOffset.toString(16)})`;
+    base.imageData = new ImageData(Uint8ClampedArray.from(rgba) as any, p.width, p.height);
+    report.textures.push(base);
   }
 }
 
 function reject(
-  index: number, name: string, width: number, height: number, formatCode: number,
-  dataOffset: number, bytesNeeded: number, bytesAvailable: number, reason: string
+  index: number, name: string, width: number, height: number,
+  formatCode: number, format: string | null, texOffset: number, reason: string
 ): TextureRecord {
   return {
-    index, name, width, height, formatCode, format: formatName(formatCode),
-    dataOffset, bytesNeeded, bytesAvailable, decoded: false, editable: false,
-    livery: false, reason,
+    index, name, width, height, formatCode, format, levels: 0, dataOffset: -1,
+    bytesNeeded: 0, bytesAvailable: 0, decoded: false, editable: false, livery: false,
+    reason, texOffset: texOffset >= 0 ? texOffset : undefined,
   };
 }
 
