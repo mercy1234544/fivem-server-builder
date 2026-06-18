@@ -3,11 +3,12 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   Eye, EyeOff, Trash2, ChevronUp, ChevronDown, Download, Palette, ZoomIn, ZoomOut,
-  Plus, Car, Grid3x3, Type, Brush, MousePointer, Image as ImageIcon, Layers as LayersIcon,
-  FolderOpen, Box, Loader2, FileWarning, ChevronLeft, Wand2, Square,
+  Plus, Car, Grid3x3, Type, Brush, MousePointer, Layers as LayersIcon,
+  FolderOpen, Box, Loader2, ChevronLeft, Wand2, Square, Stethoscope, X,
+  CheckCircle2, XCircle, FileText, Image as ImageIcon,
 } from 'lucide-react';
 import { ddsToImageData, extractTexturesFromYTD } from '../services/ytdParser';
-import { loadVehicle, type DetectedVehicle, type LoadStage } from '../services/vehicleResourceLoader';
+import { loadVehicle, type DetectedVehicle, type LoadStage, type VehicleDiagnostics } from '../services/vehicleResourceLoader';
 import type { VehicleTexture } from '../services/rage/ytd';
 import type { LoadedVehicle } from '../services/glbVehicle';
 import { VehicleViewer } from '../services/vehicleViewer';
@@ -53,6 +54,9 @@ export default function LiveryEditor() {
   const [selected, setSelected] = useState<string | null>(null);
   const [geometry, setGeometry] = useState<LoadedVehicle | null>(null);
   const [geomReason, setGeomReason] = useState<string | undefined>();
+  const [diagnostics, setDiagnostics] = useState<VehicleDiagnostics | null>(null);
+  const [showDiag, setShowDiag] = useState(false);
+  const [showAllTex, setShowAllTex] = useState(false);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
   const [tool, setTool] = useState<'select' | 'brush'>('select');
   const [brushColor, setBrushColor] = useState('#ff3344');
@@ -114,9 +118,16 @@ export default function LiveryEditor() {
       setTargets(tg);
       setGeometry(result.geometry);
       setGeomReason(result.geometryReason);
+      setDiagnostics(result.diagnostics);
       setPhase('edit');
-      if (tg.length) setTimeout(() => selectTarget(tg[0].id, tg), 0);
-      else toast('No editable textures found in this vehicle’s YTD', { icon: '⚠️' });
+      if (tg.length) {
+        setTimeout(() => selectTarget(tg[0].id, tg), 0);
+      } else {
+        // Never fail silently — surface the diagnostics so we can see why.
+        setShowAllTex(true);
+        setShowDiag(true);
+        toast('No editable textures decoded — opening diagnostics', { icon: '🔬' });
+      }
     } catch (e: any) {
       toast.error(e?.message || 'Load failed');
       setPhase('list');
@@ -298,6 +309,9 @@ export default function LiveryEditor() {
             <button onClick={() => setPhase('list')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-secondary"><ChevronLeft size={12} /> Vehicles</button>
           )}
           <button onClick={openFolder} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-secondary"><FolderOpen size={12} /> Open Vehicle Folder</button>
+          {(phase === 'edit' || phase === 'list') && diagnostics && (
+            <button onClick={() => setShowDiag(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-cyan-600/15 text-cyan-300 border border-cyan-500/25 rounded-lg hover:bg-cyan-600/25 transition-all"><Stethoscope size={12} /> Diagnostics</button>
+          )}
           {phase === 'edit' && (
             <div className="flex items-center rounded-lg overflow-hidden border border-pink-500/30">
               <select value={exporterId} onChange={(e) => setExporterId(e.target.value)} className="px-2 py-1.5 text-xs bg-pink-600/15 text-pink-200 focus:outline-none">
@@ -360,16 +374,34 @@ export default function LiveryEditor() {
           <div className="w-60 shrink-0 flex flex-col border-r border-overlay-6 bg-surface-950/20 overflow-hidden">
             <div className="shrink-0 px-3 pt-3 pb-1 flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-surface-600">Textures</span>
-              <span className="text-[10px] text-surface-600">{targets.length}</span>
+              <button onClick={() => setShowAllTex((v) => !v)} title="Show every texture in the YTD (debug)" className={`text-[9px] px-1.5 py-0.5 rounded transition-all ${showAllTex ? 'bg-cyan-600/20 text-cyan-300' : 'text-surface-600 hover:text-surface-300 hover:bg-overlay-4'}`}>Show all</button>
             </div>
             <div className="overflow-y-auto" style={{ maxHeight: '42%' }}>
-              {targets.length === 0 && <p className="text-[11px] text-surface-600 px-3 pb-3">No textures decoded from this vehicle’s YTD.</p>}
-              {targets.map((t) => (
+              {targets.length === 0 && !showAllTex && <p className="text-[11px] text-surface-600 px-3 pb-3">No editable textures decoded. Toggle <b className="text-surface-400">Show all</b> or open <b className="text-cyan-400">Diagnostics</b>.</p>}
+              {!showAllTex && targets.map((t) => (
                 <button key={t.id} onClick={() => selectTarget(t.id)} className={`w-full text-left px-3 py-2 flex items-center gap-2 transition-all ${selected === t.id ? 'bg-primary-600/15 text-primary-300' : 'text-surface-400 hover:bg-overlay-4 hover:text-surface-200'}`}>
                   <div className="w-8 h-8 rounded bg-surface-800 border border-overlay-6 shrink-0 overflow-hidden">{t.base ? <ThumbImageData id={t.base} /> : <div className="w-full h-full bg-surface-700" />}</div>
                   <div className="min-w-0 flex-1"><p className="text-[11px] font-medium truncate">{t.name}</p><div className="flex items-center gap-1 mt-0.5"><span className="text-[9px] px-1 rounded bg-surface-700/40 text-surface-400">{t.format}</span><span className="text-[9px] text-surface-600">{t.w}×{t.h}</span></div></div>
                 </button>
               ))}
+              {showAllTex && diagnostics && diagnostics.ytds.flatMap((y) => y.textures).map((rec, i) => {
+                const target = targets.find((t) => t.name === rec.name && t.w === rec.width && t.h === rec.height);
+                return (
+                  <button key={i} disabled={!rec.decoded} onClick={() => target && selectTarget(target.id)}
+                    className={`w-full text-left px-3 py-2 flex items-center gap-2 transition-all ${target && selected === target.id ? 'bg-primary-600/15 text-primary-300' : rec.decoded ? 'text-surface-400 hover:bg-overlay-4 hover:text-surface-200' : 'text-surface-600 opacity-70 cursor-default'}`}>
+                    <div className="w-8 h-8 rounded bg-surface-800 border border-overlay-6 shrink-0 overflow-hidden flex items-center justify-center">
+                      {rec.imageData ? <ThumbImageData id={rec.imageData} /> : rec.decoded ? <ImageIcon size={12} className="text-surface-600" /> : <XCircle size={12} className="text-red-500/60" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium truncate">{rec.name}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className={`text-[9px] px-1 rounded ${rec.decoded ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'}`}>{rec.format || 'unknown'}</span>
+                        <span className="text-[9px] text-surface-600">{rec.width}×{rec.height}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden border-t border-overlay-6">
@@ -474,8 +506,149 @@ export default function LiveryEditor() {
           </div>
         </div>
       )}
+
+      {/* DIAGNOSTICS MODAL */}
+      {showDiag && diagnostics && <DiagnosticsPanel diag={diagnostics} onClose={() => setShowDiag(false)} />}
     </motion.div>
   );
+}
+
+// ── Diagnostics panel ─────────────────────────────────────────────────────────
+function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose: () => void }) {
+  const s = diag.summary;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl max-h-full flex flex-col bg-surface-900 border border-overlay-6 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="shrink-0 flex items-center gap-2 px-5 py-3 border-b border-overlay-6 bg-surface-950/50">
+          <Stethoscope size={16} className="text-cyan-400" />
+          <div className="flex-1">
+            <h2 className="text-sm font-bold text-surface-100">Vehicle Diagnostics — {diag.vehicle}</h2>
+            <p className="text-[10px] text-surface-500 truncate">{diag.dir}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-surface-500 hover:text-surface-200 hover:bg-overlay-4"><X size={16} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* Summary */}
+          <div className="grid grid-cols-4 gap-2">
+            <Stat label="YTD files" value={s.ytdCount} />
+            <Stat label="Textures found" value={s.totalTexturesFound} />
+            <Stat label="Editable" value={s.totalEditable} good={s.totalEditable > 0} />
+            <Stat label="Rejected" value={s.totalRejected} bad={s.totalRejected > 0} />
+          </div>
+
+          {/* Verdict helper */}
+          <div className="text-[11px] rounded-lg border border-overlay-6 bg-surface-950/40 p-3 text-surface-400 leading-relaxed">
+            <b className="text-surface-200">Where's the problem?</b>{' '}
+            {s.totalEditable > 0
+              ? 'Editable textures decoded — the parser is working for this vehicle.'
+              : s.ytdCount === 0
+                ? 'No YTD files were attached to this vehicle → this is a resource-scanning issue.'
+                : diag.ytds.every((y) => !y.isRSC7)
+                  ? 'YTDs found but none are RSC7 → the YTD parser can\'t recognise this container format.'
+                  : diag.ytds.every((y) => y.isRSC7 && !y.inflated)
+                    ? 'RSC7 detected but decompression failed → decompression/parser layer.'
+                    : diag.ytds.some((y) => y.declaredCount > 0 && y.textures.every((t) => !t.decoded))
+                      ? 'Dictionary entries were read but every texture was rejected → the YTD parser offsets/format mapping need adjusting (see per-texture reasons below).'
+                      : 'Dictionary parsing produced no entries → YTD parser layer.'}
+          </div>
+
+          {/* YFT files */}
+          <Section title={`YFT model files (${diag.yfts.length})`}>
+            {diag.yfts.length === 0 && <Empty>No .yft files detected for this vehicle.</Empty>}
+            {diag.yfts.map((y, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 text-[11px] border-b border-overlay-4 last:border-0">
+                <FileText size={12} className="text-blue-400 shrink-0" />
+                <span className="text-surface-200 font-medium truncate flex-1">{y.fileName}</span>
+                {y.isHi && <span className="text-[9px] px-1 rounded bg-indigo-500/15 text-indigo-300">hi</span>}
+                <span className="text-[9px] px-1 rounded bg-surface-700/40 text-surface-400">{fmtBytes(y.fileSize)}</span>
+                <span className={`text-[9px] px-1 rounded ${y.isRSC7 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{y.isRSC7 ? 'RSC7' : 'non-RSC7'}</span>
+              </div>
+            ))}
+          </Section>
+          <p className="text-[10px] text-surface-600 -mt-3">{diag.materials.note}</p>
+
+          {/* YTD files */}
+          <Section title={`YTD texture dictionaries (${diag.ytds.length})`}>
+            {diag.ytds.length === 0 && <Empty>No .ytd files were attached to this vehicle (resource-scanning issue).</Empty>}
+            {diag.ytds.map((y, i) => (
+              <div key={i} className="border-b border-overlay-4 last:border-0 py-2">
+                <div className="flex items-center gap-2 px-3 text-[11px]">
+                  <ImageIcon size={12} className="text-pink-400 shrink-0" />
+                  <span className="text-surface-200 font-medium truncate flex-1">{y.fileName}</span>
+                  <span className="text-[9px] px-1 rounded bg-surface-700/40 text-surface-400">{fmtBytes(y.fileSize)}</span>
+                  <span className={`text-[9px] px-1 rounded ${y.isRSC7 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{y.isRSC7 ? 'RSC7' : 'non-RSC7'}</span>
+                  <span className="text-[9px] px-1 rounded bg-cyan-500/15 text-cyan-300">{y.method}</span>
+                </div>
+                <div className="px-3 mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono">
+                  {y.inflated && <span>sys {fmtBytes(y.systemSize || 0)} · gfx {fmtBytes(y.graphicsSize || 0)} · inflated {fmtBytes(y.decompressedSize || 0)}</span>}
+                  <span>declared count: {y.declaredCount}</span>
+                  <span>entries resolved: {y.entriesResolved ? 'yes' : 'no'}</span>
+                </div>
+                {y.notes.map((n, j) => (
+                  <p key={j} className="px-3 mt-1 text-[10px] text-amber-300/80">⚠ {n}</p>
+                ))}
+                {/* per-texture table */}
+                {y.textures.length > 0 && (
+                  <div className="mt-2 mx-3 rounded-lg border border-overlay-6 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2 py-1 bg-surface-950/50 text-[9px] uppercase tracking-wide text-surface-600">
+                      <span>Texture</span><span>Size</span><span>Format</span><span>Status</span>
+                    </div>
+                    {y.textures.map((t, k) => (
+                      <div key={k} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-2 py-1 text-[10px] border-t border-overlay-4 items-center">
+                        <span className="text-surface-300 truncate" title={t.reason}>{t.name}</span>
+                        <span className="text-surface-500 font-mono">{t.width}×{t.height}</span>
+                        <span className="text-surface-500 font-mono">{t.format || `0x${t.formatCode.toString(16)}`}</span>
+                        <span className="flex items-center gap-1">
+                          {t.decoded
+                            ? <><CheckCircle2 size={11} className="text-emerald-400" /><span className="text-emerald-300">ok</span></>
+                            : <><XCircle size={11} className="text-red-400" /><span className="text-red-300 truncate" title={t.reason}>rejected</span></>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* rejection reasons */}
+                {y.textures.some((t) => !t.decoded) && (
+                  <div className="mt-1.5 mx-3 space-y-0.5">
+                    {y.textures.filter((t) => !t.decoded).map((t, k) => (
+                      <p key={k} className="text-[9px] text-surface-500"><span className="text-red-300/80">{t.name}:</span> {t.reason}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, good, bad }: { label: string; value: number; good?: boolean; bad?: boolean }) {
+  return (
+    <div className={`rounded-lg border p-2.5 text-center ${good ? 'border-emerald-500/30 bg-emerald-500/5' : bad ? 'border-red-500/30 bg-red-500/5' : 'border-overlay-6 bg-surface-950/40'}`}>
+      <p className={`text-lg font-bold ${good ? 'text-emerald-300' : bad ? 'text-red-300' : 'text-surface-200'}`}>{value}</p>
+      <p className="text-[9px] uppercase tracking-wide text-surface-600">{label}</p>
+    </div>
+  );
+}
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-surface-600 mb-1.5">{title}</p>
+      <div className="rounded-lg border border-overlay-6 bg-surface-950/30 overflow-hidden">{children}</div>
+    </div>
+  );
+}
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p className="px-3 py-2 text-[11px] text-surface-500">{children}</p>;
+}
+function fmtBytes(n: number): string {
+  if (n <= 0) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
