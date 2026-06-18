@@ -1,10 +1,9 @@
 // Orchestrates the folder-first workflow: detect vehicle files, read them, and
-// load real textures (and, when the native engine is ready, geometry) — with no
-// manual conversion step exposed to the user.
+// load real textures + geometry — with no manual conversion step exposed to users.
 
 import { parseYtdDetailed, type VehicleTexture, type YtdReport } from './rage/ytd';
-import { parseYftGeometry } from './rage/yft';
-import { loadVehicleGLB, type LoadedVehicle } from './glbVehicle';
+import { parseYftGeometry, type YftDiagnostics } from './rage/yft';
+import { buildVehicleFromDrawable, loadVehicleGLB, type LoadedVehicle } from './glbVehicle';
 import { isRSC7 } from './rage/resource';
 
 export interface DetectedVehicle {
@@ -31,6 +30,8 @@ export interface YftDiag {
   fileSize: number;
   isRSC7: boolean;
   note: string;
+  /** Full geometry diagnostics when parse was attempted. */
+  geometryDiag?: YftDiagnostics;
 }
 
 export interface YtdDiag extends YtdReport {
@@ -50,15 +51,20 @@ export interface VehicleDiagnostics {
     totalTexturesFound: number;
     totalEditable: number;
     totalRejected: number;
+    // Geometry
+    geometryDecoded: boolean;
+    meshCount: number;
+    vertexCount: number;
+    triangleCount: number;
+    shaderCount: number;
+    materialCount: number;
   };
 }
 
-/** Decode a base64 string from the main process into an ArrayBuffer. */
 function b64ToBuffer(b64: string): ArrayBuffer {
   const bin = atob(b64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
 }
 
@@ -67,11 +73,6 @@ async function readFileBuffer(path: string): Promise<ArrayBuffer> {
   return b64ToBuffer(b64);
 }
 
-/**
- * Load everything we can for a detected vehicle. Textures come from the real YTD;
- * geometry comes from the native engine when available (GLB import remains an
- * internal fallback backend, never required of the user).
- */
 function fileName(p: string) { return p.split(/[\\/]/).pop() || p; }
 
 export async function loadVehicle(
@@ -79,72 +80,125 @@ export async function loadVehicle(
   onStage?: (stage: LoadStage, detail?: string) => void
 ): Promise<VehicleLoadResult> {
   const diagnostics: VehicleDiagnostics = {
-    vehicle: vehicle.name, dir: vehicle.dir, yfts: [], ytds: [],
-    materials: { available: false, note: 'Material data comes from the .yft geometry engine, which is still being finalized — material→texture mapping is unavailable until then.' },
-    summary: { ytdCount: vehicle.ytds.length, totalTexturesFound: 0, totalEditable: 0, totalRejected: 0 },
+    vehicle: vehicle.name,
+    dir: vehicle.dir,
+    yfts: [],
+    ytds: [],
+    materials: { available: false, note: '' },
+    summary: {
+      ytdCount: vehicle.ytds.length,
+      totalTexturesFound: 0, totalEditable: 0, totalRejected: 0,
+      geometryDecoded: false, meshCount: 0, vertexCount: 0,
+      triangleCount: 0, shaderCount: 0, materialCount: 0,
+    },
   };
 
-  // 1) Textures from every YTD belonging to the vehicle — with full diagnostics.
+  // ── 1) Textures from every YTD ──────────────────────────────────────────────
   onStage?.('textures', 'Reading textures');
   const textures: VehicleTexture[] = [];
+
   for (const ytd of vehicle.ytds) {
     try {
-      const buf = await readFileBuffer(ytd);
+      const buf    = await readFileBuffer(ytd);
       const report = await parseYtdDetailed(buf);
       diagnostics.ytds.push({ ...report, path: ytd, fileName: fileName(ytd), fileSize: buf.byteLength });
       for (const t of report.textures) {
-        if (t.decoded && t.imageData) textures.push({ name: t.name, width: t.width, height: t.height, format: t.format || 'unknown', imageData: t.imageData });
+        if (t.decoded && t.imageData)
+          textures.push({ name: t.name, width: t.width, height: t.height, format: t.format || 'unknown', imageData: t.imageData });
       }
     } catch (e: any) {
       diagnostics.ytds.push({
-        path: ytd, fileName: fileName(ytd), fileSize: 0, isRSC7: false, inflated: false,
-        method: 'none', declaredCount: 0, entriesResolved: false, textures: [],
-        notes: [`Could not read file: ${e?.message || e}`],
+        path: ytd, fileName: fileName(ytd), fileSize: 0,
+        isRSC7: false, inflated: false, method: 'none',
+        declaredCount: 0, entriesResolved: false, textures: [],
+        notes: [`Could not read: ${e?.message || e}`],
       });
     }
   }
 
-  // Summary counts.
   for (const y of diagnostics.ytds) {
     for (const t of y.textures) {
       diagnostics.summary.totalTexturesFound++;
-      if (t.decoded) diagnostics.summary.totalEditable++; else diagnostics.summary.totalRejected++;
+      if (t.decoded) diagnostics.summary.totalEditable++;
+      else           diagnostics.summary.totalRejected++;
     }
   }
 
-  // 2) Geometry from the native YFT engine (primary path) + yft diagnostics.
-  onStage?.('geometry', 'Building vehicle preview');
-  let geometry: LoadedVehicle | null = null;
-  let geometryReason: string | undefined;
+  // Build name → ImageData map for texture application to the model.
+  const ytdTextureMap = new Map<string, ImageData>(
+    textures.map((t) => [t.name, t.imageData])
+  );
+
+  // ── 2) YFT file scanning (diagnostics even for non-parsed) ──────────────────
   const yftPaths = [vehicle.yft, vehicle.hiYft].filter(Boolean) as string[];
   for (const p of yftPaths) {
     try {
-      const buf = await readFileBuffer(p);
+      const buf   = await readFileBuffer(p);
       const bytes = new Uint8Array(buf);
-      diagnostics.yfts.push({ path: p, fileName: fileName(p), isHi: /_hi\.yft$/i.test(p), fileSize: buf.byteLength, isRSC7: isRSC7(bytes), note: isRSC7(bytes) ? 'RSC7 resource detected' : 'Not an RSC7 resource' });
+      diagnostics.yfts.push({
+        path: p, fileName: fileName(p),
+        isHi: /_hi\.yft$/i.test(p),
+        fileSize: buf.byteLength,
+        isRSC7: isRSC7(bytes),
+        note: isRSC7(bytes) ? 'RSC7 resource detected' : 'Not RSC7',
+      });
     } catch (e: any) {
-      diagnostics.yfts.push({ path: p, fileName: fileName(p), isHi: /_hi\.yft$/i.test(p), fileSize: 0, isRSC7: false, note: `Could not read: ${e?.message || e}` });
+      diagnostics.yfts.push({
+        path: p, fileName: fileName(p), isHi: /_hi\.yft$/i.test(p),
+        fileSize: 0, isRSC7: false, note: `Read failed: ${e?.message || e}`,
+      });
     }
   }
 
+  // ── 3) Geometry from native YFT engine ─────────────────────────────────────
+  onStage?.('geometry', 'Building vehicle preview');
+  let geometry: LoadedVehicle | null = null;
+  let geometryReason: string | undefined;
+
+  // Prefer the hi-poly .yft for the preview if present, otherwise standard.
   const modelPath = vehicle.hiYft || vehicle.yft;
   if (modelPath) {
     try {
-      const buf = await readFileBuffer(modelPath);
+      const buf    = await readFileBuffer(modelPath);
       const result = await parseYftGeometry(buf);
-      geometryReason = result.drawable ? undefined : result.reason;
+
+      // Attach geometry diagnostics to the YFT entry.
+      const yftEntry = diagnostics.yfts.find((y) => y.path === modelPath);
+      if (yftEntry) yftEntry.geometryDiag = result.diagnostics;
+
+      if (result.drawable) {
+        geometry = buildVehicleFromDrawable(result.drawable, ytdTextureMap);
+
+        diagnostics.summary.geometryDecoded = true;
+        diagnostics.summary.meshCount       = geometry.meshes.length;
+        diagnostics.summary.materialCount   = geometry.slots.length;
+        diagnostics.summary.shaderCount     = result.drawable.shaders.length;
+        diagnostics.summary.vertexCount     = result.diagnostics.totalVertices;
+        diagnostics.summary.triangleCount   = result.diagnostics.totalTriangles;
+
+        diagnostics.materials = {
+          available: true,
+          note: `${geometry.slots.length} material slots from ${result.drawable.shaders.length} shaders.`,
+        };
+      } else {
+        geometryReason = result.reason;
+        diagnostics.materials.note =
+          `YFT parse returned no drawable: ${result.reason ?? 'unknown'}`;
+      }
     } catch (e: any) {
-      geometryReason = e?.message || 'Could not read model file.';
+      geometryReason = e?.message || 'Geometry load threw an exception.';
+      diagnostics.materials.note = geometryReason ?? '';
     }
   } else {
     geometryReason = 'No .yft model found for this vehicle.';
+    diagnostics.materials.note = 'No YFT file found.';
   }
 
   onStage?.('done');
   return { textures, geometry, geometryReason, diagnostics };
 }
 
-/** Internal/advanced fallback: load geometry from a GLB the user explicitly provides. */
+/** Internal: load geometry from a user-provided GLB (never exposed in the UI). */
 export async function loadGeometryFromGLB(buffer: ArrayBuffer): Promise<LoadedVehicle> {
   return loadVehicleGLB(buffer);
 }

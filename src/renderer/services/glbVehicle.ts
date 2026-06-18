@@ -1,8 +1,9 @@
-// Loads a real GTA vehicle exported to GLB/glTF (via CodeWalker or Sollumz/Blender)
-// and exposes its actual material slots, textures, and UV layouts.
+// Loads GTA V vehicle geometry — either from native YFT (primary path) or from a
+// GLB export (internal fallback). Exposes material slots, textures, UV layouts.
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { ParsedDrawable } from './rage/yft';
 
 export interface VehicleMaterialSlot {
   id: string;
@@ -12,6 +13,8 @@ export interface VehicleMaterialSlot {
   originalMap: THREE.Texture | null;
   /** Best-guess vehicle section from the material/mesh name (hood, doors, roof…). */
   section: string;
+  /** Primary texture name this slot uses (from YTD dictionary key). */
+  textureHint?: string;
 }
 
 export interface LoadedVehicle {
@@ -131,6 +134,143 @@ function buildVehicle(scene: THREE.Group): LoadedVehicle {
   });
 
   return { root: scene, slots, meshes, size, center: new THREE.Vector3(0, 0, 0) };
+}
+
+// ── Native YFT → LoadedVehicle ───────────────────────────────────────────────
+// Converts ParsedDrawable (from yft.ts) into a LoadedVehicle that the existing
+// VehicleViewer and editor already understand.
+//
+// Coordinate transform: GTA V is X-right Y-forward Z-up.
+//   Three.js: X-right Y-up Z-toward-viewer.
+//   Mapping:  three = (gtaX, gtaZ, -gtaY).
+//   Determinant = 1 → no winding-order flip needed.
+//
+// UV convention: GTA V uses DX (v=0 at top). Three.js CanvasTexture with
+// flipY=true (default) already flips the image so DX UVs are correct as-is.
+
+function gtaPos(x: number, y: number, z: number): [number, number, number] {
+  return [x, z, -y];
+}
+
+function gtaNorm(x: number, y: number, z: number): [number, number, number] {
+  return [x, z, -y];
+}
+
+export function buildVehicleFromDrawable(
+  drawable: ParsedDrawable,
+  ytdTextures: Map<string, ImageData>,
+): LoadedVehicle {
+  const root     = new THREE.Group();
+  const meshes: THREE.Mesh[]                     = [];
+  const matByShader = new Map<number, THREE.MeshStandardMaterial>();
+  const slotByShader = new Map<number, VehicleMaterialSlot>();
+
+  // Build one material per shader index.
+  for (const shader of drawable.shaders) {
+    const texName  = shader.textureParams[0] ?? null;
+    const imgData  = texName ? ytdTextures.get(texName) : null;
+
+    let map: THREE.CanvasTexture | null = null;
+    if (imgData) {
+      const c = document.createElement('canvas');
+      c.width = imgData.width; c.height = imgData.height;
+      c.getContext('2d')!.putImageData(imgData, 0, 0);
+      map = new THREE.CanvasTexture(c);
+      map.flipY       = true;  // DX → OpenGL: flip image vertically
+      map.colorSpace  = THREE.SRGBColorSpace;
+      map.anisotropy  = 8;
+    }
+
+    // Classify material section by shader name + texture name
+    const sectionHint = `${shader.filename} ${texName ?? ''}`;
+    const mat = new THREE.MeshStandardMaterial({
+      map: map ?? undefined,
+      color: map ? 0xffffff : 0xc0c0c0,
+      metalness: 0.4,
+      roughness: 0.55,
+      name: shader.filename || `shader_${shader.index}`,
+    });
+
+    matByShader.set(shader.index, mat);
+    slotByShader.set(shader.index, {
+      id: `slot_${shader.index}`,
+      name: shader.filename || `shader_${shader.index}`,
+      material: mat,
+      meshes: [],
+      originalMap: map,
+      section: guessSection(sectionHint),
+      textureHint: texName ?? undefined,
+    });
+  }
+
+  // Fallback material for shader indices with no parsed shader.
+  const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.3, roughness: 0.6, name: 'fallback' });
+  const fallbackSlot: VehicleMaterialSlot = { id: 'slot_fallback', name: 'Other', material: fallbackMat, meshes: [], originalMap: null, section: 'Other' };
+
+  // Build Three.js BufferGeometry for each parsed geometry.
+  for (const geo of drawable.geometries) {
+    const vertCount = geo.positions.length / 3;
+
+    // Transformed positions (GTA → Three.js)
+    const pos3 = new Float32Array(vertCount * 3);
+    for (let vi = 0; vi < vertCount; vi++) {
+      const [tx, ty, tz] = gtaPos(geo.positions[vi * 3], geo.positions[vi * 3 + 1], geo.positions[vi * 3 + 2]);
+      pos3[vi * 3] = tx; pos3[vi * 3 + 1] = ty; pos3[vi * 3 + 2] = tz;
+    }
+
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.BufferAttribute(pos3, 3));
+
+    if (geo.normals) {
+      const n3 = new Float32Array(vertCount * 3);
+      for (let vi = 0; vi < vertCount; vi++) {
+        const [nx, ny, nz] = gtaNorm(geo.normals[vi * 3], geo.normals[vi * 3 + 1], geo.normals[vi * 3 + 2]);
+        n3[vi * 3] = nx; n3[vi * 3 + 1] = ny; n3[vi * 3 + 2] = nz;
+      }
+      bg.setAttribute('normal', new THREE.BufferAttribute(n3, 3));
+    }
+
+    if (geo.uvs) {
+      bg.setAttribute('uv', new THREE.BufferAttribute(geo.uvs.slice(), 2));
+    }
+
+    bg.setIndex(new THREE.BufferAttribute(new Uint32Array(geo.indices), 1));
+
+    if (!geo.normals) bg.computeVertexNormals();
+
+    const mat  = matByShader.get(geo.shaderIndex) ?? fallbackMat;
+    const slot = slotByShader.get(geo.shaderIndex) ?? fallbackSlot;
+
+    const mesh = new THREE.Mesh(bg, mat);
+    mesh.castShadow    = true;
+    mesh.receiveShadow = true;
+    mesh.name          = geo.name;
+    root.add(mesh);
+    meshes.push(mesh);
+    if (!slot.meshes.includes(mesh)) slot.meshes.push(mesh);
+  }
+
+  // Collect slots — prefer livery/body slots first.
+  const slots = [
+    ...Array.from(slotByShader.values()).filter((s) => s.meshes.length > 0),
+    ...(fallbackSlot.meshes.length > 0 ? [fallbackSlot] : []),
+  ];
+  slots.sort((a, b) => {
+    const score = (s: VehicleMaterialSlot) =>
+      /Body|Livery|Decals/.test(s.section) ? 0 : s.section === 'Other' ? 2 : 1;
+    return score(a) - score(b);
+  });
+
+  // Centre model at origin for natural orbiting.
+  const box    = new THREE.Box3().setFromObject(root);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  root.position.sub(center);
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  return { root, slots, meshes, size, center: new THREE.Vector3(0, 0, 0) };
 }
 
 /**

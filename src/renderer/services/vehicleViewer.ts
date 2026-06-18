@@ -141,11 +141,11 @@ export class VehicleViewer {
   }
 
   /** Push the edited canvas onto a specific material's map — live, no reload. */
-  setSlotTexture(slot: VehicleMaterialSlot, canvas: HTMLCanvasElement) {
+  setSlotTexture(slot: VehicleMaterialSlot, canvas: HTMLCanvasElement, flipY = true) {
     let tex = this.overrideTex.get(slot.id);
     if (!tex) {
       tex = new THREE.CanvasTexture(canvas);
-      tex.flipY = false; // glTF UVs are not flipped
+      tex.flipY      = flipY;    // true for native GTA V (DX→GL), false for GLB
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
       this.overrideTex.set(slot.id, tex);

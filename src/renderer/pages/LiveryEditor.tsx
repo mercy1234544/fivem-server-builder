@@ -6,6 +6,7 @@ import {
   Plus, Car, Grid3x3, Type, Brush, MousePointer, Layers as LayersIcon,
   FolderOpen, Box, Loader2, ChevronLeft, Wand2, Square, Stethoscope, X,
   CheckCircle2, XCircle, FileText, Image as ImageIcon,
+  RotateCcw, Scan, BoxSelect, TriangleRight,
 } from 'lucide-react';
 import { ddsToImageData, extractTexturesFromYTD } from '../services/ytdParser';
 import { loadVehicle, type DetectedVehicle, type LoadStage, type VehicleDiagnostics } from '../services/vehicleResourceLoader';
@@ -58,6 +59,7 @@ export default function LiveryEditor() {
   const [showDiag, setShowDiag] = useState(false);
   const [showAllTex, setShowAllTex] = useState(false);
   const [view, setView] = useState<'browser' | 'editor'>('browser');
+  const [wireframe, setWireframe] = useState(false);
   const replaceTargetRef = useRef<string | null>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -79,14 +81,32 @@ export default function LiveryEditor() {
   const panning = useRef(false);
   const lastPt = useRef({ x: 0, y: 0 });
 
-  // Geometry viewer only mounts when we actually have a real model.
+  // Spin up / replace the Three.js viewer whenever geometry changes.
   useEffect(() => {
-    if (geometry && viewerMount.current && !viewerRef.current) {
-      const v = new VehicleViewer(viewerMount.current);
-      v.setVehicle(geometry);
-      viewerRef.current = v;
-    }
-    return () => { viewerRef.current?.dispose(); viewerRef.current = null; };
+    viewerRef.current?.dispose();
+    viewerRef.current = null;
+    if (!geometry || !viewerMount.current) return;
+
+    const v = new VehicleViewer(viewerMount.current);
+    v.setVehicle(geometry);
+
+    // Clicking a mesh in the viewport selects the matching texture.
+    v.onPickSlot = (slotId) => {
+      const slot = geometry.slots.find((s) => s.id === slotId);
+      if (!slot) return;
+      // Match slot texture name to an EditTarget
+      const texName = slot.name; // slot.name = shader filename; actual tex name on material
+      const match =
+        targets.find((t) => t.name === slot.name) ||
+        targets.find((t) => slot.name.toLowerCase().includes(t.name.toLowerCase())) ||
+        null;
+      if (match) { selectTarget(match.id); setView('editor'); }
+      v.highlightSlot(slotId);
+    };
+
+    viewerRef.current = v;
+    return () => { v.dispose(); viewerRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geometry]);
 
   // ── Folder workflow ──────────────────────────────────────────────────────────
@@ -166,6 +186,15 @@ export default function LiveryEditor() {
       ctx.drawImage(l.canvas, l.x, l.y, l.w, l.h); ctx.restore();
     }
     if (id === selected) drawCenter(e);
+
+    // Push edited canvas live onto the matching vehicle material slot.
+    if (geometry && viewerRef.current) {
+      const t = targets.find((tx) => tx.id === id);
+      if (t) {
+        const slot = geometry.slots.find((s) => s.textureHint === t.name);
+        if (slot) viewerRef.current.setSlotTexture(slot, e.canvas);
+      }
+    }
   }
 
   function drawCenter(e: TargetEdit) {
@@ -567,20 +596,34 @@ export default function LiveryEditor() {
             </div>
           </div>
 
-          {/* RIGHT — 3D / preview */}
+          {/* RIGHT — 3D viewport */}
           <div className="w-80 shrink-0 flex flex-col border-l border-overlay-6 bg-surface-950/20">
-            <div className="shrink-0 px-4 py-2.5 border-b border-overlay-6 flex items-center gap-2"><Car size={14} className="text-pink-400" /><span className="text-xs font-semibold text-surface-200">Vehicle Preview</span></div>
-            {geometry ? (
-              <>
-                <div ref={viewerMount} className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing" />
-                <div className="shrink-0 border-t border-overlay-6 px-3 py-2"><p className="text-[10px] text-surface-500 leading-relaxed"><b className="text-surface-300">Click</b> a part to select its material · edits apply live.</p></div>
-              </>
-            ) : (
+            {/* Toolbar */}
+            <div className="shrink-0 px-3 py-2 border-b border-overlay-6 flex items-center gap-1">
+              <Car size={13} className="text-pink-400 mr-1" />
+              <span className="text-xs font-semibold text-surface-200 flex-1">3D Preview</span>
+              {geometry && (<>
+                <button title="Toggle wireframe" onClick={() => { setWireframe((w) => { const nw = !w; viewerRef.current?.setWireframe(nw); return nw; }); }}
+                  className={`p-1.5 rounded text-[10px] ${wireframe ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
+                  <BoxSelect size={13} />
+                </button>
+                <button title="Reset camera" onClick={() => viewerRef.current?.resetView()}
+                  className="p-1.5 rounded text-surface-500 hover:text-surface-200 hover:bg-overlay-4">
+                  <RotateCcw size={13} />
+                </button>
+              </>)}
+            </div>
+
+            {/* Viewer mount — always present so the canvas has somewhere to live */}
+            <div ref={viewerMount} className={`flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing ${!geometry ? 'hidden' : ''}`} />
+
+            {/* Shown only when no geometry yet */}
+            {!geometry && (
               <div className="flex-1 flex flex-col">
                 <div className="flex-1 flex items-center justify-center p-5">
                   {curEdit ? (
                     <div className="w-full">
-                      <p className="text-[10px] uppercase tracking-widest text-surface-600 mb-2 text-center">Live texture</p>
+                      <p className="text-[10px] uppercase tracking-widest text-surface-600 mb-2 text-center">Live texture preview</p>
                       <LivePreview edit={curEdit} />
                     </div>
                   ) : <Box size={40} className="text-surface-700" />}
@@ -589,11 +632,22 @@ export default function LiveryEditor() {
                   <div className="flex items-start gap-2">
                     <Wand2 size={14} className="text-amber-400 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-[11px] font-semibold text-surface-200">Native 3D model engine</p>
-                      <p className="text-[10px] text-surface-500 leading-relaxed mt-0.5">{geomReason || 'Building the real vehicle mesh from the .yft.'} Texture editing & export work now; the live 3D car turns on automatically once the engine finishes this model.</p>
+                      <p className="text-[11px] font-semibold text-surface-200">Vehicle model parsing</p>
+                      <p className="text-[10px] text-surface-500 leading-relaxed mt-0.5">
+                        {geomReason || 'Building mesh from .yft…'} Open <button onClick={() => setShowDiag(true)} className="text-cyan-400 underline">Diagnostics</button> for details.
+                      </p>
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Footer hint when geometry is showing */}
+            {geometry && (
+              <div className="shrink-0 border-t border-overlay-6 px-3 py-1.5">
+                <p className="text-[10px] text-surface-600 leading-tight">
+                  <b className="text-surface-400">Click</b> a mesh part → selects texture · edits apply live
+                </p>
               </div>
             )}
           </div>
@@ -624,10 +678,16 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Summary */}
           <div className="grid grid-cols-4 gap-2">
-            <Stat label="YTD files" value={s.ytdCount} />
-            <Stat label="Textures found" value={s.totalTexturesFound} />
-            <Stat label="Editable" value={s.totalEditable} good={s.totalEditable > 0} />
-            <Stat label="Rejected" value={s.totalRejected} bad={s.totalRejected > 0} />
+            <Stat label="Textures" value={s.totalTexturesFound} />
+            <Stat label="Decoded" value={s.totalEditable} good={s.totalEditable > 0} />
+            <Stat label="Meshes" value={s.meshCount} good={s.meshCount > 0} />
+            <Stat label="Materials" value={s.materialCount} />
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <Stat label="Vertices" value={s.vertexCount} />
+            <Stat label="Triangles" value={s.triangleCount} />
+            <Stat label="Shaders" value={s.shaderCount} />
+            <Stat label={s.geometryDecoded ? '3D ready' : '3D pending'} value={s.geometryDecoded ? 1 : 0} good={s.geometryDecoded} bad={!s.geometryDecoded} />
           </div>
 
           {/* Verdict helper */}
@@ -646,18 +706,69 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                       : 'Dictionary parsing produced no entries → YTD parser layer.'}
           </div>
 
-          {/* YFT files */}
+          {/* YFT files + geometry diagnostics */}
           <Section title={`YFT model files (${diag.yfts.length})`}>
             {diag.yfts.length === 0 && <Empty>No .yft files detected for this vehicle.</Empty>}
-            {diag.yfts.map((y, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2 text-[11px] border-b border-overlay-4 last:border-0">
-                <FileText size={12} className="text-blue-400 shrink-0" />
-                <span className="text-surface-200 font-medium truncate flex-1">{y.fileName}</span>
-                {y.isHi && <span className="text-[9px] px-1 rounded bg-indigo-500/15 text-indigo-300">hi</span>}
-                <span className="text-[9px] px-1 rounded bg-surface-700/40 text-surface-400">{fmtBytes(y.fileSize)}</span>
-                <span className={`text-[9px] px-1 rounded ${y.isRSC7 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{y.isRSC7 ? 'RSC7' : 'non-RSC7'}</span>
-              </div>
-            ))}
+            {diag.yfts.map((y, i) => {
+              const gd = y.geometryDiag;
+              return (
+                <div key={i} className="border-b border-overlay-4 last:border-0 py-2">
+                  <div className="flex items-center gap-2 px-3 text-[11px]">
+                    <FileText size={12} className="text-blue-400 shrink-0" />
+                    <span className="text-surface-200 font-medium truncate flex-1">{y.fileName}</span>
+                    {y.isHi && <span className="text-[9px] px-1 rounded bg-indigo-500/15 text-indigo-300">hi</span>}
+                    <span className="text-[9px] px-1 rounded bg-surface-700/40 text-surface-400">{fmtBytes(y.fileSize)}</span>
+                    <span className={`text-[9px] px-1 rounded ${y.isRSC7 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{y.isRSC7 ? 'RSC7' : 'non-RSC7'}</span>
+                    {gd && <span className={`text-[9px] px-1 rounded ${gd.geometryCount > 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'}`}>{gd.geometryCount > 0 ? `${gd.geometryCount} geos` : 'parse failed'}</span>}
+                  </div>
+                  {gd && (
+                    <div className="px-3 mt-1 space-y-0.5">
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono">
+                        <span>v{gd.version} · sys {fmtBytes(gd.systemSize)} · gfx {fmtBytes(gd.graphicsSize)}</span>
+                        <span>drawable@0x{gd.drawableBase.toString(16)}</span>
+                        <span>{gd.shaderCount} shaders · {gd.modelsHighCount} models · {gd.geometryCount} geos</span>
+                        <span>{gd.totalVertices.toLocaleString()} verts · {gd.totalTriangles.toLocaleString()} tris</span>
+                        {gd.vertexStrides.length > 0 && <span>strides: {gd.vertexStrides.join(', ')}</span>}
+                      </div>
+                      {gd.shaders.length > 0 && (
+                        <div className="mt-1 space-y-0.5">
+                          {gd.shaders.slice(0, 6).map((sh, k) => (
+                            <p key={k} className="text-[9px] text-surface-500 font-mono">
+                              <span className="text-blue-300">{sh.filename || `shader_${k}`}</span>
+                              {sh.textureParams.length > 0 && <span className="text-surface-400"> → {sh.textureParams.join(', ')}</span>}
+                            </p>
+                          ))}
+                          {gd.shaders.length > 6 && <p className="text-[9px] text-surface-600">…{gd.shaders.length - 6} more shaders</p>}
+                        </div>
+                      )}
+                      {gd.notes.map((n, k) => <p key={k} className="text-[9px] text-cyan-300/80">{n}</p>)}
+                      {gd.warnings.map((n, k) => <p key={k} className="text-[9px] text-amber-300/80">⚠ {n}</p>)}
+                      {gd.errors.map((n, k) => <p key={k} className="text-[9px] text-red-300/80">✕ {n}</p>)}
+                      {(gd.systemHeaderHex || gd.drawableHeaderHex) && (
+                        <details className="mt-1">
+                          <summary className="text-[9px] text-cyan-300 cursor-pointer">Raw byte inspection</summary>
+                          <div className="mt-1 space-y-2">
+                            {gd.systemHeaderHex && (
+                              <div>
+                                <p className="text-[8px] text-surface-600 mb-0.5">System segment header (fragType root):</p>
+                                <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-x-auto font-mono">{gd.systemHeaderHex}</pre>
+                              </div>
+                            )}
+                            {gd.drawableHeaderHex && (
+                              <div>
+                                <p className="text-[8px] text-surface-600 mb-0.5">Drawable header (ShaderGroup@+0x10, ModelsHigh@+0x50):</p>
+                                <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-x-auto font-mono">{gd.drawableHeaderHex}</pre>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                  {!gd && <p className="px-3 mt-0.5 text-[9px] text-surface-600">{y.note}</p>}
+                </div>
+              );
+            })}
           </Section>
           <p className="text-[10px] text-surface-600 -mt-3">{diag.materials.note}</p>
 
