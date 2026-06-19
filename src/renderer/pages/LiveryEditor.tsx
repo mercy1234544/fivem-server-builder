@@ -6,25 +6,32 @@ import {
   Plus, Car, Grid3x3, Type, Brush, MousePointer, Layers as LayersIcon,
   FolderOpen, Box, Loader2, ChevronLeft, Wand2, Square, Stethoscope, X,
   CheckCircle2, XCircle, FileText, Image as ImageIcon,
-  RotateCcw, Scan, BoxSelect, TriangleRight,
+  RotateCcw, Scan, BoxSelect, TriangleRight, Circle, Minus, Droplets,
+  Undo2, Redo2, PaintBucket, Slash,
 } from 'lucide-react';
 import { ddsToImageData, extractTexturesFromYTD } from '../services/ytdParser';
 import { loadVehicle, type DetectedVehicle, type LoadStage, type VehicleDiagnostics } from '../services/vehicleResourceLoader';
 import type { VehicleTexture } from '../services/rage/ytd';
 import type { LoadedVehicle } from '../services/glbVehicle';
 import { VehicleViewer } from '../services/vehicleViewer';
+import { LIVERY_ASSETS, applyAsset, assetThumbnail } from '../services/liveryAssets';
 import { EXPORTERS, downloadResult } from '../services/liveryExport';
 
 // ── Layer model ─────────────────────────────────────────────────────────────
-type LayerKind = 'base' | 'image' | 'paint' | 'text' | 'fill';
+type LayerKind = 'base' | 'image' | 'paint' | 'text' | 'fill' | 'shape' | 'gradient';
 interface Layer {
   id: string; name: string; kind: LayerKind; visible: boolean; opacity: number;
   blendMode: GlobalCompositeOperation; canvas: HTMLCanvasElement;
   x: number; y: number; w: number; h: number;
   text?: string; fontSize?: number; color?: string;
+  textOutline?: boolean; textOutlineColor?: string; textOutlineWidth?: number;
+  textShadow?: boolean; textShadowColor?: string;
 }
 interface TargetEdit { layers: Layer[]; canvas: HTMLCanvasElement; w: number; h: number; }
 interface EditTarget { id: string; name: string; format: string; w: number; h: number; base: ImageData | null; }
+interface UndoHistory { undo: ImageData[]; redo: ImageData[]; }
+type DrawTool = 'select' | 'brush' | 'rect' | 'ellipse' | 'line' | 'gradient' | 'fill';
+type ShapeFill = 'stroke' | 'fill' | 'both';
 
 const BLEND_MODES: GlobalCompositeOperation[] = [
   'source-over', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
@@ -37,10 +44,22 @@ function canvasFromImageData(id: ImageData) { const c = newCanvas(id.width, id.h
 function renderTextLayer(l: Layer) {
   const ctx = l.canvas.getContext('2d')!;
   ctx.clearRect(0, 0, l.canvas.width, l.canvas.height);
-  ctx.fillStyle = l.color || '#fff';
-  ctx.font = `bold ${l.fontSize || 80}px Arial, sans-serif`;
+  ctx.font = `bold ${l.fontSize || 80}px Arial Black, Arial, sans-serif`;
   ctx.textBaseline = 'top';
-  ctx.fillText(l.text || 'TEXT', 20, 20);
+  const txt = l.text || 'TEXT';
+  if (l.textShadow) {
+    ctx.shadowColor = l.textShadowColor || 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur = 8; ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 3;
+  }
+  if (l.textOutline) {
+    ctx.strokeStyle = l.textOutlineColor || '#000';
+    ctx.lineWidth = l.textOutlineWidth ?? 4;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(txt, 20, 20);
+  }
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = l.color || '#fff';
+  ctx.fillText(txt, 20, 20);
 }
 
 type Phase = 'empty' | 'list' | 'loading' | 'edit';
@@ -58,14 +77,18 @@ export default function LiveryEditor() {
   const [diagnostics, setDiagnostics] = useState<VehicleDiagnostics | null>(null);
   const [showDiag, setShowDiag] = useState(false);
   const [showAllTex, setShowAllTex] = useState(false);
+  const [showAssets, setShowAssets] = useState(false);
+  const [assetCat, setAssetCat] = useState<string>('police');
   const [view, setView] = useState<'browser' | 'editor'>('browser');
   const [wireframe, setWireframe] = useState(false);
   const replaceTargetRef = useRef<string | null>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
-  const [tool, setTool] = useState<'select' | 'brush'>('select');
+  const [tool, setTool] = useState<DrawTool>('select');
   const [brushColor, setBrushColor] = useState('#ff3344');
+  const [brushColor2, setBrushColor2] = useState('#0033ff');
   const [brushSize, setBrushSize] = useState(24);
+  const [shapeFill, setShapeFill] = useState<ShapeFill>('fill');
   const [zoom, setZoom] = useState(0.4);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [exporterId, setExporterId] = useState('png');
@@ -73,12 +96,15 @@ export default function LiveryEditor() {
   const rerender = () => force((n) => n + 1);
 
   const edits = useRef<Map<string, TargetEdit>>(new Map());
+  const historyRef = useRef<Map<string, UndoHistory>>(new Map());
   const centerCanvas = useRef<HTMLCanvasElement>(null);
+  const overlayCanvas = useRef<HTMLCanvasElement>(null);
   const viewerMount = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<VehicleViewer | null>(null);
   const texInput = useRef<HTMLInputElement>(null);
   const painting = useRef(false);
   const panning = useRef(false);
+  const shapeStart = useRef<{ x: number; y: number } | null>(null);
   const lastPt = useRef({ x: 0, y: 0 });
   // Keep a ref to targets so the slot-pick handler never captures a stale closure.
   const targetsRef = useRef<EditTarget[]>([]);
@@ -165,6 +191,27 @@ export default function LiveryEditor() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!selected) return;
+      if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); applyUndo(selected); }
+      if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); applyRedo(selected); }
+      if (!e.ctrlKey && !e.altKey) {
+        if (e.key === 'b' || e.key === 'B') setTool('brush');
+        if (e.key === 'r' || e.key === 'R') setTool('rect');
+        if (e.key === 'e' || e.key === 'E') setTool('ellipse');
+        if (e.key === 'l' || e.key === 'L') setTool('line');
+        if (e.key === 'g' || e.key === 'G') setTool('gradient');
+        if (e.key === 'f' || e.key === 'F') setTool('fill');
+        if (e.key === 'v' || e.key === 'V') setTool('select');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // ── Editing core (per texture target) ────────────────────────────────────────
   function ensureEdit(t: EditTarget): TargetEdit {
@@ -261,11 +308,78 @@ export default function LiveryEditor() {
     const c = newCanvas(e.w, e.h); const ctx = c.getContext('2d')!; ctx.fillStyle = brushColor; ctx.fillRect(0, 0, e.w, e.h);
     addLayer(e, t.id, { kind: 'fill', name: 'Fill', canvas: c, w: e.w, h: e.h, opacity: 60 });
   }
+  // ── Asset library ────────────────────────────────────────────────────────────
+  function applyLiveryAsset(assetId: string) {
+    const t = targetById(selected); if (!t) { toast.error('Select a texture first'); return; }
+    const e = ensureEdit(t);
+    const asset = LIVERY_ASSETS.find((a) => a.id === assetId); if (!asset) return;
+    pushUndo(t.id);
+    const c = applyAsset(asset, e.w, e.h);
+    addLayer(e, t.id, { kind: 'shape', name: asset.name, canvas: c, w: e.w, h: e.h, opacity: 85 });
+    toast.success(`Applied: ${asset.name}`);
+  }
+
+  // ── Save / export ────────────────────────────────────────────────────────────
+  async function saveActiveTexture() {
+    const t = targetById(selected); if (!t) { toast.error('No texture selected'); return; }
+    const e = edits.current.get(t.id); if (!e) { toast.error('No edits to save'); return; }
+    const defPath = `${t.name}.png`;
+    const filePath = await window.electronAPI.livery.showSaveDialog({
+      defaultPath: defPath,
+      filters: [{ name: 'PNG Image', extensions: ['png'] }, { name: 'All Files', extensions: ['*'] }],
+    });
+    if (!filePath) return;
+    e.canvas.toBlob(async (blob) => {
+      if (!blob) { toast.error('Export failed'); return; }
+      const ab = await blob.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+      const ok = await window.electronAPI.livery.writeFile(filePath, b64);
+      if (ok) toast.success(`Saved to ${filePath.split(/[\\/]/).pop()}`);
+      else toast.error('Write failed');
+    }, 'image/png');
+  }
+
   function ensurePaintLayer(e: TargetEdit): Layer {
     let l = e.layers.find((x) => x.id === activeLayerId && x.kind === 'paint');
     if (!l) { l = { id: uid(), name: 'Paint', kind: 'paint', visible: true, opacity: 100, blendMode: 'source-over', canvas: newCanvas(e.w, e.h), x: 0, y: 0, w: e.w, h: e.h }; e.layers.push(l); setActiveLayerId(l.id); rerender(); }
     return l;
   }
+  // ── Undo / Redo ─────────────────────────────────────────────────────────────
+  const MAX_HISTORY = 30;
+  function getHistory(id: string): UndoHistory {
+    let h = historyRef.current.get(id);
+    if (!h) { h = { undo: [], redo: [] }; historyRef.current.set(id, h); }
+    return h;
+  }
+  function pushUndo(id: string) {
+    const e = edits.current.get(id); if (!e) return;
+    const h = getHistory(id);
+    const snap = e.canvas.getContext('2d')!.getImageData(0, 0, e.w, e.h);
+    h.undo.push(snap);
+    if (h.undo.length > MAX_HISTORY) h.undo.shift();
+    h.redo = [];
+  }
+  function applyUndo(id: string) {
+    const e = edits.current.get(id); if (!e) return;
+    const h = getHistory(id); if (h.undo.length === 0) { toast('Nothing to undo', { icon: '↩' }); return; }
+    const current = e.canvas.getContext('2d')!.getImageData(0, 0, e.w, e.h);
+    h.redo.push(current);
+    const prev = h.undo.pop()!;
+    const c = newCanvas(e.w, e.h); c.getContext('2d')!.putImageData(prev, 0, 0);
+    e.layers = [{ id: uid(), name: 'Undo state', kind: 'base', visible: true, opacity: 100, blendMode: 'source-over', canvas: c, x: 0, y: 0, w: e.w, h: e.h }];
+    composite(id); rerender();
+  }
+  function applyRedo(id: string) {
+    const e = edits.current.get(id); if (!e) return;
+    const h = getHistory(id); if (h.redo.length === 0) { toast('Nothing to redo', { icon: '↪' }); return; }
+    const current = e.canvas.getContext('2d')!.getImageData(0, 0, e.w, e.h);
+    h.undo.push(current);
+    const next = h.redo.pop()!;
+    const c = newCanvas(e.w, e.h); c.getContext('2d')!.putImageData(next, 0, 0);
+    e.layers = [{ id: uid(), name: 'Redo state', kind: 'base', visible: true, opacity: 100, blendMode: 'source-over', canvas: c, x: 0, y: 0, w: e.w, h: e.h }];
+    composite(id); rerender();
+  }
+
   function updateLayer(id: string, changes: Partial<Layer>) {
     const e = edits.current.get(selected || ''); if (!e) return;
     const l = e.layers.find((x) => x.id === id); if (!l) return;
@@ -290,22 +404,143 @@ export default function LiveryEditor() {
     const r = cv.getBoundingClientRect();
     return { x: ((ev.clientX - r.left) / r.width) * cv.width, y: ((ev.clientY - r.top) / r.height) * cv.height };
   }
+
   function paintAt(ev: React.PointerEvent) {
     const e = edits.current.get(selected || ''); if (!e) return;
     const l = ensurePaintLayer(e); const p = canvasPoint(ev); if (!p) return;
     const ctx = l.canvas.getContext('2d')!; ctx.fillStyle = brushColor;
     ctx.beginPath(); ctx.arc(p.x, p.y, brushSize, 0, Math.PI * 2); ctx.fill(); composite(selected!);
   }
+
+  function floodFill(x0: number, y0: number) {
+    const e = edits.current.get(selected || ''); if (!e) return;
+    pushUndo(selected!);
+    const l = ensurePaintLayer(e);
+    const ctx = l.canvas.getContext('2d')!;
+    const iw = e.w, ih = e.h;
+    const imgData = ctx.getImageData(0, 0, iw, ih);
+    const data = imgData.data;
+    const xi = Math.round(x0), yi = Math.round(y0);
+    const idx = (yi * iw + xi) * 4;
+    if (idx < 0 || idx >= data.length) return;
+    const [tr, tg, tb, ta] = [data[idx], data[idx+1], data[idx+2], data[idx+3]];
+    const fr = parseInt(brushColor.slice(1, 3), 16);
+    const fg = parseInt(brushColor.slice(3, 5), 16);
+    const fb = parseInt(brushColor.slice(5, 7), 16);
+    if (tr === fr && tg === fg && tb === fb && ta === 255) return;
+    const stack = [xi + yi * iw];
+    const visited = new Uint8Array(iw * ih);
+    while (stack.length) {
+      const i = stack.pop()!;
+      if (visited[i]) continue; visited[i] = 1;
+      const b = i * 4;
+      if (Math.abs(data[b]-tr) + Math.abs(data[b+1]-tg) + Math.abs(data[b+2]-tb) + Math.abs(data[b+3]-ta) > 40) continue;
+      data[b] = fr; data[b+1] = fg; data[b+2] = fb; data[b+3] = 255;
+      const x = i % iw, y = Math.floor(i / iw);
+      if (x > 0) stack.push(i - 1);
+      if (x < iw - 1) stack.push(i + 1);
+      if (y > 0) stack.push(i - iw);
+      if (y < ih - 1) stack.push(i + iw);
+    }
+    ctx.putImageData(imgData, 0, 0);
+    composite(selected!);
+  }
+
+  function drawShapeOnCanvas(
+    type: 'rect' | 'ellipse' | 'line', x1: number, y1: number, x2: number, y2: number,
+    c1: string, sz: number, mode: ShapeFill, targetCanvas: HTMLCanvasElement
+  ) {
+    const ctx = targetCanvas.getContext('2d')!;
+    ctx.strokeStyle = c1; ctx.fillStyle = c1;
+    ctx.lineWidth = sz; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (type === 'rect') {
+      const [rx, ry, rw, rh] = [Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1)];
+      if (mode === 'fill' || mode === 'both') ctx.fillRect(rx, ry, rw, rh);
+      if (mode === 'stroke' || mode === 'both') ctx.strokeRect(rx, ry, rw, rh);
+    } else if (type === 'ellipse') {
+      const cx = (x1+x2)/2, cy = (y1+y2)/2, rx = Math.abs(x2-x1)/2, ry = Math.abs(y2-y1)/2;
+      ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(rx,1), Math.max(ry,1), 0, 0, Math.PI*2);
+      if (mode === 'fill' || mode === 'both') ctx.fill();
+      if (mode === 'stroke' || mode === 'both') ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+  }
+
+  function updateShapeOverlay(x1: number, y1: number, x2: number, y2: number) {
+    const oc = overlayCanvas.current; if (!oc) return;
+    const e = edits.current.get(selected || ''); if (!e) return;
+    oc.width = e.w; oc.height = e.h;
+    const octx = oc.getContext('2d')!; octx.clearRect(0, 0, e.w, e.h);
+    const t = tool as 'rect' | 'ellipse' | 'line';
+    if (t === 'rect' || t === 'ellipse' || t === 'line') {
+      drawShapeOnCanvas(t, x1, y1, x2, y2, brushColor, brushSize, shapeFill, oc);
+    } else if (tool === 'gradient') {
+      const grd = octx.createLinearGradient(x1, y1, x2, y2);
+      grd.addColorStop(0, brushColor); grd.addColorStop(1, brushColor2);
+      octx.fillStyle = grd; octx.fillRect(0, 0, e.w, e.h);
+    }
+  }
+
   const onPointerDown = (ev: React.PointerEvent) => {
-    if (ev.button === 1 || ev.altKey || tool === 'select') { panning.current = true; lastPt.current = { x: ev.clientX, y: ev.clientY }; }
-    else if (tool === 'brush') { painting.current = true; paintAt(ev); }
+    const p = canvasPoint(ev);
+    if (ev.button === 1 || ev.altKey || tool === 'select') {
+      panning.current = true; lastPt.current = { x: ev.clientX, y: ev.clientY };
+    } else if (tool === 'brush') {
+      if (!painting.current) pushUndo(selected!);
+      painting.current = true; paintAt(ev);
+    } else if (tool === 'fill') {
+      if (p) floodFill(p.x, p.y);
+    } else if (tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'gradient') {
+      if (p) { shapeStart.current = p; updateShapeOverlay(p.x, p.y, p.x, p.y); }
+    }
     (ev.target as Element).setPointerCapture?.(ev.pointerId);
   };
+
   const onPointerMove = (ev: React.PointerEvent) => {
-    if (panning.current) { setPan((p) => ({ x: p.x + ev.clientX - lastPt.current.x, y: p.y + ev.clientY - lastPt.current.y })); lastPt.current = { x: ev.clientX, y: ev.clientY }; }
-    else if (painting.current) paintAt(ev);
+    if (panning.current) {
+      setPan((pp) => ({ x: pp.x + ev.clientX - lastPt.current.x, y: pp.y + ev.clientY - lastPt.current.y }));
+      lastPt.current = { x: ev.clientX, y: ev.clientY };
+    } else if (painting.current) {
+      paintAt(ev);
+    } else if (shapeStart.current) {
+      const p = canvasPoint(ev);
+      if (p) updateShapeOverlay(shapeStart.current.x, shapeStart.current.y, p.x, p.y);
+      // Force re-render of the overlay
+      rerender();
+    }
   };
-  const onPointerUp = () => { panning.current = false; painting.current = false; };
+
+  const onPointerUp = (ev: React.PointerEvent) => {
+    if (shapeStart.current) {
+      const p = canvasPoint(ev);
+      if (p && selected) {
+        const e = edits.current.get(selected);
+        if (e) {
+          pushUndo(selected);
+          const t = tool as 'rect' | 'ellipse' | 'line' | 'gradient';
+          const c = newCanvas(e.w, e.h);
+          const ctx = c.getContext('2d')!;
+          if (t === 'gradient') {
+            const grd = ctx.createLinearGradient(shapeStart.current.x, shapeStart.current.y, p.x, p.y);
+            grd.addColorStop(0, brushColor); grd.addColorStop(1, brushColor2);
+            ctx.fillStyle = grd; ctx.fillRect(0, 0, e.w, e.h);
+            addLayer(e, selected, { kind: 'gradient', name: 'Gradient', canvas: c, w: e.w, h: e.h, opacity: 90 });
+          } else {
+            drawShapeOnCanvas(t, shapeStart.current.x, shapeStart.current.y, p.x, p.y, brushColor, brushSize, shapeFill, c);
+            addLayer(e, selected, { kind: 'shape', name: t.charAt(0).toUpperCase() + t.slice(1), canvas: c, w: e.w, h: e.h });
+          }
+        }
+      }
+      shapeStart.current = null;
+      // Clear overlay
+      const oc = overlayCanvas.current;
+      if (oc) { oc.width = 1; oc.height = 1; }
+      rerender();
+    }
+    panning.current = false; painting.current = false;
+  };
+
   const onWheel = (ev: React.WheelEvent) => setZoom((z) => Math.max(0.05, Math.min(5, z * (ev.deltaY > 0 ? 0.9 : 1.1))));
 
   async function doExport() {
@@ -396,13 +631,23 @@ export default function LiveryEditor() {
           {(phase === 'edit' || phase === 'list') && diagnostics && (
             <button onClick={() => setShowDiag(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-cyan-600/15 text-cyan-300 border border-cyan-500/25 rounded-lg hover:bg-cyan-600/25 transition-all"><Stethoscope size={12} /> Diagnostics</button>
           )}
+          {phase === 'edit' && view === 'editor' && (
+            <button onClick={() => setShowAssets((v) => !v)} title="Asset Library" className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-all ${showAssets ? 'bg-emerald-600/25 text-emerald-200 border-emerald-500/30' : 'border-overlay-6 text-surface-400 hover:bg-overlay-4'}`}>
+              <Grid3x3 size={12} /> Assets
+            </button>
+          )}
           {phase === 'edit' && (
-            <div className="flex items-center rounded-lg overflow-hidden border border-pink-500/30">
-              <select value={exporterId} onChange={(e) => setExporterId(e.target.value)} className="px-2 py-1.5 text-xs bg-pink-600/15 text-pink-200 focus:outline-none">
-                {EXPORTERS.map((x) => <option key={x.id} value={x.id} disabled={!x.ready}>{x.label}{x.ready ? '' : ' (soon)'}</option>)}
-              </select>
-              <button onClick={doExport} disabled={!curEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-pink-600/25 text-pink-200 hover:bg-pink-600/40 disabled:opacity-40"><Download size={12} /> Export</button>
-            </div>
+            <>
+              <button onClick={saveActiveTexture} disabled={!curEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/20 text-emerald-200 border border-emerald-500/30 rounded-lg hover:bg-emerald-600/35 disabled:opacity-40 transition-all">
+                <Download size={12} /> Save PNG
+              </button>
+              <div className="flex items-center rounded-lg overflow-hidden border border-pink-500/30">
+                <select value={exporterId} onChange={(e) => setExporterId(e.target.value)} className="px-2 py-1.5 text-xs bg-pink-600/15 text-pink-200 focus:outline-none">
+                  {EXPORTERS.map((x) => <option key={x.id} value={x.id} disabled={!x.ready}>{x.label}{x.ready ? '' : ' (soon)'}</option>)}
+                </select>
+                <button onClick={doExport} disabled={!curEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-pink-600/25 text-pink-200 hover:bg-pink-600/40 disabled:opacity-40"><Download size={12} /> Export</button>
+              </div>
+            </>
           )}
         </div>
         <input ref={texInput} type="file" multiple accept=".dds,.ytd,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(importTexture); e.target.value = ''; }} />
@@ -587,6 +832,19 @@ export default function LiveryEditor() {
                         <input type="number" value={activeLayer.fontSize || 80} onChange={(e) => updateLayer(activeLayer.id, { fontSize: Number(e.target.value) })} className="w-16 px-2 py-1 text-[11px] bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none" />
                         <input type="color" value={activeLayer.color || '#ffffff'} onChange={(e) => updateLayer(activeLayer.id, { color: e.target.value })} className="flex-1 h-7 bg-overlay-4 border border-overlay-6 rounded cursor-pointer" />
                       </div>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={!!activeLayer.textOutline} onChange={(e) => updateLayer(activeLayer.id, { textOutline: e.target.checked })} className="w-3 h-3 accent-pink-500" />
+                        <span className="text-[10px] text-surface-400 flex-1">Outline</span>
+                        {activeLayer.textOutline && (
+                          <><input type="color" value={activeLayer.textOutlineColor || '#000000'} onChange={(e) => updateLayer(activeLayer.id, { textOutlineColor: e.target.value })} className="w-6 h-5 rounded border border-overlay-6 cursor-pointer" />
+                          <input type="number" min={1} max={20} value={activeLayer.textOutlineWidth ?? 4} onChange={(e) => updateLayer(activeLayer.id, { textOutlineWidth: Number(e.target.value) })} className="w-10 px-1 py-0 text-[10px] bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none" /></>
+                        )}
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={!!activeLayer.textShadow} onChange={(e) => updateLayer(activeLayer.id, { textShadow: e.target.checked })} className="w-3 h-3 accent-pink-500" />
+                        <span className="text-[10px] text-surface-400 flex-1">Shadow</span>
+                        {activeLayer.textShadow && <input type="color" value={activeLayer.textShadowColor || 'rgba(0,0,0,0.7)'} onChange={(e) => updateLayer(activeLayer.id, { textShadowColor: e.target.value })} className="w-6 h-5 rounded border border-overlay-6 cursor-pointer" />}
+                      </label>
                     </div>
                   )}
                 </div>
@@ -596,24 +854,64 @@ export default function LiveryEditor() {
 
           {/* CENTER — texture editor */}
           <div className="flex-1 flex flex-col overflow-hidden bg-surface-950/30">
-            <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-overlay-6">
-              <button onClick={() => setTool('select')} className={`p-1.5 rounded ${tool === 'select' ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`} title="Move / pan"><MousePointer size={14} /></button>
-              <button onClick={() => setTool('brush')} className={`p-1.5 rounded ${tool === 'brush' ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`} title="Brush"><Brush size={14} /></button>
-              {tool === 'brush' && (<><input type="color" value={brushColor} onChange={(e) => setBrushColor(e.target.value)} className="w-6 h-6 rounded border border-overlay-6 cursor-pointer bg-transparent" /><input type="range" min={2} max={120} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-20 accent-pink-500" /><span className="text-[10px] text-surface-500 font-mono w-6">{brushSize}</span></>)}
-              <div className="w-px h-4 bg-overlay-6 mx-1" />
-              <button onClick={() => setZoom((z) => Math.min(5, z * 1.25))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded"><ZoomIn size={14} /></button>
-              <button onClick={() => setZoom((z) => Math.max(0.05, z * 0.8))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded"><ZoomOut size={14} /></button>
-              <span className="text-xs text-surface-500 font-mono w-12 text-center">{Math.round(zoom * 100)}%</span>
+            {/* Toolbar row 1 — tools */}
+            <div className="shrink-0 flex items-center gap-1 px-3 py-2 border-b border-overlay-6 flex-wrap">
+              {/* History */}
+              <button onClick={() => selected && applyUndo(selected)} title="Undo (Ctrl+Z)" className="p-1.5 rounded text-surface-500 hover:text-surface-200 hover:bg-overlay-4"><Undo2 size={13} /></button>
+              <button onClick={() => selected && applyRedo(selected)} title="Redo (Ctrl+Y)" className="p-1.5 rounded text-surface-500 hover:text-surface-200 hover:bg-overlay-4"><Redo2 size={13} /></button>
+              <div className="w-px h-4 bg-overlay-6 mx-0.5" />
+              {/* Drawing tools */}
+              {([['select','V',<MousePointer size={13} />,'Move / pan'],['brush','B',<Brush size={13} />,'Brush'],['fill','F',<PaintBucket size={13} />,'Bucket fill'],['rect','R',<Square size={13} />,'Rectangle'],['ellipse','E',<Circle size={13} />,'Ellipse'],['line','L',<Slash size={13} />,'Line'],['gradient','G',<Droplets size={13} />,'Gradient fill']] as [DrawTool,string,React.ReactNode,string][]).map(([t,key,icon,label]) => (
+                <button key={t} onClick={() => setTool(t)} title={`${label} (${key})`} className={`p-1.5 rounded ${tool === t ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>{icon}</button>
+              ))}
+              <div className="w-px h-4 bg-overlay-6 mx-0.5" />
+              {/* Color pickers */}
+              <div className="flex items-center gap-1">
+                <label title="Primary color" className="relative cursor-pointer">
+                  <input type="color" value={brushColor} onChange={(e) => setBrushColor(e.target.value)} className="sr-only" />
+                  <div className="w-6 h-6 rounded border-2 border-overlay-6 shadow" style={{ background: brushColor }} />
+                </label>
+                {(tool === 'gradient') && (
+                  <label title="Secondary color (gradient end)" className="relative cursor-pointer">
+                    <input type="color" value={brushColor2} onChange={(e) => setBrushColor2(e.target.value)} className="sr-only" />
+                    <div className="w-6 h-6 rounded border-2 border-overlay-6 shadow" style={{ background: brushColor2 }} />
+                  </label>
+                )}
+              </div>
+              {/* Brush size / shape options */}
+              {tool === 'brush' && (
+                <><input type="range" min={2} max={120} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-20 accent-pink-500" /><span className="text-[10px] text-surface-500 font-mono w-7">{brushSize}px</span></>
+              )}
+              {(tool === 'rect' || tool === 'ellipse') && (
+                <select value={shapeFill} onChange={(e) => setShapeFill(e.target.value as ShapeFill)} className="text-[10px] px-1 py-0.5 rounded bg-overlay-4 border border-overlay-6 text-surface-200 focus:outline-none">
+                  <option value="fill">Fill</option>
+                  <option value="stroke">Stroke</option>
+                  <option value="both">Both</option>
+                </select>
+              )}
+              {(tool === 'rect' || tool === 'ellipse' || tool === 'line') && (
+                <><input type="range" min={1} max={40} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-16 accent-pink-500" /><span className="text-[10px] text-surface-500 font-mono w-5">{brushSize}</span></>
+              )}
+              <div className="w-px h-4 bg-overlay-6 mx-0.5" />
+              <button onClick={() => setZoom((z) => Math.min(5, z * 1.25))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded"><ZoomIn size={13} /></button>
+              <button onClick={() => setZoom((z) => Math.max(0.05, z * 0.8))} className="p-1.5 text-surface-500 hover:text-surface-200 hover:bg-overlay-4 rounded"><ZoomOut size={13} /></button>
+              <span className="text-xs text-surface-500 font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
               <button onClick={() => { setZoom(0.4); setPan({ x: 0, y: 0 }); }} className="text-xs text-surface-500 hover:text-surface-200 px-2 py-1 hover:bg-overlay-4 rounded">Fit</button>
-              <span className="ml-auto text-[11px] text-surface-600">{curTarget ? `${curTarget.name} · ${curEdit?.w}×${curEdit?.h}` : 'No texture selected'}</span>
+              <span className="ml-auto text-[11px] text-surface-600 truncate max-w-40">{curTarget ? `${curTarget.name} · ${curEdit?.w}×${curEdit?.h}` : 'No texture selected'}</span>
             </div>
-            <div className="flex-1 overflow-hidden relative" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel} style={{ cursor: tool === 'brush' ? 'crosshair' : 'grab' }}>
+            <div
+              className="flex-1 overflow-hidden relative"
+              onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel}
+              style={{ cursor: tool === 'select' ? 'grab' : 'crosshair' }}
+            >
               {!curEdit && <div className="absolute inset-0 flex items-center justify-center text-sm text-surface-600">Select a texture to edit</div>}
               {curEdit && (
                 <div className="absolute inset-0 overflow-hidden" style={{ pointerEvents: 'none' }}>
                   <div style={{ position: 'absolute', left: '50%', top: '50%', transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`, transformOrigin: 'center center', pointerEvents: 'all' }}>
                     <div className="relative" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.08), 0 20px 60px rgba(0,0,0,0.7)' }}>
                       <canvas ref={centerCanvas} style={{ display: 'block', imageRendering: zoom < 0.5 ? 'auto' : 'pixelated' }} />
+                      {/* Overlay canvas for shape/gradient preview */}
+                      <canvas ref={overlayCanvas} style={{ display: 'block', position: 'absolute', top: 0, left: 0, pointerEvents: 'none', imageRendering: zoom < 0.5 ? 'auto' : 'pixelated', opacity: 0.85 }} />
                     </div>
                   </div>
                 </div>
@@ -675,6 +973,50 @@ export default function LiveryEditor() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ASSET LIBRARY PANEL */}
+      {showAssets && phase === 'edit' && (
+        <div className="fixed inset-0 z-40 flex" onClick={() => setShowAssets(false)}>
+          <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
+            <motion.div initial={{ x: 320 }} animate={{ x: 0 }} exit={{ x: 320 }} transition={{ type: 'spring', damping: 28 }}
+              className="w-72 h-full bg-surface-900 border-l border-overlay-6 flex flex-col shadow-2xl">
+              <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-overlay-6">
+                <Grid3x3 size={14} className="text-emerald-400" />
+                <span className="text-sm font-semibold text-surface-100 flex-1">Asset Library</span>
+                <button onClick={() => setShowAssets(false)} className="p-1 text-surface-500 hover:text-surface-200"><X size={14} /></button>
+              </div>
+              {/* Category tabs */}
+              <div className="shrink-0 flex gap-0.5 px-3 py-2 border-b border-overlay-6 flex-wrap">
+                {(['police','fire','ems','racing','patterns','badges'] as const).map((cat) => (
+                  <button key={cat} onClick={() => setAssetCat(cat)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-all ${assetCat === cat ? 'bg-primary-600/30 text-primary-200' : 'text-surface-500 hover:text-surface-300 hover:bg-overlay-4'}`}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              {!curTarget && <div className="flex-1 flex items-center justify-center p-5 text-[11px] text-surface-600 text-center">Select a texture first, then click an asset to apply it.</div>}
+              <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-2 content-start">
+                {LIVERY_ASSETS.filter((a) => a.category === assetCat).map((asset) => {
+                  const thumb = assetThumbnail(asset);
+                  return (
+                    <button key={asset.id} onClick={() => { applyLiveryAsset(asset.id); }}
+                      disabled={!curTarget} title={asset.name}
+                      className="flex flex-col items-center gap-1 p-1.5 rounded-lg border border-overlay-6 bg-surface-800/40 hover:bg-overlay-6 hover:border-emerald-500/30 disabled:opacity-30 transition-all group">
+                      <div className="w-full aspect-square rounded overflow-hidden bg-surface-700 border border-overlay-6">
+                        <img src={thumb} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+                      </div>
+                      <span className="text-[9px] text-surface-500 group-hover:text-surface-200 leading-tight text-center truncate w-full">{asset.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="shrink-0 border-t border-overlay-6 px-4 py-2.5">
+                <p className="text-[10px] text-surface-600">Click any asset to add it as a layer on the selected texture. Adjust opacity in the Layers panel.</p>
+              </div>
+            </motion.div>
           </div>
         </div>
       )}

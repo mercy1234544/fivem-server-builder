@@ -148,6 +148,8 @@ interface ElectronAPI {
       meta: { handling: string[]; carvariations: string[]; vehiclelayouts: string[]; vehicles: string[] };
     }>;
     readBinary: (filePath: string) => Promise<string>;
+    writeFile: (filePath: string, b64: string) => Promise<boolean>;
+    showSaveDialog: (opts: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
   };
 
   appUpdater: {

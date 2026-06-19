@@ -195,6 +195,21 @@ function registerIpcHandlers() {
     return vehicleResourceScanner.readBinaryBase64(filePath);
   });
 
+  ipcMain.handle('livery:writeFile', async (_, filePath: string, b64: string) => {
+    const buf = Buffer.from(b64, 'base64');
+    fs.writeFileSync(filePath, buf);
+    return true;
+  });
+
+  ipcMain.handle('livery:showSaveDialog', async (_, opts: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Save texture export',
+      defaultPath: opts.defaultPath,
+      filters: opts.filters || [{ name: 'PNG Image', extensions: ['png'] }],
+    });
+    return result.filePath || null;
+  });
+
   // Resource Management
   ipcMain.handle('resource:scan', (_, serverPath) => resourceScanner.scanResources(serverPath));
   ipcMain.handle('resource:getInfo', (_, resourcePath) => resourceScanner.getResourceInfo(resourcePath));

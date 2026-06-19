@@ -118,11 +118,13 @@ const electronAPI = {
       ipcRenderer.invoke('vehicle:import', opts),
   },
 
-  // Livery Editor — folder-first detection + binary reads
+  // Livery Editor — folder-first detection, binary reads, and file saves
   livery: {
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('livery:pickFolder'),
     scanFolder: (dir: string) => ipcRenderer.invoke('livery:scanFolder', dir),
     readBinary: (filePath: string): Promise<string> => ipcRenderer.invoke('livery:readBinary', filePath),
+    writeFile: (filePath: string, b64: string): Promise<boolean> => ipcRenderer.invoke('livery:writeFile', filePath, b64),
+    showSaveDialog: (opts: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> => ipcRenderer.invoke('livery:showSaveDialog', opts),
   },
 
   // Server console output
