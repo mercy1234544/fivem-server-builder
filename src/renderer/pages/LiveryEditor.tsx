@@ -80,34 +80,41 @@ export default function LiveryEditor() {
   const painting = useRef(false);
   const panning = useRef(false);
   const lastPt = useRef({ x: 0, y: 0 });
+  // Keep a ref to targets so the slot-pick handler never captures a stale closure.
+  const targetsRef = useRef<EditTarget[]>([]);
+  useEffect(() => { targetsRef.current = targets; }, [targets]);
 
-  // Spin up / replace the Three.js viewer whenever geometry changes.
+  // Spin up / replace the Three.js viewer when the editor tab is active AND geometry loaded.
+  // The viewerMount div only exists in the DOM when view === 'editor', so we must
+  // also depend on `view` to catch the case where geometry loaded while in browser view.
   useEffect(() => {
     viewerRef.current?.dispose();
     viewerRef.current = null;
-    if (!geometry || !viewerMount.current) return;
+
+    // Only initialise when the 3D panel is actually rendered.
+    if (!geometry || view !== 'editor' || !viewerMount.current) return;
 
     const v = new VehicleViewer(viewerMount.current);
     v.setVehicle(geometry);
 
-    // Clicking a mesh in the viewport selects the matching texture.
+    // Clicking a mesh → select the matching texture (uses ref, not stale closure).
     v.onPickSlot = (slotId) => {
       const slot = geometry.slots.find((s) => s.id === slotId);
       if (!slot) return;
-      // Match slot texture name to an EditTarget
-      const texName = slot.name; // slot.name = shader filename; actual tex name on material
+      const currentTargets = targetsRef.current;
       const match =
-        targets.find((t) => t.name === slot.name) ||
-        targets.find((t) => slot.name.toLowerCase().includes(t.name.toLowerCase())) ||
+        currentTargets.find((t) => t.name === slot.textureHint) ||
+        currentTargets.find((t) => t.name === slot.name) ||
+        currentTargets.find((t) => slot.name.toLowerCase().includes(t.name.toLowerCase())) ||
         null;
-      if (match) { selectTarget(match.id); setView('editor'); }
+      if (match) { selectTarget(match.id); }
       v.highlightSlot(slotId);
     };
 
     viewerRef.current = v;
     return () => { v.dispose(); viewerRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geometry]);
+  }, [geometry, view]);
 
   // ── Folder workflow ──────────────────────────────────────────────────────────
   const openFolder = useCallback(async () => {
@@ -448,6 +455,24 @@ export default function LiveryEditor() {
       {/* RAW TEXTURE BROWSER */}
       {phase === 'edit' && view === 'browser' && (
         <div className="flex-1 overflow-y-auto p-5">
+          {/* 3D model ready banner */}
+          {geometry && (
+            <div className="mb-3 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-2.5">
+              <Car size={14} className="text-emerald-400 shrink-0" />
+              <p className="text-[11px] text-emerald-300 flex-1">
+                Vehicle model loaded — <b>{diagnostics?.summary.meshCount} meshes</b>, <b>{diagnostics?.summary.vertexCount?.toLocaleString()} vertices</b>, <b>{diagnostics?.summary.shaderCount} shaders</b>
+              </p>
+              <button onClick={() => setView('editor')} className="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 font-medium whitespace-nowrap">View 3D →</button>
+            </div>
+          )}
+          {/* geometry failure notice */}
+          {!geometry && geomReason && (
+            <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 flex items-center gap-2.5">
+              <Wand2 size={13} className="text-amber-400 shrink-0" />
+              <p className="text-[11px] text-amber-300/80 flex-1">{geomReason}</p>
+              <button onClick={() => setShowDiag(true)} className="text-[10px] px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-200 hover:bg-amber-500/25 whitespace-nowrap">Diagnostics</button>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-3">
             <p className="text-[11px] uppercase tracking-widest text-surface-600">
               Raw Texture Browser — {diagnostics?.summary.totalTexturesFound ?? 0} textures · {diagnostics?.summary.totalEditable ?? 0} decoded · {diagnostics?.summary.totalRejected ?? 0} failed
@@ -723,13 +748,42 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                   </div>
                   {gd && (
                     <div className="px-3 mt-1 space-y-0.5">
+                      {/* RSC7 container details */}
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono">
-                        <span>v{gd.version} · sys {fmtBytes(gd.systemSize)} · gfx {fmtBytes(gd.graphicsSize)}</span>
-                        <span>drawable@0x{gd.drawableBase.toString(16)}</span>
-                        <span>{gd.shaderCount} shaders · {gd.modelsHighCount} models · {gd.geometryCount} geos</span>
-                        <span>{gd.totalVertices.toLocaleString()} verts · {gd.totalTriangles.toLocaleString()} tris</span>
-                        {gd.vertexStrides.length > 0 && <span>strides: {gd.vertexStrides.join(', ')}</span>}
+                        <span className={`font-semibold ${gd.rsc7Magic ? 'text-emerald-300' : 'text-red-300'}`}>RSC7:{gd.rsc7Magic ? 'yes' : 'NO'}</span>
+                        <span>v{gd.rsc7Version}</span>
+                        <span className={`font-semibold ${gd.decompressMethod !== 'failed' ? 'text-emerald-300' : 'text-red-300'}`}>decompress:{gd.decompressMethod}</span>
+                        <span>sys {fmtBytes(gd.rsc7SystemSize)} · gfx {fmtBytes(gd.rsc7GraphicsSize)} · inflated {fmtBytes(gd.decompressedSize)}</span>
                       </div>
+                      {gd.payloadPeekHex && (
+                        <p className="text-[9px] text-surface-600 font-mono">payload[0..15]: <span className="text-amber-200">{gd.payloadPeekHex}</span></p>
+                      )}
+                      {gd.failReason && (
+                        <p className="text-[9px] text-red-300/80 font-mono">fail: {gd.failReason}</p>
+                      )}
+                      {/* Geometry parse details */}
+                      {gd.decompressMethod !== 'failed' && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono mt-0.5">
+                          <span>drawable@0x{gd.drawableBase >= 0 ? gd.drawableBase.toString(16) : '-1'}</span>
+                          {gd.drawableLodUsed && <span>lod:{gd.drawableLodUsed}</span>}
+                          <span>{gd.shaderCount} shaders · {gd.modelsFound} models · {gd.geometryCount} geos</span>
+                          <span>{gd.totalVertices.toLocaleString()} verts · {gd.totalTriangles.toLocaleString()} tris</span>
+                          {gd.vertexStrides.length > 0 && <span>strides: {gd.vertexStrides.join(', ')}</span>}
+                        </div>
+                      )}
+                      {/* Top probe results */}
+                      {gd.probeResults.length > 0 && gd.geometryCount === 0 && (
+                        <details className="mt-1">
+                          <summary className="text-[9px] text-cyan-300 cursor-pointer">Probe scores (top 8 drawable candidates)</summary>
+                          <div className="mt-1 space-y-0.5">
+                            {gd.probeResults.slice(0, 8).map((p, k) => (
+                              <p key={k} className={`text-[9px] font-mono ${p.score >= 20 ? 'text-emerald-300' : 'text-surface-500'}`}>
+                                base=0x{p.base.toString(16).padStart(3,'0')} score={p.score} {p.desc}
+                              </p>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                       {gd.shaders.length > 0 && (
                         <div className="mt-1 space-y-0.5">
                           {gd.shaders.slice(0, 6).map((sh, k) => (
@@ -742,7 +796,7 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                         </div>
                       )}
                       {gd.notes.map((n, k) => <p key={k} className="text-[9px] text-cyan-300/80">{n}</p>)}
-                      {gd.warnings.map((n, k) => <p key={k} className="text-[9px] text-amber-300/80">⚠ {n}</p>)}
+                      {gd.warnings.slice(0, 10).map((n, k) => <p key={k} className="text-[9px] text-amber-300/80">⚠ {n}</p>)}
                       {gd.errors.map((n, k) => <p key={k} className="text-[9px] text-red-300/80">✕ {n}</p>)}
                       {(gd.systemHeaderHex || gd.drawableHeaderHex) && (
                         <details className="mt-1">
@@ -750,13 +804,17 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                           <div className="mt-1 space-y-2">
                             {gd.systemHeaderHex && (
                               <div>
-                                <p className="text-[8px] text-surface-600 mb-0.5">System segment header (fragType root):</p>
+                                <p className="text-[8px] text-surface-600 mb-0.5">
+                                  {gd.decompressMethod !== 'failed'
+                                    ? 'Decompressed system segment (first 0x100 bytes):'
+                                    : 'Raw RSC7 file header (first 0x40 bytes — before decompression):'}
+                                </p>
                                 <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-x-auto font-mono">{gd.systemHeaderHex}</pre>
                               </div>
                             )}
                             {gd.drawableHeaderHex && (
                               <div>
-                                <p className="text-[8px] text-surface-600 mb-0.5">Drawable header (ShaderGroup@+0x10, ModelsHigh@+0x50):</p>
+                                <p className="text-[8px] text-surface-600 mb-0.5">Drawable header @ 0x{gd.drawableBase.toString(16)} (ShaderGroup@+0x10, Models@+0x50):</p>
                                 <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-x-auto font-mono">{gd.drawableHeaderHex}</pre>
                               </div>
                             )}

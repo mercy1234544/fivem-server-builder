@@ -30,7 +30,6 @@ export interface YftDiag {
   fileSize: number;
   isRSC7: boolean;
   note: string;
-  /** Full geometry diagnostics when parse was attempted. */
   geometryDiag?: YftDiagnostics;
 }
 
@@ -58,11 +57,12 @@ export interface VehicleDiagnostics {
     triangleCount: number;
     shaderCount: number;
     materialCount: number;
+    decompressMethod: string;
   };
 }
 
 function b64ToBuffer(b64: string): ArrayBuffer {
-  const bin = atob(b64);
+  const bin   = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
@@ -90,6 +90,7 @@ export async function loadVehicle(
       totalTexturesFound: 0, totalEditable: 0, totalRejected: 0,
       geometryDecoded: false, meshCount: 0, vertexCount: 0,
       triangleCount: 0, shaderCount: 0, materialCount: 0,
+      decompressMethod: '',
     },
   };
 
@@ -129,18 +130,31 @@ export async function loadVehicle(
     textures.map((t) => [t.name, t.imageData])
   );
 
-  // ── 2) YFT file scanning (diagnostics even for non-parsed) ──────────────────
-  const yftPaths = [vehicle.yft, vehicle.hiYft].filter(Boolean) as string[];
-  for (const p of yftPaths) {
+  // ── 2) YFT scanning + geometry ──────────────────────────────────────────────
+  // Read the model file ONCE and reuse the same buffer for both diagnostics
+  // and geometry parsing — avoids any double-read discrepancy.
+  onStage?.('geometry', 'Building vehicle preview');
+
+  // Prefer the hi-poly .yft for the preview if present.
+  const modelPath = vehicle.hiYft || vehicle.yft;
+  let geometry: LoadedVehicle | null = null;
+  let geometryReason: string | undefined;
+
+  // Build YFT diag entries for every detected YFT, but only fully parse the chosen model.
+  const allYftPaths = [vehicle.yft, vehicle.hiYft].filter(Boolean) as string[];
+  const yftBuffers  = new Map<string, ArrayBuffer>();
+
+  for (const p of allYftPaths) {
     try {
       const buf   = await readFileBuffer(p);
       const bytes = new Uint8Array(buf);
+      yftBuffers.set(p, buf);
       diagnostics.yfts.push({
         path: p, fileName: fileName(p),
         isHi: /_hi\.yft$/i.test(p),
         fileSize: buf.byteLength,
         isRSC7: isRSC7(bytes),
-        note: isRSC7(bytes) ? 'RSC7 resource detected' : 'Not RSC7',
+        note: isRSC7(bytes) ? 'RSC7 detected' : 'Not RSC7 — unusual format',
       });
     } catch (e: any) {
       diagnostics.yfts.push({
@@ -150,48 +164,51 @@ export async function loadVehicle(
     }
   }
 
-  // ── 3) Geometry from native YFT engine ─────────────────────────────────────
-  onStage?.('geometry', 'Building vehicle preview');
-  let geometry: LoadedVehicle | null = null;
-  let geometryReason: string | undefined;
-
-  // Prefer the hi-poly .yft for the preview if present, otherwise standard.
-  const modelPath = vehicle.hiYft || vehicle.yft;
   if (modelPath) {
-    try {
-      const buf    = await readFileBuffer(modelPath);
-      const result = await parseYftGeometry(buf);
+    const buf = yftBuffers.get(modelPath);
+    if (buf) {
+      try {
+        const result = await parseYftGeometry(buf);
 
-      // Attach geometry diagnostics to the YFT entry.
-      const yftEntry = diagnostics.yfts.find((y) => y.path === modelPath);
-      if (yftEntry) yftEntry.geometryDiag = result.diagnostics;
+        // Attach geometry diagnostics to the YFT diag entry.
+        const yftEntry = diagnostics.yfts.find((y) => y.path === modelPath);
+        if (yftEntry) yftEntry.geometryDiag = result.diagnostics;
 
-      if (result.drawable) {
-        geometry = buildVehicleFromDrawable(result.drawable, ytdTextureMap);
+        diagnostics.summary.decompressMethod = result.diagnostics.decompressMethod;
 
-        diagnostics.summary.geometryDecoded = true;
-        diagnostics.summary.meshCount       = geometry.meshes.length;
-        diagnostics.summary.materialCount   = geometry.slots.length;
-        diagnostics.summary.shaderCount     = result.drawable.shaders.length;
-        diagnostics.summary.vertexCount     = result.diagnostics.totalVertices;
-        diagnostics.summary.triangleCount   = result.diagnostics.totalTriangles;
+        if (result.drawable) {
+          geometry = buildVehicleFromDrawable(result.drawable, ytdTextureMap);
 
-        diagnostics.materials = {
-          available: true,
-          note: `${geometry.slots.length} material slots from ${result.drawable.shaders.length} shaders.`,
-        };
-      } else {
-        geometryReason = result.reason;
-        diagnostics.materials.note =
-          `YFT parse returned no drawable: ${result.reason ?? 'unknown'}`;
+          diagnostics.summary.geometryDecoded = true;
+          diagnostics.summary.meshCount       = geometry.meshes.length;
+          diagnostics.summary.materialCount   = geometry.slots.length;
+          diagnostics.summary.shaderCount     = result.drawable.shaders.length;
+          diagnostics.summary.vertexCount     = result.diagnostics.totalVertices;
+          diagnostics.summary.triangleCount   = result.diagnostics.totalTriangles;
+
+          diagnostics.materials = {
+            available: true,
+            note: `${geometry.slots.length} material slots from ${result.drawable.shaders.length} shaders.`,
+          };
+        } else {
+          geometryReason = result.reason;
+          diagnostics.materials.note =
+            `YFT parse returned no drawable: ${result.reason ?? 'unknown'}`;
+        }
+      } catch (e: any) {
+        geometryReason = e?.message || 'Geometry load threw an exception.';
+        diagnostics.materials.note = geometryReason ?? '';
+
+        const yftEntry = diagnostics.yfts.find((y) => y.path === modelPath);
+        if (yftEntry) yftEntry.note += ` — exception: ${geometryReason}`;
       }
-    } catch (e: any) {
-      geometryReason = e?.message || 'Geometry load threw an exception.';
-      diagnostics.materials.note = geometryReason ?? '';
+    } else {
+      geometryReason = 'YFT file could not be read.';
+      diagnostics.materials.note = geometryReason;
     }
   } else {
     geometryReason = 'No .yft model found for this vehicle.';
-    diagnostics.materials.note = 'No YFT file found.';
+    diagnostics.materials.note = 'No YFT file detected in the resource folder.';
   }
 
   onStage?.('done');
