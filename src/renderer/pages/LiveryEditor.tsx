@@ -15,6 +15,7 @@ import type { VehicleTexture } from '../services/rage/ytd';
 import type { LoadedVehicle } from '../services/glbVehicle';
 import { VehicleViewer } from '../services/vehicleViewer';
 import { LIVERY_ASSETS, applyAsset, assetThumbnail } from '../services/liveryAssets';
+import { replaceTexturesInYTD } from '../services/rage/ytdWriter';
 import { EXPORTERS, downloadResult } from '../services/liveryExport';
 
 // ── Layer model ─────────────────────────────────────────────────────────────
@@ -320,23 +321,61 @@ export default function LiveryEditor() {
   }
 
   // ── Save / export ────────────────────────────────────────────────────────────
+  function bufToB64(buf: Uint8Array): string {
+    let b64 = ''; const chunk = 65536;
+    for (let i = 0; i < buf.length; i += chunk)
+      b64 += btoa(String.fromCharCode(...Array.from(buf.subarray(i, i + chunk))));
+    return b64;
+  }
+  function b64ToBuf(b64: string): ArrayBuffer {
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
   async function saveActiveTexture() {
     const t = targetById(selected); if (!t) { toast.error('No texture selected'); return; }
     const e = edits.current.get(t.id); if (!e) { toast.error('No edits to save'); return; }
-    const defPath = `${t.name}.png`;
     const filePath = await window.electronAPI.livery.showSaveDialog({
-      defaultPath: defPath,
+      defaultPath: `${t.name}.png`,
       filters: [{ name: 'PNG Image', extensions: ['png'] }, { name: 'All Files', extensions: ['*'] }],
     });
     if (!filePath) return;
     e.canvas.toBlob(async (blob) => {
       if (!blob) { toast.error('Export failed'); return; }
-      const ab = await blob.arrayBuffer();
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+      const b64 = bufToB64(new Uint8Array(await blob.arrayBuffer()));
       const ok = await window.electronAPI.livery.writeFile(filePath, b64);
       if (ok) toast.success(`Saved to ${filePath.split(/[\\/]/).pop()}`);
       else toast.error('Write failed');
     }, 'image/png');
+  }
+
+  async function saveToYTD() {
+    if (!diagnostics) { toast.error('Load a vehicle first'); return; }
+    const t = targetById(selected); if (!t) { toast.error('Select a texture to save'); return; }
+    const e = edits.current.get(t.id); if (!e) { toast.error('No edits on this texture'); return; }
+    const ytdEntry = diagnostics.ytds.find((y) => y.textures.some((tx) => tx.name === t.name));
+    if (!ytdEntry) { toast.error('Source YTD not found in diagnostics'); return; }
+    const tid = toast.loading('Encoding and writing YTD…');
+    try {
+      const origB64 = await window.electronAPI.livery.readBinary(ytdEntry.path);
+      const origBuf = b64ToBuf(origB64);
+      const writeResult = await replaceTexturesInYTD(origBuf, [{ name: t.name, canvas: e.canvas }]);
+      if (writeResult.replaced.length === 0) {
+        toast.dismiss(tid);
+        const reason = writeResult.skipped.find((s) => s.name === t.name)?.reason || 'Unknown';
+        toast.error(`Save failed: ${reason}`); return;
+      }
+      // Backup original
+      await window.electronAPI.livery.writeFile(ytdEntry.path + '.bak', origB64);
+      // Write modified YTD
+      await window.electronAPI.livery.writeFile(ytdEntry.path, bufToB64(new Uint8Array(writeResult.bytes)));
+      toast.dismiss(tid);
+      toast.success(`Saved to ${ytdEntry.fileName} · backup written to .ytd.bak`);
+    } catch (err: any) {
+      toast.dismiss(tid);
+      toast.error(err?.message || 'YTD save failed');
+    }
   }
 
   function ensurePaintLayer(e: TargetEdit): Layer {
@@ -638,7 +677,10 @@ export default function LiveryEditor() {
           )}
           {phase === 'edit' && (
             <>
-              <button onClick={saveActiveTexture} disabled={!curEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/20 text-emerald-200 border border-emerald-500/30 rounded-lg hover:bg-emerald-600/35 disabled:opacity-40 transition-all">
+              <button onClick={saveToYTD} disabled={!curEdit || !diagnostics} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/25 text-emerald-200 border border-emerald-500/30 rounded-lg hover:bg-emerald-600/40 disabled:opacity-40 transition-all" title="Write edited texture back into the original .ytd file">
+                Save to YTD
+              </button>
+              <button onClick={saveActiveTexture} disabled={!curEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/10 text-emerald-300 border border-emerald-500/20 rounded-lg hover:bg-emerald-600/25 disabled:opacity-40 transition-all">
                 <Download size={12} /> Save PNG
               </button>
               <div className="flex items-center rounded-lg overflow-hidden border border-pink-500/30">
