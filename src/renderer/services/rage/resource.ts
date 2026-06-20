@@ -59,10 +59,19 @@ export function isRSC7(bytes: Uint8Array): boolean {
 // ── Base64 helpers (chunk-safe for large buffers) ────────────────────────────
 
 function bufToB64(buf: Uint8Array): string {
+  // Chunk size MUST be a multiple of 3 so each btoa() call produces no
+  // mid-stream padding ('='). Embedded padding chars in a concatenated base64
+  // string misalign Node.js's decoder and produce garbled output.
+  // 49152 = 48 × 1024 = 3 × 16384. The final (possibly shorter) chunk may
+  // still have trailing '==' but that is correct and expected at the very end.
+  const CHUNK = 49152;
   let b64 = '';
-  const chunk = 65536;
-  for (let i = 0; i < buf.length; i += chunk)
-    b64 += btoa(String.fromCharCode(...Array.from(buf.subarray(i, i + chunk))));
+  for (let i = 0; i < buf.length; i += CHUNK) {
+    const end = Math.min(i + CHUNK, buf.length);
+    let binary = '';
+    for (let j = i; j < end; j++) binary += String.fromCharCode(buf[j]);
+    b64 += btoa(binary);
+  }
   return b64;
 }
 
@@ -90,7 +99,11 @@ async function tryDecompressViaNode(
     const method = format === 'deflate-raw' ? 'inflateRaw' : 'inflate';
     const result: string | null = await livery[method](b64);
     if (!result) {
-      log.push(`Node zlib (${format}): returned null — compression format mismatch or corrupt data`);
+      log.push(`Node zlib (${format}): IPC returned null (no result)`);
+      return null;
+    }
+    if (result.startsWith('ERR:')) {
+      log.push(`Node zlib (${format}): decompression failed — ${result.slice(4)}`);
       return null;
     }
     const out = b64ToBuf(result);
