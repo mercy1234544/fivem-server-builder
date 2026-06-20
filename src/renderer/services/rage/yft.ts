@@ -265,13 +265,37 @@ interface VBResult {
 }
 
 function readVertexBuffer(r: ResourceReader, vbBase: number, diag: YftDiagnostics): VBResult | null {
-  const vertCount = su16(r, vbBase + 0x10);
-  const stride    = su16(r, vbBase + 0x14);
+  // grcVertexBuffer layout in GTA V x64:
+  //  +0x00 vtable (8b)
+  //  +0x08 blockmap (8b)
+  //  +0x10 VertexCount (u16 or low u16 of u32)
+  //  +0x14 Stride (u16) — some builds have it here, others at +0x16
+  //  +0x18 VertexData ptr (u64)
+  //  +0x20 or +0x28 VertexDeclaration ptr (u64)
+  //
+  // We try two layout variants and pick whichever produces valid values.
+
+  const vertCountA = su16(r, vbBase + 0x10);
+  const strideA    = su16(r, vbBase + 0x14);
+  const strideB    = su16(r, vbBase + 0x16);
+
+  let vertCount = vertCountA;
+  let stride    = (strideA >= 12 && strideA <= 256) ? strideA : strideB;
+
+  // Also try reading count as u32 in case it overflows u16 boundary
+  if (vertCount === 0) {
+    const vc32 = su32(r, vbBase + 0x10);
+    if (vc32 > 0 && vc32 <= 200_000) vertCount = vc32;
+  }
+
   const vDataPtr  = sptr(r, vbBase + 0x18);
-  const vDeclPtr  = sptr(r, vbBase + 0x20);
+  // VertexDecl can be at +0x20 or +0x28 depending on build — try both.
+  const vDeclPtrA = sptr(r, vbBase + 0x20);
+  const vDeclPtrB = sptr(r, vbBase + 0x28);
+  const vDeclPtr  = (r.resolve(vDeclPtrA) >= 0) ? vDeclPtrA : vDeclPtrB;
 
   if (vertCount === 0 || vertCount > 200_000 || stride < 12 || stride > 256) {
-    diag.warnings.push(`VB@0x${vbBase.toString(16)}: bad count=${vertCount} stride=${stride}`);
+    diag.warnings.push(`VB@0x${vbBase.toString(16)}: bad count=${vertCount} stride=${stride} (tried +0x14=${strideA} +0x16=${strideB})`);
     return null;
   }
 
@@ -346,18 +370,66 @@ function readIndexBuffer(r: ResourceReader, ibBase: number, diag: YftDiagnostics
 }
 
 // ── crGeometry reader ─────────────────────────────────────────────────────────
+//
+// grcGeometryQR layout (GTA V):
+//   +0x00  vtable (u64)
+//   +0x08  pgBase blockmap (u64)
+//   +0x10  VertexBuffers — ResourcePointerArray64 (ptr to VB* array, count, capacity, pad)
+//   +0x20  IndexBuffers  — ResourcePointerArray64
+//
+// ResourcePointerArray64 = { u64 ptrToArray; u16 count; u16 cap; u32 pad }
+// → geoBase+0x10 holds a u64 that points to the ARRAY of VB pointers.
+// → We need TWO resolve calls: once to get the VB ptr array, again to get the VB struct.
+
+function resolveArrayElement0(r: ResourceReader, arrayFieldBase: number): number {
+  // arrayFieldBase = offset of the ResourcePointerArray64 struct in the buffer
+  // Returns the resolved offset of the first element, or -1.
+  const arrayPtr = sptr(r, arrayFieldBase);       // ptr to the array of ptrs
+  const arrayOff = r.resolve(arrayPtr);            // absolute offset of first ptr in the array
+  if (arrayOff < 0) return -1;
+  const elemPtr = sptr(r, arrayOff);               // first element ptr
+  return r.resolve(elemPtr);                       // resolved struct offset
+}
 
 function readGeometry(
   r: ResourceReader, geoBase: number, shaderIndex: number,
   geoIdx: number, diag: YftDiagnostics
 ): ParsedGeometry | null {
-  const vbPtr = sptr(r, geoBase + 0x10);
-  const ibPtr = sptr(r, geoBase + 0x20);
-  const vbOff = r.resolve(vbPtr);
-  const ibOff = r.resolve(ibPtr);
+  // Two-level dereference (ResourcePointerArray64 → element → struct)
+  let vbOff = resolveArrayElement0(r, geoBase + 0x10);
+  let ibOff = resolveArrayElement0(r, geoBase + 0x20);
 
-  if (vbOff < 0) { diag.warnings.push(`Geo[${geoIdx}]: VB unresolved 0x${vbPtr.toString(16)}`); return null; }
-  if (ibOff < 0) { diag.warnings.push(`Geo[${geoIdx}]: IB unresolved 0x${ibPtr.toString(16)}`); return null; }
+  // Some older/modded files use a simple direct ptr at this offset instead of RPA64.
+  // Fall back to single-level if the struct at the two-level result looks invalid.
+  if (vbOff >= 0) {
+    const vc = su16(r, vbOff + 0x10);
+    const st = su16(r, vbOff + 0x14);
+    if (vc === 0 || vc > 200_000 || st < 12 || st > 256) vbOff = -1;
+  }
+  if (vbOff < 0) {
+    const fallback = r.resolve(sptr(r, geoBase + 0x10));
+    const vc = su16(r, fallback + 0x10), st = su16(r, fallback + 0x14);
+    if (vc > 0 && vc <= 200_000 && st >= 12 && st <= 256) vbOff = fallback;
+  }
+
+  if (ibOff >= 0) {
+    const ic = su32(r, ibOff + 0x10);
+    if (ic === 0 || ic > 5_000_000) ibOff = -1;
+  }
+  if (ibOff < 0) {
+    const fallback = r.resolve(sptr(r, geoBase + 0x20));
+    const ic = su32(r, fallback + 0x10);
+    if (ic > 0 && ic <= 5_000_000) ibOff = fallback;
+  }
+
+  if (vbOff < 0) {
+    diag.warnings.push(`Geo[${geoIdx}]@0x${geoBase.toString(16)}: VB unresolved (both RPA64 and direct tried)`);
+    return null;
+  }
+  if (ibOff < 0) {
+    diag.warnings.push(`Geo[${geoIdx}]@0x${geoBase.toString(16)}: IB unresolved (both RPA64 and direct tried)`);
+    return null;
+  }
 
   const vb = readVertexBuffer(r, vbOff, diag);
   if (!vb) return null;
