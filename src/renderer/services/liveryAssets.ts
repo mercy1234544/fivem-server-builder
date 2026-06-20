@@ -4,9 +4,22 @@
 export interface LiveryAsset {
   id: string;
   name: string;
-  category: 'police' | 'fire' | 'ems' | 'racing' | 'patterns' | 'badges';
+  category: 'police' | 'fire' | 'ems' | 'racing' | 'patterns' | 'badges' | 'numbers';
   thumbnail: string; // data URL for 48x48 preview
   render: (w: number, h: number) => HTMLCanvasElement;
+}
+
+export type NumberStyle = 'block' | 'outline' | 'racing' | 'badge' | 'jersey';
+
+export interface NumberOptions {
+  text: string;
+  style: NumberStyle;
+  fillColor: string;
+  outlineColor: string;
+  bgColor: string;
+  posX: number; // 0-1 relative to canvas
+  posY: number; // 0-1 relative to canvas
+  scale: number; // 0.1-2.0, where 1.0 = default font size
 }
 
 function makeCanvas(w: number, h: number): HTMLCanvasElement {
@@ -315,6 +328,176 @@ export const LIVERY_ASSETS: Omit<LiveryAsset, 'thumbnail'>[] = [
     },
   },
 ];
+
+// ── Additional presets added after initial batch ─────────────────────────────
+
+const additionalAssets: Omit<LiveryAsset, 'thumbnail'>[] = [
+  // Reflective tape stripe
+  {
+    id: 'pattern_reflective_tape',
+    name: 'Reflective Tape',
+    category: 'patterns',
+    render: (w, h) => {
+      const c = makeCanvas(w, h); const ctx = c.getContext('2d')!;
+      const stripeH = h * 0.06; const y = h * 0.44;
+      // Alternating yellow/silver stripes like DOT reflective tape
+      const segW = w / 20;
+      for (let i = 0; i < 20; i++) {
+        ctx.fillStyle = i % 2 === 0 ? '#ffee00' : '#cccccc';
+        ctx.fillRect(i * segW, y, segW, stripeH);
+      }
+      // Thin border
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+      ctx.strokeRect(0, y, w, stripeH);
+      return c;
+    },
+  },
+  // Police door badge area
+  {
+    id: 'police_door_panel',
+    name: 'Police Door Panel',
+    category: 'police',
+    render: (w, h) => {
+      const c = makeCanvas(w, h); const ctx = c.getContext('2d')!;
+      // Dark blue lower body panel
+      ctx.fillStyle = '#0a1628'; ctx.fillRect(0, h * 0.5, w, h * 0.5);
+      // White band at split
+      ctx.fillStyle = '#e8e8e8'; ctx.fillRect(0, h * 0.47, w, h * 0.06);
+      // Gold pinstripe
+      ctx.fillStyle = '#ffd700'; ctx.fillRect(0, h * 0.53, w, h * 0.01);
+      return c;
+    },
+  },
+  // EMS Star of Life overlay
+  {
+    id: 'ems_star_overlay',
+    name: 'EMS Star of Life',
+    category: 'ems',
+    render: (w, h) => {
+      const c = makeCanvas(w, h); const ctx = c.getContext('2d')!;
+      const cx = w / 2, cy = h / 2, r = Math.min(w, h) * 0.25;
+      ctx.strokeStyle = '#00aa44'; ctx.fillStyle = '#00aa44'; ctx.lineWidth = r * 0.15;
+      // 6-pointed star of life (cross + rotated cross)
+      for (let angle = 0; angle < 3; angle++) {
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate((angle * Math.PI) / 3);
+        const arm = r; const thick = r * 0.28;
+        ctx.fillRect(-thick / 2, -arm, thick, arm * 2);
+        ctx.restore();
+      }
+      // Center circle
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+      ctx.strokeStyle = '#00aa44'; ctx.lineWidth = 3; ctx.stroke();
+      return c;
+    },
+  },
+  // Racing stripe multicolor
+  {
+    id: 'racing_le_mans_stripe',
+    name: 'Le Mans Racing Stripes',
+    category: 'racing',
+    render: (w, h) => stripeCanvas(w, h, [
+      { y: 0.36, height: 0.04, color: '#0033aa' },
+      { y: 0.40, height: 0.02, color: '#e8e8e8' },
+      { y: 0.42, height: 0.04, color: '#cc0000' },
+    ]),
+  },
+  // Warning stripes
+  {
+    id: 'pattern_warning_stripes',
+    name: 'Warning Stripes',
+    category: 'patterns',
+    render: (w, h) => diagonalStripeCanvas(w, h, '#ffcc00', '#222222', 45, 8),
+  },
+  // Police "Thin Blue Line" flag
+  {
+    id: 'police_thin_blue_flag',
+    name: 'Thin Blue Line Flag',
+    category: 'police',
+    render: (w, h) => {
+      const c = makeCanvas(w, h); const ctx = c.getContext('2d')!;
+      // Black-white-black with blue stripe
+      const bands = [
+        { y: 0, h: 0.42, color: '#111' },
+        { y: 0.42, h: 0.08, color: '#1a5fb4' },
+        { y: 0.50, h: 0.50, color: '#111' },
+      ];
+      for (const b of bands) { ctx.fillStyle = b.color; ctx.fillRect(0, b.y * h, w, b.h * h); }
+      return c;
+    },
+  },
+];
+
+LIVERY_ASSETS.push(...additionalAssets);
+
+// ── Number generator ──────────────────────────────────────────────────────────
+
+export function renderNumberSticker(w: number, h: number, opts: NumberOptions): HTMLCanvasElement {
+  const c = makeCanvas(w, h); const ctx = c.getContext('2d')!;
+  const cx = w * opts.posX, cy = h * opts.posY;
+  const baseFontSize = Math.min(w, h) * 0.35 * opts.scale;
+
+  switch (opts.style) {
+    case 'block': {
+      ctx.font = `900 ${baseFontSize}px "Arial Black", Arial, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = opts.outlineColor; ctx.lineWidth = baseFontSize * 0.12; ctx.lineJoin = 'round';
+      ctx.strokeText(opts.text, cx, cy);
+      ctx.fillStyle = opts.fillColor; ctx.fillText(opts.text, cx, cy);
+      break;
+    }
+    case 'outline': {
+      ctx.font = `900 ${baseFontSize}px "Arial Black", Arial, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = opts.fillColor; ctx.lineWidth = baseFontSize * 0.08; ctx.lineJoin = 'round';
+      ctx.strokeText(opts.text, cx, cy);
+      break;
+    }
+    case 'racing': {
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.08);
+      ctx.font = `italic 900 ${baseFontSize}px "Arial Black", Impact, Arial, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = opts.outlineColor; ctx.lineWidth = baseFontSize * 0.1; ctx.lineJoin = 'round';
+      ctx.strokeText(opts.text, 0, 0);
+      ctx.fillStyle = opts.fillColor; ctx.fillText(opts.text, 0, 0);
+      ctx.restore();
+      break;
+    }
+    case 'badge': {
+      // Circle or rounded rect background
+      const pad = baseFontSize * 0.3;
+      ctx.font = `900 ${baseFontSize}px "Arial Black", Arial, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const metrics = ctx.measureText(opts.text);
+      const bw = metrics.width + pad * 2, bh = baseFontSize + pad * 2;
+      const rx = bw / 2 * 0.6;
+      const bx = cx - bw / 2, by = cy - bh / 2;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, rx);
+      ctx.fillStyle = opts.bgColor; ctx.fill();
+      ctx.strokeStyle = opts.outlineColor; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = opts.fillColor; ctx.fillText(opts.text, cx, cy);
+      break;
+    }
+    case 'jersey': {
+      ctx.font = `900 ${baseFontSize}px "Arial Black", Impact, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const metrics = ctx.measureText(opts.text);
+      const pad = baseFontSize * 0.2;
+      const bw = metrics.width + pad * 2, bh = baseFontSize + pad * 2;
+      // Background swatch
+      ctx.fillStyle = opts.bgColor;
+      ctx.fillRect(cx - bw / 2, cy - bh / 2, bw, bh);
+      // Number
+      ctx.fillStyle = opts.fillColor; ctx.fillText(opts.text, cx, cy);
+      // Bottom stripe accent
+      ctx.fillStyle = opts.outlineColor;
+      ctx.fillRect(cx - bw / 2, cy + bh / 2 - 6, bw, 6);
+      break;
+    }
+  }
+  return c;
+}
 
 // Generate a small thumbnail for the asset picker
 export function assetThumbnail(asset: Omit<LiveryAsset, 'thumbnail'>): string {

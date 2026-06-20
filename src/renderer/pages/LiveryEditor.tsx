@@ -14,7 +14,7 @@ import { loadVehicle, type DetectedVehicle, type LoadStage, type VehicleDiagnost
 import type { VehicleTexture } from '../services/rage/ytd';
 import type { LoadedVehicle } from '../services/glbVehicle';
 import { VehicleViewer } from '../services/vehicleViewer';
-import { LIVERY_ASSETS, applyAsset, assetThumbnail } from '../services/liveryAssets';
+import { LIVERY_ASSETS, applyAsset, assetThumbnail, renderNumberSticker, type NumberStyle, type NumberOptions } from '../services/liveryAssets';
 import { replaceTexturesInYTD } from '../services/rage/ytdWriter';
 import { EXPORTERS, downloadResult } from '../services/liveryExport';
 
@@ -81,6 +81,12 @@ export default function LiveryEditor() {
   const [showAllTex, setShowAllTex] = useState(false);
   const [showAssets, setShowAssets] = useState(false);
   const [assetCat, setAssetCat] = useState<string>('police');
+  const [numText, setNumText] = useState('99');
+  const [numStyle, setNumStyle] = useState<NumberStyle>('block');
+  const [numFill, setNumFill] = useState('#ffffff');
+  const [numOutline, setNumOutline] = useState('#000000');
+  const [numBg, setNumBg] = useState('#1a2b6b');
+  const [numScale, setNumScale] = useState(1.0);
   const [view, setView] = useState<'browser' | 'editor'>('browser');
   const [wireframe, setWireframe] = useState(false);
   const replaceTargetRef = useRef<string | null>(null);
@@ -349,6 +355,21 @@ export default function LiveryEditor() {
     const c = applyAsset(asset, e.w, e.h);
     addLayer(e, t.id, { kind: 'shape', name: asset.name, canvas: c, w: e.w, h: e.h, opacity: 85 });
     toast.success(`Applied: ${asset.name}`);
+  }
+
+  function applyNumberSticker() {
+    const t = targetById(selected); if (!t) { toast.error('Select a texture first'); return; }
+    if (!numText.trim()) { toast.error('Enter a number or text'); return; }
+    const e = ensureEdit(t);
+    pushUndo(t.id);
+    const opts: NumberOptions = {
+      text: numText.trim(), style: numStyle,
+      fillColor: numFill, outlineColor: numOutline, bgColor: numBg,
+      posX: 0.5, posY: 0.5, scale: numScale,
+    };
+    const c = renderNumberSticker(e.w, e.h, opts);
+    addLayer(e, t.id, { kind: 'text', name: `#${numText}`, canvas: c, w: e.w, h: e.h });
+    toast.success(`Applied number sticker: ${numText}`);
   }
 
   // ── Save / export ────────────────────────────────────────────────────────────
@@ -1109,7 +1130,7 @@ export default function LiveryEditor() {
               </div>
               {/* Category tabs */}
               <div className="shrink-0 flex gap-0.5 px-3 py-2 border-b border-overlay-6 flex-wrap">
-                {(['police','fire','ems','racing','patterns','badges'] as const).map((cat) => (
+                {(['police','fire','ems','racing','patterns','badges','numbers'] as const).map((cat) => (
                   <button key={cat} onClick={() => setAssetCat(cat)}
                     className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-all ${assetCat === cat ? 'bg-primary-600/30 text-primary-200' : 'text-surface-500 hover:text-surface-300 hover:bg-overlay-4'}`}>
                     {cat}
@@ -1117,21 +1138,65 @@ export default function LiveryEditor() {
                 ))}
               </div>
               {!curTarget && <div className="flex-1 flex items-center justify-center p-5 text-[11px] text-surface-600 text-center">Select a texture first, then click an asset to apply it.</div>}
-              <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-2 content-start">
-                {LIVERY_ASSETS.filter((a) => a.category === assetCat).map((asset) => {
-                  const thumb = assetThumbnail(asset);
-                  return (
-                    <button key={asset.id} onClick={() => { applyLiveryAsset(asset.id); }}
-                      disabled={!curTarget} title={asset.name}
-                      className="flex flex-col items-center gap-1 p-1.5 rounded-lg border border-overlay-6 bg-surface-800/40 hover:bg-overlay-6 hover:border-emerald-500/30 disabled:opacity-30 transition-all group">
-                      <div className="w-full aspect-square rounded overflow-hidden bg-surface-700 border border-overlay-6">
-                        <img src={thumb} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
-                      </div>
-                      <span className="text-[9px] text-surface-500 group-hover:text-surface-200 leading-tight text-center truncate w-full">{asset.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+
+              {/* Number Generator (special panel for 'numbers' category) */}
+              {assetCat === 'numbers' && (
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  <p className="text-[10px] text-surface-500">Generate a number or text sticker as a new layer.</p>
+                  <div>
+                    <label className="text-[10px] text-surface-500 block mb-1">Text / Number</label>
+                    <input value={numText} onChange={(e) => setNumText(e.target.value)} maxLength={6}
+                      className="w-full px-2 py-1 text-sm bg-overlay-4 border border-overlay-6 rounded text-surface-100 focus:outline-none font-mono text-center" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-surface-500 block mb-1">Style</label>
+                    <select value={numStyle} onChange={(e) => setNumStyle(e.target.value as NumberStyle)}
+                      className="w-full px-2 py-1 text-xs bg-overlay-4 border border-overlay-6 rounded text-surface-200 focus:outline-none">
+                      <option value="block">Block (bold, outlined)</option>
+                      <option value="outline">Outline only</option>
+                      <option value="racing">Racing (italic)</option>
+                      <option value="badge">Badge (rounded bg)</option>
+                      <option value="jersey">Jersey (rect bg)</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><label className="text-[9px] text-surface-600 block mb-0.5">Fill</label><input type="color" value={numFill} onChange={(e) => setNumFill(e.target.value)} className="w-full h-7 rounded border border-overlay-6 cursor-pointer" /></div>
+                    <div><label className="text-[9px] text-surface-600 block mb-0.5">Outline</label><input type="color" value={numOutline} onChange={(e) => setNumOutline(e.target.value)} className="w-full h-7 rounded border border-overlay-6 cursor-pointer" /></div>
+                    {(numStyle === 'badge' || numStyle === 'jersey') && <div><label className="text-[9px] text-surface-600 block mb-0.5">Background</label><input type="color" value={numBg} onChange={(e) => setNumBg(e.target.value)} className="w-full h-7 rounded border border-overlay-6 cursor-pointer" /></div>}
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-surface-500 block mb-1">Size <span className="font-mono">{Math.round(numScale * 100)}%</span></label>
+                    <input type="range" min={20} max={200} value={Math.round(numScale * 100)} onChange={(e) => setNumScale(Number(e.target.value) / 100)} className="w-full accent-pink-500" />
+                  </div>
+                  {/* Live preview */}
+                  {curTarget && (() => {
+                    const c = renderNumberSticker(128, 128, { text: numText || '99', style: numStyle, fillColor: numFill, outlineColor: numOutline, bgColor: numBg, posX: 0.5, posY: 0.5, scale: numScale });
+                    return <div className="rounded-lg overflow-hidden border border-overlay-6 bg-[repeating-conic-gradient(#1a1c26_0_90deg,#232533_90deg_180deg)] bg-[length:12px_12px]"><img src={c.toDataURL()} className="w-full" style={{ imageRendering: 'pixelated' }} /></div>;
+                  })()}
+                  <button onClick={applyNumberSticker} disabled={!curTarget}
+                    className="w-full py-2 rounded-lg text-xs font-semibold bg-emerald-600/25 text-emerald-200 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-40 transition-all">
+                    Apply to Texture
+                  </button>
+                </div>
+              )}
+
+              {assetCat !== 'numbers' && (
+                <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-2 content-start">
+                  {LIVERY_ASSETS.filter((a) => a.category === assetCat).map((asset) => {
+                    const thumb = assetThumbnail(asset);
+                    return (
+                      <button key={asset.id} onClick={() => { applyLiveryAsset(asset.id); }}
+                        disabled={!curTarget} title={asset.name}
+                        className="flex flex-col items-center gap-1 p-1.5 rounded-lg border border-overlay-6 bg-surface-800/40 hover:bg-overlay-6 hover:border-emerald-500/30 disabled:opacity-30 transition-all group">
+                        <div className="w-full aspect-square rounded overflow-hidden bg-surface-700 border border-overlay-6">
+                          <img src={thumb} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+                        </div>
+                        <span className="text-[9px] text-surface-500 group-hover:text-surface-200 leading-tight text-center truncate w-full">{asset.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <div className="shrink-0 border-t border-overlay-6 px-4 py-2.5">
                 <p className="text-[10px] text-surface-600">Click any asset to add it as a layer on the selected texture. Adjust opacity in the Layers panel.</p>
               </div>
