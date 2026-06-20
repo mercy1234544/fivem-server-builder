@@ -7,7 +7,7 @@ import {
   FolderOpen, Box, Loader2, ChevronLeft, Wand2, Square, Stethoscope, X,
   CheckCircle2, XCircle, FileText, Image as ImageIcon,
   RotateCcw, Scan, BoxSelect, TriangleRight, Circle, Minus, Droplets,
-  Undo2, Redo2, PaintBucket, Slash,
+  Undo2, Redo2, PaintBucket, Slash, Lock, Unlock, Save,
 } from 'lucide-react';
 import { ddsToImageData, extractTexturesFromYTD } from '../services/ytdParser';
 import { loadVehicle, type DetectedVehicle, type LoadStage, type VehicleDiagnostics } from '../services/vehicleResourceLoader';
@@ -24,6 +24,7 @@ interface Layer {
   id: string; name: string; kind: LayerKind; visible: boolean; opacity: number;
   blendMode: GlobalCompositeOperation; canvas: HTMLCanvasElement;
   x: number; y: number; w: number; h: number;
+  locked?: boolean;
   text?: string; fontSize?: number; color?: string;
   textOutline?: boolean; textOutlineColor?: string; textOutlineWidth?: number;
   textShadow?: boolean; textShadowColor?: string;
@@ -273,6 +274,22 @@ export default function LiveryEditor() {
   }
 
   // ── Imports / layers ─────────────────────────────────────────────────────────
+  function loadImage(file: File): Promise<HTMLImageElement> {
+    return new Promise((res, rej) => {
+      const img = new Image(); const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Image load failed')); };
+      img.src = url;
+    });
+  }
+  function loadImageFromURL(url: string): Promise<HTMLImageElement> {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img); img.onerror = () => rej(new Error('Image load failed'));
+      img.src = url;
+    });
+  }
+
   const importTexture = useCallback(async (file: File) => {
     const t = targetById(selected); if (!t) { toast.error('Select a texture first'); return; }
     const e = ensureEdit(t);
@@ -281,12 +298,26 @@ export default function LiveryEditor() {
       let id: ImageData | null = null;
       if (name.endsWith('.dds')) id = ddsToImageData(new Uint8Array(await file.arrayBuffer()));
       else if (name.endsWith('.ytd')) { const tx = await extractTexturesFromYTD(await file.arrayBuffer()); if (tx.length) id = ddsToImageData(tx[0].ddsBytes); }
-      else if (name.match(/\.(png|jpe?g|webp|bmp)$/)) {
+      else if (name.endsWith('.svg')) {
+        const svgText = await file.text();
+        const blob = new Blob([svgText], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const img = await loadImageFromURL(url);
+        URL.revokeObjectURL(url);
+        const sw = img.naturalWidth || e.w, sh = img.naturalHeight || e.h;
+        const c = newCanvas(e.w, e.h);
+        // Scale SVG to fit the texture, centered
+        const scale = Math.min(e.w / sw, e.h / sh);
+        const dx = (e.w - sw * scale) / 2, dy = (e.h - sh * scale) / 2;
+        c.getContext('2d')!.drawImage(img, dx, dy, sw * scale, sh * scale);
+        addLayer(e, t.id, { kind: 'image', name: file.name, canvas: c, w: e.w, h: e.h });
+        toast.success(`Imported SVG: ${file.name}`); return;
+      } else if (name.match(/\.(png|jpe?g|webp|bmp)$/)) {
         const img = await loadImage(file); const c = newCanvas(img.naturalWidth, img.naturalHeight);
         c.getContext('2d')!.drawImage(img, 0, 0);
         addLayer(e, t.id, { kind: 'image', name: file.name, canvas: c, w: img.naturalWidth, h: img.naturalHeight });
         toast.success(`Added ${file.name}`); return;
-      } else { toast.error('Supported: .dds .ytd .png .jpg'); return; }
+      } else { toast.error('Supported: .dds .ytd .svg .png .jpg'); return; }
       if (!id) { toast.error('Could not decode texture'); return; }
       addLayer(e, t.id, { kind: 'image', name: file.name, canvas: canvasFromImageData(id), w: id.width, h: id.height });
       toast.success(`Added ${file.name}`);
@@ -378,7 +409,49 @@ export default function LiveryEditor() {
     }
   }
 
+  async function batchSaveToYTD() {
+    if (!diagnostics || !activeVehicle) { toast.error('Load a vehicle first'); return; }
+    const editedTargets = targets.filter((t) => edits.current.has(t.id));
+    if (editedTargets.length === 0) { toast.error('No textures have been edited'); return; }
+    // Group by source YTD
+    const byYtd = new Map<string, Array<{ name: string; canvas: HTMLCanvasElement }>>();
+    for (const t of editedTargets) {
+      const e = edits.current.get(t.id)!;
+      const ytdEntry = diagnostics.ytds.find((y) => y.textures.some((tx) => tx.name === t.name));
+      if (!ytdEntry) continue;
+      if (!byYtd.has(ytdEntry.path)) byYtd.set(ytdEntry.path, []);
+      byYtd.get(ytdEntry.path)!.push({ name: t.name, canvas: e.canvas });
+    }
+    if (byYtd.size === 0) { toast.error('Could not match edits to YTD files'); return; }
+    const tid = toast.loading(`Saving ${editedTargets.length} texture(s) to ${byYtd.size} YTD file(s)…`);
+    let totalReplaced = 0, totalSkipped = 0;
+    try {
+      for (const [ytdPath, reps] of byYtd) {
+        const origB64 = await window.electronAPI.livery.readBinary(ytdPath);
+        const origBuf = b64ToBuf(origB64);
+        const wr = await replaceTexturesInYTD(origBuf, reps);
+        if (wr.replaced.length > 0) {
+          await window.electronAPI.livery.writeFile(ytdPath + '.bak', origB64);
+          await window.electronAPI.livery.writeFile(ytdPath, bufToB64(new Uint8Array(wr.bytes)));
+        }
+        totalReplaced += wr.replaced.length;
+        totalSkipped += wr.skipped.length;
+      }
+      toast.dismiss(tid);
+      if (totalSkipped > 0)
+        toast(`Saved ${totalReplaced} textures · ${totalSkipped} skipped`, { icon: totalReplaced > 0 ? '✅' : '⚠️' });
+      else
+        toast.success(`Saved all ${totalReplaced} texture(s) to YTD · backups written`);
+    } catch (err: any) {
+      toast.dismiss(tid);
+      toast.error(err?.message || 'Batch save failed');
+    }
+  }
+
   function ensurePaintLayer(e: TargetEdit): Layer {
+    // Check if active layer is locked
+    const activeLyr = e.layers.find((x) => x.id === activeLayerId);
+    if (activeLyr?.locked) { toast('Layer is locked', { icon: '🔒' }); return activeLyr; }
     let l = e.layers.find((x) => x.id === activeLayerId && x.kind === 'paint');
     if (!l) { l = { id: uid(), name: 'Paint', kind: 'paint', visible: true, opacity: 100, blendMode: 'source-over', canvas: newCanvas(e.w, e.h), x: 0, y: 0, w: e.w, h: e.h }; e.layers.push(l); setActiveLayerId(l.id); rerender(); }
     return l;
@@ -677,7 +750,10 @@ export default function LiveryEditor() {
           )}
           {phase === 'edit' && (
             <>
-              <button onClick={saveToYTD} disabled={!curEdit || !diagnostics} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/25 text-emerald-200 border border-emerald-500/30 rounded-lg hover:bg-emerald-600/40 disabled:opacity-40 transition-all" title="Write edited texture back into the original .ytd file">
+              <button onClick={batchSaveToYTD} disabled={!diagnostics} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/30 text-emerald-100 border border-emerald-500/40 rounded-lg hover:bg-emerald-600/50 disabled:opacity-40 transition-all" title="Save all edited textures back into their .ytd files">
+                <Save size={12} /> Save All
+              </button>
+              <button onClick={saveToYTD} disabled={!curEdit || !diagnostics} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/15 text-emerald-200 border border-emerald-500/25 rounded-lg hover:bg-emerald-600/30 disabled:opacity-40 transition-all" title="Save this texture only">
                 Save to YTD
               </button>
               <button onClick={saveActiveTexture} disabled={!curEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600/10 text-emerald-300 border border-emerald-500/20 rounded-lg hover:bg-emerald-600/25 disabled:opacity-40 transition-all">
@@ -692,7 +768,7 @@ export default function LiveryEditor() {
             </>
           )}
         </div>
-        <input ref={texInput} type="file" multiple accept=".dds,.ytd,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(importTexture); e.target.value = ''; }} />
+        <input ref={texInput} type="file" multiple accept=".dds,.ytd,.png,.jpg,.jpeg,.webp,.svg" className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(importTexture); e.target.value = ''; }} />
         <input ref={replaceInput} type="file" accept=".dds,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) applyReplace(f); e.target.value = ''; }} />
       </div>
 
@@ -803,7 +879,7 @@ export default function LiveryEditor() {
 
       {/* EDIT */}
       {phase === 'edit' && view === 'editor' && (
-        <div className="flex-1 flex overflow-hidden" onDrop={(e) => { e.preventDefault(); Array.from(e.dataTransfer.files).forEach(importTexture); }} onDragOver={(e) => e.preventDefault()}>
+        <div className="flex-1 flex overflow-hidden" onDrop={(ev) => { ev.preventDefault(); Array.from(ev.dataTransfer.files).forEach(importTexture); }} onDragOver={(ev) => ev.preventDefault()}>
           {/* LEFT — textures + layers */}
           <div className="w-60 shrink-0 flex flex-col border-r border-overlay-6 bg-surface-950/20 overflow-hidden">
             <div className="shrink-0 px-3 pt-3 pb-1 flex items-center justify-between">
@@ -851,13 +927,14 @@ export default function LiveryEditor() {
                 {!curTarget && <p className="text-[11px] text-surface-600 px-1 py-2">Select a texture</p>}
                 {curEdit && [...curEdit.layers].reverse().map((layer) => (
                   <div key={layer.id} onClick={() => setActiveLayerId(layer.id)} className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer group transition-all ${activeLayerId === layer.id ? 'bg-primary-600/15 border border-primary-500/20' : 'hover:bg-overlay-4 border border-transparent'}`}>
-                    <button onClick={(e) => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} className="text-surface-500 hover:text-surface-200 shrink-0">{layer.visible ? <Eye size={12} /> : <EyeOff size={12} className="opacity-40" />}</button>
+                    <button onClick={(ev) => { ev.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} className="text-surface-500 hover:text-surface-200 shrink-0">{layer.visible ? <Eye size={12} /> : <EyeOff size={12} className="opacity-40" />}</button>
+                    <button onClick={(ev) => { ev.stopPropagation(); updateLayer(layer.id, { locked: !layer.locked }); }} className={`text-surface-500 hover:text-surface-200 shrink-0 ${layer.locked ? 'text-amber-400' : ''}`}>{layer.locked ? <Lock size={11} /> : <Unlock size={11} className="opacity-0 group-hover:opacity-60" />}</button>
                     <div className="w-7 h-7 rounded bg-surface-800 border border-overlay-6 shrink-0 overflow-hidden"><ThumbCanvas source={layer.canvas} /></div>
-                    <span className="text-[11px] text-surface-300 truncate flex-1">{layer.name}</span>
+                    <span className={`text-[11px] truncate flex-1 ${layer.locked ? 'text-surface-500 italic' : 'text-surface-300'}`}>{layer.name}</span>
                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
-                      <button onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, 1); }} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronUp size={10} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, -1); }} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronDown size={10} /></button>
-                      {layer.kind !== 'base' && <button onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} className="p-0.5 text-surface-500 hover:text-red-400"><Trash2 size={10} /></button>}
+                      <button onClick={(ev) => { ev.stopPropagation(); moveLayer(layer.id, 1); }} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronUp size={10} /></button>
+                      <button onClick={(ev) => { ev.stopPropagation(); moveLayer(layer.id, -1); }} className="p-0.5 text-surface-500 hover:text-surface-200"><ChevronDown size={10} /></button>
+                      {layer.kind !== 'base' && <button onClick={(ev) => { ev.stopPropagation(); deleteLayer(layer.id); }} className="p-0.5 text-surface-500 hover:text-red-400"><Trash2 size={10} /></button>}
                     </div>
                   </div>
                 ))}
@@ -1323,13 +1400,6 @@ function fmtBytes(n: number): string {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file); const img = new Image();
-    img.onload = () => { resolve(img); setTimeout(() => URL.revokeObjectURL(url), 1000); };
-    img.onerror = () => reject(new Error('Image load failed')); img.src = url;
-  });
-}
 function ThumbCanvas({ source }: { source: HTMLCanvasElement }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => { const c = ref.current; if (!c) return; c.width = 56; c.height = 56; const ctx = c.getContext('2d')!; ctx.clearRect(0, 0, 56, 56); try { ctx.drawImage(source, 0, 0, 56, 56); } catch { /* */ } });
