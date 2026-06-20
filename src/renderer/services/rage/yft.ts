@@ -339,17 +339,22 @@ function buildGeometry(
 }
 
 // ── GEOM (LOD group) parsing ───────────────────────────────────────────────────
-// Each GEOM holds an array of MESH pointers (from +0x40) and a count (u16 @+0x10).
+// Each GEOM holds, in lockstep: a MESH-pointer array @+0x40 and a per-mesh
+// material-index array (u16) reached via the pointer @+0x20. count u16 @+0x10.
 // The 7 GEOMs of a vehicle are LOD levels + wheels; GEOM[0] is the high LOD.
 
-function geomMeshOffsets(r: ResourceReader, geomOff: number): number[] {
+interface GeomEntry { meshOff: number; matIdx: number; }
+
+function geomEntries(r: ResourceReader, geomOff: number): GeomEntry[] {
   const count = su16(r, geomOff + 0x10);
-  if (count === 0 || count > 4096) return [];
-  const out: number[] = [];
-  // Tolerate a few non-MESH slots (padding) while collecting `count` meshes.
-  for (let i = 0; i < count * 2 + 8 && out.length < count; i++) {
-    const p = r.resolve(sptr(r, geomOff + 0x40 + i * 8));
-    if (p >= 0 && tagAt(r, p) === 'MESH') out.push(p);
+  if (count === 0 || count > 8192) return [];
+  const matIdxBase = r.resolve(sptr(r, geomOff + 0x20));
+  const out: GeomEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const meshOff = r.resolve(sptr(r, geomOff + 0x40 + i * 8));
+    if (meshOff < 0 || tagAt(r, meshOff) !== 'MESH') continue;
+    const matIdx = matIdxBase >= 0 ? su16(r, matIdxBase + i * 2) : 0;
+    out.push({ meshOff, matIdx });
   }
   return out;
 }
@@ -360,7 +365,61 @@ function meshVertCount(r: ResourceReader, meshOff: number): number {
   return su32(r, vb + 0x18);
 }
 
-// ── Texture references (TXEX) ──────────────────────────────────────────────────
+// ── MATS material table + TXEX texture resolution ───────────────────────────────
+// MATS @ first 'MATS' tag: material-ptr array @+0x10, count u16 @+0x18.
+// Each material struct: param list ptr @+0x00 → 16-byte param entries; the TXEX
+// pointers (diffuse, normal, spec, …) live in that list. First diffuse-like name
+// is the primary texture.
+
+interface MatsTable { arrOff: number; count: number; }
+
+function readMatsTable(r: ResourceReader): MatsTable | null {
+  const offs = findTagOffsets(r.res.buffer, 'MATS');
+  if (offs.length === 0) return null;
+  const arrOff = r.resolve(sptr(r, offs[0] + 0x10));
+  const count = su16(r, offs[0] + 0x18);
+  if (arrOff < 0 || count === 0 || count > 4096) return null;
+  return { arrOff, count };
+}
+
+function txexName(r: ResourceReader, txexOff: number): string | null {
+  const n = r.resolve(sptr(r, txexOff + 0x28));
+  if (n < 0) return null;
+  const nm = readCString(r, n, 96);
+  return nm.length >= 2 && /^[a-zA-Z0-9_]+$/.test(nm) ? nm : null;
+}
+
+function materialTextures(r: ResourceReader, matIdx: number, mats: MatsTable): string[] {
+  if (matIdx < 0 || matIdx >= mats.count) return [];
+  const mOff = r.resolve(sptr(r, mats.arrOff + matIdx * 8));
+  if (mOff < 0) return [];
+  const out: string[] = [];
+  const list = r.resolve(sptr(r, mOff + 0x00));
+  if (list >= 0) {
+    for (let o = 0; o < 0x140; o += 8) {
+      const p = r.resolve(sptr(r, list + o));
+      if (p >= 0 && tagAt(r, p) === 'TXEX') { const nm = txexName(r, p); if (nm && !out.includes(nm)) out.push(nm); }
+    }
+  }
+  if (out.length === 0) {
+    // Fallback: TXEX pointers directly inside the material struct.
+    for (let o = 0; o < 0x80; o += 4) {
+      const p = r.resolve(sptr(r, mOff + o));
+      if (p >= 0 && tagAt(r, p) === 'TXEX') { const nm = txexName(r, p); if (nm && !out.includes(nm)) out.push(nm); }
+    }
+  }
+  return out;
+}
+
+// Pick the primary (diffuse/albedo) texture, preferring colour maps over the
+// shared normal/spec/dirt maps.
+function pickPrimaryTexture(names: string[]): string | null {
+  if (names.length === 0) return null;
+  const diff = names.find((n) => /_diff|diffuse|albedo|_c$|sign|symbol|livery|skin|paint|body|_d$/i.test(n));
+  if (diff) return diff;
+  const notMap = names.find((n) => !/_n$|normal|_spec$|spec|_s$|smallspec|dirt|blank/i.test(n));
+  return notMap || names[0];
+}
 
 function collectTextureNames(r: ResourceReader): string[] {
   const buf = r.res.buffer;
@@ -368,13 +427,8 @@ function collectTextureNames(r: ResourceReader): string[] {
   const names: string[] = [];
   const seen = new Set<string>();
   for (const t of txexOffs) {
-    const nameOff = r.resolve(sptr(r, t + 0x28));
-    if (nameOff < 0) continue;
-    const nm = readCString(r, nameOff, 96);
-    if (nm.length >= 2 && /^[a-zA-Z0-9_]+$/.test(nm) && !seen.has(nm)) {
-      seen.add(nm);
-      names.push(nm);
-    }
+    const nm = txexName(r, t);
+    if (nm && !seen.has(nm)) { seen.add(nm); names.push(nm); }
   }
   return names;
 }
@@ -483,60 +537,78 @@ export async function parseYftGeometry(buffer: ArrayBuffer): Promise<YftParseRes
   diag.drawableBase = 0;            // FRAG root is the drawable in this format
   diag.drawableLodUsed = 'tagged';
 
-  // ── Texture names (TXEX) → shaders ──────────────────────────────────────────
+  // ── All TXEX names (diagnostics) ─────────────────────────────────────────────
   const textureNames = collectTextureNames(r);
   diag.textureNames = textureNames;
   log.push(`\n=== TEXTURES ===`);
   log.push(`TXEX texture names: ${textureNames.length}`);
   log.push(textureNames.slice(0, 40).join(', '));
 
-  // Shader 0 is a neutral paint material (no texture) so the very first render
-  // shows a clean, correctly-shaded vehicle rather than one decal texture smeared
-  // across every part. The real TXEX texture names follow at indices 1..N so the
-  // editor still has the full texture list to bind per-part in a later pass.
-  const shaders: ParsedShader[] = [
-    { index: 0, filename: 'vehicle_paint', textureParams: [] },
-    ...textureNames.map((nm, i) => ({ index: i + 1, filename: nm, textureParams: [nm] })),
-  ];
-  diag.shaderCount = shaders.length;
-  diag.shaders = shaders.map((s) => ({ filename: s.filename, textureParams: s.textureParams }));
-
-  // All meshes use the neutral paint slot for now (mesh→material mapping is the
-  // next milestone). This guarantees a clean render with Materials > 0.
-  const bodyIdx = 0;
-
   // ── Select the high-LOD GEOM (avoids rendering overlapping LOD copies) ───────
   log.push(`\n=== GEOM / LOD SELECTION ===`);
   const geomOffs = findTagOffsets(buf, 'GEOM');
-  let renderMeshes: number[] = [];
+  let renderEntries: GeomEntry[] = [];
   let bestVerts = 0, bestGeom = -1;
   for (let gi = 0; gi < geomOffs.length; gi++) {
-    const ms = geomMeshOffsets(r, geomOffs[gi]);
-    let v = 0; for (const m of ms) v += meshVertCount(r, m);
-    log.push(`  GEOM[${gi}] meshes=${ms.length} verts=${v}`);
-    if (v > bestVerts) { bestVerts = v; bestGeom = gi; renderMeshes = ms; }
+    const entries = geomEntries(r, geomOffs[gi]);
+    let v = 0; for (const e of entries) v += meshVertCount(r, e.meshOff);
+    log.push(`  GEOM[${gi}] meshes=${entries.length} verts=${v}`);
+    if (v > bestVerts) { bestVerts = v; bestGeom = gi; renderEntries = entries; }
   }
-  if (renderMeshes.length === 0) {
-    log.push(`  No GEOM yielded meshes — falling back to all ${meshOffs.length} MESH tags.`);
-    renderMeshes = meshOffs;
+  if (renderEntries.length === 0) {
+    log.push(`  No GEOM yielded meshes — falling back to all ${meshOffs.length} MESH tags (no material map).`);
+    renderEntries = meshOffs.map((m) => ({ meshOff: m, matIdx: -1 }));
   } else {
-    log.push(`  Selected GEOM[${bestGeom}] (high LOD): ${renderMeshes.length} of ${meshOffs.length} meshes.`);
+    log.push(`  Selected GEOM[${bestGeom}] (high LOD): ${renderEntries.length} of ${meshOffs.length} meshes.`);
   }
-  diag.modelsFound = renderMeshes.length;
+  diag.modelsFound = renderEntries.length;
+
+  // ── Materials: one shader per distinct material used, with its primary texture ─
+  const mats = readMatsTable(r);
+  log.push(`\n=== MATERIALS ===`);
+  log.push(mats ? `MATS table: ${mats.count} materials` : `No MATS table found.`);
+
+  const shaders: ParsedShader[] = [];
+  const shaderByMat = new Map<number, number>(); // matIdx → shaders[] index
+  const ensureShader = (matIdx: number): number => {
+    const existing = shaderByMat.get(matIdx);
+    if (existing !== undefined) return existing;
+    const idx = shaders.length;
+    let filename = `material_${matIdx}`;
+    let texParams: string[] = [];
+    if (mats && matIdx >= 0) {
+      const texs = materialTextures(r, matIdx, mats);
+      const primary = pickPrimaryTexture(texs);
+      if (primary) { filename = primary; texParams = [primary, ...texs.filter((t) => t !== primary)]; }
+    }
+    shaders.push({ index: idx, filename, textureParams: texParams });
+    shaderByMat.set(matIdx, idx);
+    return idx;
+  };
+  // Guarantee at least one neutral slot so Materials > 0 even without MATS.
+  if (!mats) { shaders.push({ index: 0, filename: 'vehicle_paint', textureParams: [] }); shaderByMat.set(-1, 0); }
 
   // ── Build geometries from the selected meshes ────────────────────────────────
   log.push(`\n=== GEOMETRY ===`);
-  log.push(`Building ${renderMeshes.length} meshes...`);
+  log.push(`Building ${renderEntries.length} meshes...`);
   const geometries: ParsedGeometry[] = [];
-  for (let i = 0; i < renderMeshes.length; i++) {
+  for (let i = 0; i < renderEntries.length; i++) {
+    const { meshOff, matIdx } = renderEntries[i];
+    const shaderIdx = ensureShader(matIdx);
     try {
-      const g = buildGeometry(r, renderMeshes[i], i, bodyIdx, diag);
+      const g = buildGeometry(r, meshOff, i, shaderIdx, diag);
       if (g) geometries.push(g);
     } catch (e: any) {
       diag.warnings.push(`MESH[${i}] threw: ${e?.message || e}`);
     }
   }
   diag.geometryCount = geometries.length;
+
+  let texturedShaders = 0;
+  for (const s of shaders) if (s.textureParams.length > 0) texturedShaders++;
+  diag.shaderCount = shaders.length;
+  diag.shaders = shaders.map((s) => ({ filename: s.filename, textureParams: s.textureParams }));
+  log.push(`Shaders/materials: ${shaders.length} (${texturedShaders} with a resolved texture)`);
 
   // ── Bounding box ────────────────────────────────────────────────────────────
   let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
