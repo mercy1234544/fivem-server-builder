@@ -339,21 +339,31 @@ function buildGeometry(
 }
 
 // ── GEOM (LOD group) parsing ───────────────────────────────────────────────────
-// Each GEOM holds, in lockstep: a MESH-pointer array @+0x40 and a per-mesh
-// material-index array (u16) reached via the pointer @+0x20. count u16 @+0x10.
-// The 7 GEOMs of a vehicle are LOD levels + wheels; GEOM[0] is the high LOD.
+// GEOM layout (offsets from the tag):
+//   +0x08  ptr → MESH-pointer array (count entries)  ← the reliable location
+//   +0x10  count (u16)
+//   +0x20  ptr → per-mesh material-index array (u16, count entries, lockstep)
+// NOTE: the MESH array is reached via the pointer @+0x08 — it is NOT always
+// inline at +0x40. (For some vehicles +0x08 happens to point at +0x40, which is
+// why an earlier "+0x40" reader appeared to work; for others the array lives in
+// a separate block and +0x40 holds inline VBUF data, so reading +0x40 yields 0
+// meshes and the body GEOM is silently lost — leaving only a wheel to render.)
+// The 7-ish GEOMs of a vehicle are body LOD levels + wheels; GEOM[0] (highest
+// vertex count) is the complete high-LOD body.
 
 interface GeomEntry { meshOff: number; matIdx: number; }
 
 function geomEntries(r: ResourceReader, geomOff: number): GeomEntry[] {
   const count = su16(r, geomOff + 0x10);
   if (count === 0 || count > 8192) return [];
-  const matIdxBase = r.resolve(sptr(r, geomOff + 0x20));
+  const meshArrBase = r.resolve(sptr(r, geomOff + 0x08));
+  const matIdxBase  = r.resolve(sptr(r, geomOff + 0x20));
+  if (meshArrBase < 0) return [];
   const out: GeomEntry[] = [];
   for (let i = 0; i < count; i++) {
-    const meshOff = r.resolve(sptr(r, geomOff + 0x40 + i * 8));
+    const meshOff = r.resolve(sptr(r, meshArrBase + i * 8));
     if (meshOff < 0 || tagAt(r, meshOff) !== 'MESH') continue;
-    const matIdx = matIdxBase >= 0 ? su16(r, matIdxBase + i * 2) : 0;
+    const matIdx = matIdxBase >= 0 ? su16(r, matIdxBase + i * 2) : -1;
     out.push({ meshOff, matIdx });
   }
   return out;

@@ -245,6 +245,7 @@ export function buildVehicleFromDrawable(
     mesh.castShadow    = true;
     mesh.receiveShadow = true;
     mesh.name          = geo.name;
+    mesh.frustumCulled = false; // never cull on a (possibly wrong) bounding sphere
     root.add(mesh);
     meshes.push(mesh);
     if (!slot.meshes.includes(mesh)) slot.meshes.push(mesh);
