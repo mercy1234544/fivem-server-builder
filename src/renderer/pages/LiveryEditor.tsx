@@ -1274,37 +1274,60 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                   </div>
                   {gd && (
                     <div className="px-3 mt-1 space-y-0.5">
-                      {/* RSC7 container details */}
+                      {/* RSC7 + decompress summary */}
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono">
                         <span className={`font-semibold ${gd.rsc7Magic ? 'text-emerald-300' : 'text-red-300'}`}>RSC7:{gd.rsc7Magic ? 'yes' : 'NO'}</span>
                         <span>v{gd.rsc7Version}</span>
-                        <span className={`font-semibold ${gd.decompressMethod !== 'failed' ? 'text-emerald-300' : 'text-red-300'}`}>decompress:{gd.decompressMethod}</span>
-                        <span>sys {fmtBytes(gd.rsc7SystemSize)} · gfx {fmtBytes(gd.rsc7GraphicsSize)} · inflated {fmtBytes(gd.decompressedSize)}</span>
+                        <span className={`font-semibold ${gd.decompressMethod !== 'failed' && gd.decompressMethod !== 'uncompressed' ? 'text-emerald-300' : gd.decompressMethod === 'uncompressed' ? 'text-amber-300' : 'text-red-300'}`}>
+                          decompress:{gd.decompressMethod}
+                        </span>
+                        <span>sys 0x{gd.rsc7SystemSize.toString(16)} · gfx 0x{gd.rsc7GraphicsSize.toString(16)} · inflated {fmtBytes(gd.decompressedSize)}</span>
                       </div>
                       {gd.payloadPeekHex && (
-                        <p className="text-[9px] text-surface-600 font-mono">payload[0..15]: <span className="text-amber-200">{gd.payloadPeekHex}</span></p>
+                        <p className="text-[9px] text-surface-600 font-mono">payload[0..31]: <span className="text-amber-200">{gd.payloadPeekHex}</span></p>
                       )}
                       {gd.failReason && (
                         <p className="text-[9px] text-red-300/80 font-mono">fail: {gd.failReason}</p>
                       )}
+                      {/* Ptr scan stats */}
+                      {(gd as any).sysPtrCount !== undefined && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono mt-0.5">
+                          <span className={(gd as any).sysPtrCount > 0 ? 'text-cyan-300' : 'text-red-300'}>
+                            sysPtrs:{(gd as any).sysPtrCount} maxOff:0x{((gd as any).maxSysPtrOff||0).toString(16)}
+                          </span>
+                          <span>gfxPtrs:{(gd as any).gfxPtrCount} maxOff:0x{((gd as any).maxGfxPtrOff||0).toString(16)}</span>
+                          {(gd as any).sysSizeUsed > 0 && <span>sysSizeUsed:0x{(gd as any).sysSizeUsed.toString(16)} ({(gd as any).sysSizeSource})</span>}
+                        </div>
+                      )}
                       {/* Geometry parse details */}
                       {gd.decompressMethod !== 'failed' && (
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-surface-500 font-mono mt-0.5">
-                          <span>drawable@0x{gd.drawableBase >= 0 ? gd.drawableBase.toString(16) : '-1'}</span>
+                          <span className={gd.drawableBase >= 0 ? 'text-emerald-300' : 'text-red-300'}>drawable@0x{gd.drawableBase >= 0 ? gd.drawableBase.toString(16) : 'NOT FOUND'}</span>
                           {gd.drawableLodUsed && <span>lod:{gd.drawableLodUsed}</span>}
                           <span>{gd.shaderCount} shaders · {gd.modelsFound} models · {gd.geometryCount} geos</span>
                           <span>{gd.totalVertices.toLocaleString()} verts · {gd.totalTriangles.toLocaleString()} tris</span>
                           {gd.vertexStrides.length > 0 && <span>strides: {gd.vertexStrides.join(', ')}</span>}
                         </div>
                       )}
+                      {/* INVESTIGATION LOG — always shown, scrollable */}
+                      {(gd as any).investigationLog?.length > 0 && (
+                        <details className="mt-1" open={gd.geometryCount === 0}>
+                          <summary className="text-[9px] text-cyan-300 cursor-pointer font-semibold">
+                            Investigation log ({(gd as any).investigationLog.length} lines)
+                          </summary>
+                          <pre className="text-[8px] leading-tight text-surface-300 bg-black/50 rounded p-2 overflow-auto font-mono mt-1 max-h-80 whitespace-pre-wrap">
+                            {(gd as any).investigationLog.join('\n')}
+                          </pre>
+                        </details>
+                      )}
                       {/* Top probe results */}
-                      {gd.probeResults.length > 0 && gd.geometryCount === 0 && (
+                      {gd.probeResults.length > 0 && (
                         <details className="mt-1">
-                          <summary className="text-[9px] text-cyan-300 cursor-pointer">Probe scores (top 8 drawable candidates)</summary>
-                          <div className="mt-1 space-y-0.5">
-                            {gd.probeResults.slice(0, 8).map((p, k) => (
-                              <p key={k} className={`text-[9px] font-mono ${p.score >= 20 ? 'text-emerald-300' : 'text-surface-500'}`}>
-                                base=0x{p.base.toString(16).padStart(3,'0')} score={p.score} {p.desc}
+                          <summary className="text-[9px] text-cyan-300 cursor-pointer">All probe candidates (top 20)</summary>
+                          <div className="mt-1 space-y-0.5 max-h-40 overflow-y-auto">
+                            {gd.probeResults.slice(0, 20).map((p, k) => (
+                              <p key={k} className={`text-[9px] font-mono ${p.score >= 50 ? 'text-emerald-300' : p.score >= 20 ? 'text-yellow-300' : 'text-surface-500'}`}>
+                                base=0x{p.base.toString(16).padStart(4,'0')} score={String(p.score).padStart(3,' ')} {p.desc}
                               </p>
                             ))}
                           </div>
@@ -1322,26 +1345,23 @@ function DiagnosticsPanel({ diag, onClose }: { diag: VehicleDiagnostics; onClose
                         </div>
                       )}
                       {gd.notes.map((n, k) => <p key={k} className="text-[9px] text-cyan-300/80">{n}</p>)}
-                      {gd.warnings.slice(0, 10).map((n, k) => <p key={k} className="text-[9px] text-amber-300/80">⚠ {n}</p>)}
+                      {gd.warnings.slice(0, 15).map((n, k) => <p key={k} className="text-[9px] text-amber-300/80">⚠ {n}</p>)}
                       {gd.errors.map((n, k) => <p key={k} className="text-[9px] text-red-300/80">✕ {n}</p>)}
-                      {(gd.systemHeaderHex || gd.drawableHeaderHex) && (
+                      {/* Raw hex dumps */}
+                      {((gd as any).bufferHex || gd.drawableHeaderHex) && (
                         <details className="mt-1">
                           <summary className="text-[9px] text-cyan-300 cursor-pointer">Raw byte inspection</summary>
                           <div className="mt-1 space-y-2">
-                            {gd.systemHeaderHex && (
+                            {(gd as any).bufferHex && (
                               <div>
-                                <p className="text-[8px] text-surface-600 mb-0.5">
-                                  {gd.decompressMethod !== 'failed'
-                                    ? 'Decompressed system segment (first 0x100 bytes):'
-                                    : 'Raw RSC7 file header (first 0x40 bytes — before decompression):'}
-                                </p>
-                                <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-x-auto font-mono">{gd.systemHeaderHex}</pre>
+                                <p className="text-[8px] text-surface-600 mb-0.5">Decompressed buffer (first 0x200 bytes) — check for 0x5XXXXXXX / 0x6XXXXXXX RAGE ptr patterns:</p>
+                                <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-auto font-mono max-h-64">{(gd as any).bufferHex}</pre>
                               </div>
                             )}
                             {gd.drawableHeaderHex && (
                               <div>
-                                <p className="text-[8px] text-surface-600 mb-0.5">Drawable header @ 0x{gd.drawableBase.toString(16)} (ShaderGroup@+0x10, Models@+0x50):</p>
-                                <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-x-auto font-mono">{gd.drawableHeaderHex}</pre>
+                                <p className="text-[8px] text-surface-600 mb-0.5">Drawable header @ 0x{gd.drawableBase.toString(16)} (+0x10=ShaderGroup, +0x50=ModelsHigh):</p>
+                                <pre className="text-[8px] leading-tight text-surface-400 bg-black/40 rounded p-1.5 overflow-auto font-mono max-h-48">{gd.drawableHeaderHex}</pre>
                               </div>
                             )}
                           </div>

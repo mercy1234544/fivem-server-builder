@@ -3,14 +3,16 @@
 // a "system" (virtual) segment and a "graphics" (physical) segment. Internal pointers
 // are 64-bit with the top nibble selecting the segment (0x5 = system, 0x6 = graphics).
 //
-// This module unpacks the container and exposes a pointer-resolving reader. The texture
-// (ytd) and drawable (yft) parsers are built on top of it.
+// Decompression strategy (in priority order):
+//   1. Node.js zlib.inflateRaw via IPC (always reliable)
+//   2. Web DecompressionStream('deflate-raw')
+//   3. Web DecompressionStream('deflate')   (zlib-wrapped, some modding tools)
+//   4. Uncompressed passthrough             (≥ 32 bytes raw payload)
 
 const RSC7_MAGIC = 0x37435352; // 'RSC7' little-endian
 
 export interface RageResource {
   version: number;
-  /** Decompressed system + graphics segments, concatenated. */
   buffer: Uint8Array;
   view: DataView;
   systemSize: number;
@@ -19,10 +21,10 @@ export interface RageResource {
 
 export interface UnpackDetails {
   resource: RageResource | null;
-  /** Why we succeeded or failed. */
-  method: 'deflate-raw' | 'deflate' | 'uncompressed' | 'failed';
+  method: 'node-zlib' | 'deflate-raw' | 'deflate' | 'uncompressed' | 'failed';
   failReason?: string;
-  /** Hex of first 16 bytes of the payload (after the 16-byte RSC7 header). */
+  /** Error messages from each decompression attempt (for diagnostics). */
+  attemptLog: string[];
   payloadPeekHex: string;
   version: number;
   systemFlags: number;
@@ -33,9 +35,6 @@ export interface UnpackDetails {
   decompressedSize: number;
 }
 
-/**
- * Decode a RAGE flags word into a byte size, using CodeWalker's canonical formula.
- */
 export function sizeFromFlags(flags: number): number {
   const s0 = ((flags >>> 27) & 0x1) << 0;
   const s1 = ((flags >>> 26) & 0x1) << 1;
@@ -57,30 +56,93 @@ export function isRSC7(bytes: Uint8Array): boolean {
   return magic === RSC7_MAGIC;
 }
 
-async function tryDecompress(data: Uint8Array, format: 'deflate-raw' | 'deflate'): Promise<Uint8Array | null> {
-  if (typeof (globalThis as any).DecompressionStream === 'undefined') return null;
+// ── Base64 helpers (chunk-safe for large buffers) ────────────────────────────
+
+function bufToB64(buf: Uint8Array): string {
+  let b64 = '';
+  const chunk = 65536;
+  for (let i = 0; i < buf.length; i += chunk)
+    b64 += btoa(String.fromCharCode(...Array.from(buf.subarray(i, i + chunk))));
+  return b64;
+}
+
+function b64ToBuf(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// ── Decompression via Node.js zlib (IPC to main process) ─────────────────────
+
+async function tryDecompressViaNode(
+  data: Uint8Array,
+  format: 'deflate-raw' | 'deflate',
+  log: string[],
+): Promise<Uint8Array | null> {
   try {
-    const ds  = new (globalThis as any).DecompressionStream(format);
-    // Slice correctly even if data is a sub-view with non-zero byteOffset.
-    const ab  = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-    const out = new Response(new Blob([ab]).stream().pipeThrough(ds));
-    const result = new Uint8Array(await out.arrayBuffer());
-    return result.length >= 4 ? result : null;
-  } catch {
+    const livery = (window as any).electronAPI?.livery;
+    if (!livery?.inflateRaw) {
+      log.push(`Node zlib (${format}): IPC not available`);
+      return null;
+    }
+    const b64 = bufToB64(data);
+    const method = format === 'deflate-raw' ? 'inflateRaw' : 'inflate';
+    const result: string | null = await livery[method](b64);
+    if (!result) {
+      log.push(`Node zlib (${format}): returned null — compression format mismatch or corrupt data`);
+      return null;
+    }
+    const out = b64ToBuf(result);
+    log.push(`Node zlib (${format}): OK — decompressed ${data.length} → ${out.length} bytes`);
+    return out.length >= 4 ? out : null;
+  } catch (e: any) {
+    log.push(`Node zlib (${format}): threw — ${e?.message || e}`);
     return null;
   }
 }
 
-/** Full unpack with diagnostic details — preferred for the YFT parser. */
+// ── Decompression via Web DecompressionStream ─────────────────────────────────
+
+async function tryDecompressWeb(
+  data: Uint8Array,
+  format: 'deflate-raw' | 'deflate',
+  log: string[],
+): Promise<Uint8Array | null> {
+  if (typeof (globalThis as any).DecompressionStream === 'undefined') {
+    log.push(`Web DecompressionStream(${format}): API not available in this environment`);
+    return null;
+  }
+  try {
+    const ds = new (globalThis as any).DecompressionStream(format);
+    const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    const out = new Response(new Blob([ab]).stream().pipeThrough(ds));
+    const result = new Uint8Array(await out.arrayBuffer());
+    if (result.length < 4) {
+      log.push(`Web DecompressionStream(${format}): result too small (${result.length} bytes)`);
+      return null;
+    }
+    log.push(`Web DecompressionStream(${format}): OK — ${data.length} → ${result.length} bytes`);
+    return result;
+  } catch (e: any) {
+    log.push(`Web DecompressionStream(${format}): threw — ${e?.message || e}`);
+    return null;
+  }
+}
+
+// ── Main unpacker ──────────────────────────────────────────────────────────────
+
 export async function unpackRSC7Detailed(bytes: Uint8Array): Promise<UnpackDetails> {
+  const attemptLog: string[] = [];
+
   const empty = (method: UnpackDetails['method'], failReason?: string): UnpackDetails => ({
-    resource: null, method, failReason,
+    resource: null, method, failReason, attemptLog,
     payloadPeekHex: '', version: 0, systemFlags: 0, graphicsFlags: 0,
     systemSize: 0, graphicsSize: 0, compressedPayloadSize: 0, decompressedSize: 0,
   });
 
   if (!isRSC7(bytes)) return empty('failed', 'RSC7 magic not found in first 4 bytes');
-  if (bytes.length < 17)  return empty('failed', 'File too small to be a valid RSC7 (< 17 bytes)');
+  if (bytes.length < 17) return empty('failed', 'File too small (< 17 bytes)');
 
   const dv           = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const version      = dv.getInt32(4, true);
@@ -89,13 +151,20 @@ export async function unpackRSC7Detailed(bytes: Uint8Array): Promise<UnpackDetai
   const systemSize   = sizeFromFlags(systemFlags);
   const graphicsSize = sizeFromFlags(graphicsFlags);
 
+  attemptLog.push(`RSC7 header: version=${version} (0x${version.toString(16)})`);
+  attemptLog.push(`systemFlags=0x${systemFlags.toString(16)} → systemSize=0x${systemSize.toString(16)} (${systemSize})`);
+  attemptLog.push(`graphicsFlags=0x${graphicsFlags.toString(16)} → graphicsSize=0x${graphicsSize.toString(16)} (${graphicsSize})`);
+  attemptLog.push(`Total expected decompressed size: 0x${(systemSize + graphicsSize).toString(16)}`);
+
   const payload = bytes.subarray(16);
 
-  // Hex of first 16 payload bytes for diagnosis.
   const peek: string[] = [];
-  for (let i = 0; i < Math.min(16, payload.length); i++)
+  for (let i = 0; i < Math.min(32, payload.length); i++)
     peek.push(payload[i].toString(16).padStart(2, '0'));
   const payloadPeekHex = peek.join(' ');
+
+  attemptLog.push(`Payload size: ${payload.length} bytes`);
+  attemptLog.push(`Payload first 32 bytes: ${payloadPeekHex}`);
 
   const fill = (inflated: Uint8Array, method: UnpackDetails['method']): UnpackDetails => {
     const gs = graphicsSize || Math.max(0, inflated.length - systemSize);
@@ -105,65 +174,73 @@ export async function unpackRSC7Detailed(bytes: Uint8Array): Promise<UnpackDetai
         view: new DataView(inflated.buffer, inflated.byteOffset, inflated.byteLength),
         systemSize, graphicsSize: gs,
       },
-      method, payloadPeekHex, version, systemFlags, graphicsFlags,
+      method, attemptLog, payloadPeekHex, version, systemFlags, graphicsFlags,
       systemSize, graphicsSize, compressedPayloadSize: payload.length,
       decompressedSize: inflated.length,
     };
   };
 
-  // Strategy 1: raw deflate (standard GTA V — most common)
-  const rawResult = await tryDecompress(payload, 'deflate-raw');
-  if (rawResult) return fill(rawResult, 'deflate-raw');
+  // 1. Node.js zlib (most reliable — uses native C decompressor)
+  attemptLog.push(`\n[1] Trying Node.js zlib.inflateRaw...`);
+  const nodeRaw = await tryDecompressViaNode(payload, 'deflate-raw', attemptLog);
+  if (nodeRaw) return fill(nodeRaw, 'node-zlib');
 
-  // Strategy 2: zlib-wrapped deflate (some modding tools / older exports)
-  const zlibResult = await tryDecompress(payload, 'deflate');
-  if (zlibResult) return fill(zlibResult, 'deflate');
+  // 2. Web DecompressionStream deflate-raw
+  attemptLog.push(`\n[2] Trying Web DecompressionStream('deflate-raw')...`);
+  const webRaw = await tryDecompressWeb(payload, 'deflate-raw', attemptLog);
+  if (webRaw) return fill(webRaw, 'deflate-raw');
 
-  // Strategy 3: uncompressed passthrough.
-  // Some RSC7 writers skip compression entirely (e.g. FiveM streaming resources built
-  // by certain tools). The payload IS the segment data. We accept this if the raw
-  // payload is at least 32 bytes so we don't silently accept obviously broken data.
+  // 3. Node.js zlib inflate (zlib-wrapped)
+  attemptLog.push(`\n[3] Trying Node.js zlib.inflate (zlib-wrapped)...`);
+  const nodeZlib = await tryDecompressViaNode(payload, 'deflate', attemptLog);
+  if (nodeZlib) return fill(nodeZlib, 'node-zlib');
+
+  // 4. Web DecompressionStream deflate (zlib-wrapped)
+  attemptLog.push(`\n[4] Trying Web DecompressionStream('deflate')...`);
+  const webZlib = await tryDecompressWeb(payload, 'deflate', attemptLog);
+  if (webZlib) return fill(webZlib, 'deflate');
+
+  // 5. Uncompressed passthrough
+  attemptLog.push(`\n[5] All decompression strategies failed. Using raw payload as uncompressed.`);
+  attemptLog.push(`    WARNING: structures will be read from COMPRESSED data — likely garbage.`);
   if (payload.length >= 32) {
-    // Return raw bytes so the caller can at least run diagnostics on the real data.
     return fill(payload, 'uncompressed');
   }
 
   return empty('failed',
-    `All decompression strategies failed. Payload first bytes: ${payloadPeekHex}. ` +
+    `All decompression strategies failed. Payload (${payload.length}B): ${payloadPeekHex}. ` +
     `RSC7 version=${version} sysFlags=0x${systemFlags.toString(16)} gfxFlags=0x${graphicsFlags.toString(16)}`
   );
 }
 
-/** Simple wrapper kept for YTD compatibility. */
 export async function unpackRSC7(bytes: Uint8Array): Promise<RageResource | null> {
   const d = await unpackRSC7Detailed(bytes);
   return d.resource;
 }
 
-/** Pointer-resolving reader over an unpacked resource. */
+// ── Pointer-resolving reader ──────────────────────────────────────────────────
+
 export class ResourceReader {
   readonly res: RageResource;
   readonly dv: DataView;
-  private sysSize: number;
+  sysSize: number; // mutable so investigation code can try different values
 
   constructor(res: RageResource) {
     this.res = res;
     this.dv  = res.view;
-    // If the flag-derived system size looks wrong, fall back to a best guess.
     this.sysSize = res.systemSize > 0 && res.systemSize < res.buffer.length
       ? res.systemSize
       : res.buffer.length;
   }
 
-  /** Resolve a RAGE 64-bit pointer to a byte offset in the decompressed buffer, or -1. */
   resolve(ptr: number): number {
     if (!ptr) return -1;
     const seg = (ptr >>> 28) & 0xf;
     const off = ptr & 0x0fffffff;
-    if (seg === 0x5) return off < this.sysSize ? off : -1;               // system
+    if (seg === 0x5) return off < this.sysSize ? off : -1;
     if (seg === 0x6) {
       const abs = this.sysSize + off;
-      return abs < this.res.buffer.length ? abs : -1;                    // graphics
+      return abs < this.res.buffer.length ? abs : -1;
     }
     return -1;
   }
@@ -173,10 +250,8 @@ export class ResourceReader {
   u32(o: number) { return this.dv.getUint32(o, true); }
   i32(o: number) { return this.dv.getInt32(o, true); }
   f32(o: number) { return this.dv.getFloat32(o, true); }
-  /** Read a 64-bit pointer field (low 32 bits carry the segmented pointer). */
   ptr(o: number) { return this.dv.getUint32(o, true); }
 
-  /** Read a null-terminated ASCII string at a resolved offset. */
   str(o: number, max = 128): string {
     if (o < 0) return '';
     let s = '';

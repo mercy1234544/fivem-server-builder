@@ -150,6 +150,8 @@ interface ElectronAPI {
     readBinary: (filePath: string) => Promise<string>;
     writeFile: (filePath: string, b64: string) => Promise<boolean>;
     showSaveDialog: (opts: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
+    inflateRaw: (b64: string) => Promise<string | null>;
+    inflate: (b64: string) => Promise<string | null>;
   };
 
   appUpdater: {

@@ -125,6 +125,8 @@ const electronAPI = {
     readBinary: (filePath: string): Promise<string> => ipcRenderer.invoke('livery:readBinary', filePath),
     writeFile: (filePath: string, b64: string): Promise<boolean> => ipcRenderer.invoke('livery:writeFile', filePath, b64),
     showSaveDialog: (opts: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> => ipcRenderer.invoke('livery:showSaveDialog', opts),
+    inflateRaw: (b64: string): Promise<string | null> => ipcRenderer.invoke('livery:inflateRaw', b64),
+    inflate: (b64: string): Promise<string | null> => ipcRenderer.invoke('livery:inflate', b64),
   },
 
   // Server console output

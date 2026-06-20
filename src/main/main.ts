@@ -201,6 +201,28 @@ function registerIpcHandlers() {
     return true;
   });
 
+  // Node.js zlib decompression — used as primary decompress path in the renderer
+  // because Chromium's DecompressionStream can silently fail on some payloads.
+  ipcMain.handle('livery:inflateRaw', async (_, b64: string) => {
+    try {
+      const zlib = await import('zlib');
+      const compressed = Buffer.from(b64, 'base64');
+      return await new Promise<string | null>((resolve) => {
+        zlib.inflateRaw(compressed, (err, result) => resolve(err ? null : result.toString('base64')));
+      });
+    } catch { return null; }
+  });
+
+  ipcMain.handle('livery:inflate', async (_, b64: string) => {
+    try {
+      const zlib = await import('zlib');
+      const compressed = Buffer.from(b64, 'base64');
+      return await new Promise<string | null>((resolve) => {
+        zlib.inflate(compressed, (err, result) => resolve(err ? null : result.toString('base64')));
+      });
+    } catch { return null; }
+  });
+
   ipcMain.handle('livery:showSaveDialog', async (_, opts: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => {
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Save texture export',
