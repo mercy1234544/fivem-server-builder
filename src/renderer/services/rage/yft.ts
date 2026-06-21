@@ -194,7 +194,43 @@ function censusTags(buf: Uint8Array): Record<string, number> {
 // the slot that yields the most normalized UVs (half2 in ~[0,1]) and the most
 // unit-length float3 normals.
 
-interface VLayout { uvOff: number; uvIsHalf: boolean; normalOff: number; }
+interface VLayout { posOff: number; uvOff: number; uvIsHalf: boolean; normalOff: number; }
+
+// CodeWalker grcFvf component byte-sizes, indexed by the 4-bit type nibble:
+//   0 Half(2) 1 Half2(4) 2 Half3(6) 3 Half4(8) 4 Float(4) 5 Float2(8)
+//   6 Float3(12) 7 Float4(16) 8 UByte4(4) 9 Color(4) 10+ packed(4)
+const FVF_SIZE = [2, 4, 6, 8, 4, 8, 12, 16, 4, 4, 4, 4, 4, 4, 4, 4];
+
+// Decode the vertex layout from the grcFvf DECLARATION — the exact, correct way
+// (a heuristic that scans for "UV-looking" floats picks colour bytes by mistake
+// and collapses every UV to ~0, which renders all textures as one flat texel).
+// Declaration: fvf mask u32 @+0x00, stride byte @+0x04, element count @+0x07,
+// 16 type-nibbles packed into 8 bytes @+0x08. Channels: 0=pos, 3=normal,
+// 4=colour0, 6=texcoord0, 7=texcoord1.
+function decodeDeclaration(r: ResourceReader, declOff: number, stride: number): VLayout | null {
+  if (declOff < 0) return null;
+  const fvf = su32(r, declOff);
+  const tlo = su32(r, declOff + 8), thi = su32(r, declOff + 12);
+  const typeOf = (ch: number) => ((ch < 8 ? tlo : thi) >>> ((ch % 8) * 4)) & 0xf;
+  let off = 0;
+  const elemOff: Record<number, number> = {};
+  let uvType = -1;
+  for (let ch = 0; ch < 16; ch++) {
+    if (!((fvf >>> ch) & 1)) continue;
+    const t = typeOf(ch);
+    elemOff[ch] = off;
+    if (ch === 6) uvType = t;
+    off += FVF_SIZE[t];
+  }
+  // The computed stride MUST equal the declared stride, or our decode is wrong.
+  if (off !== stride) return null;
+  return {
+    posOff: elemOff[0] ?? 0,
+    normalOff: elemOff[3] ?? -1,
+    uvOff: elemOff[6] ?? -1,
+    uvIsHalf: uvType >= 0 && uvType <= 3, // 0-3 half formats, 4-7 float formats
+  };
+}
 
 function discoverVertexLayout(r: ResourceReader, dataOff: number, count: number, stride: number): VLayout {
   const N = Math.min(count, 256);
@@ -236,6 +272,7 @@ function discoverVertexLayout(r: ResourceReader, dataOff: number, count: number,
   }
 
   return {
+    posOff: 0,
     uvOff: bestUvScore > N * 0.5 ? bestUv : -1,
     uvIsHalf: bestUvHalf,
     normalOff: bestNrmScore > N * 0.5 ? bestNrm : -1,
@@ -284,7 +321,10 @@ function buildGeometry(
 
   if (!diag.vertexStrides.includes(vb.stride)) diag.vertexStrides.push(vb.stride);
 
-  const layout = discoverVertexLayout(r, vb.dataOff, vb.count, vb.stride);
+  // Decode the real layout from the vertex declaration; only fall back to the
+  // heuristic if the declaration is missing or its computed stride disagrees.
+  const layout = decodeDeclaration(r, vb.declOff, vb.stride)
+    ?? discoverVertexLayout(r, vb.dataOff, vb.count, vb.stride);
 
   const positions = new Float32Array(vb.count * 3);
   const normals = layout.normalOff >= 0 ? new Float32Array(vb.count * 3) : null;
@@ -293,9 +333,9 @@ function buildGeometry(
   for (let i = 0; i < vb.count; i++) {
     const vo = vb.dataOff + i * vb.stride;
     // RAW position (transform applied downstream in buildVehicleFromDrawable)
-    positions[i * 3]     = sf32(r, vo);
-    positions[i * 3 + 1] = sf32(r, vo + 4);
-    positions[i * 3 + 2] = sf32(r, vo + 8);
+    positions[i * 3]     = sf32(r, vo + layout.posOff);
+    positions[i * 3 + 1] = sf32(r, vo + layout.posOff + 4);
+    positions[i * 3 + 2] = sf32(r, vo + layout.posOff + 8);
 
     if (normals && layout.normalOff >= 0) {
       normals[i * 3]     = sf32(r, vo + layout.normalOff);
