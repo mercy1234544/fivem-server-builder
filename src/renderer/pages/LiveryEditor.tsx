@@ -104,6 +104,8 @@ export default function LiveryEditor() {
   const [wireframe, setWireframe] = useState(false);
   const [pickedSlotId, setPickedSlotId] = useState<string | null>(null);
   const [forceTexOn, setForceTexOn] = useState(false);
+  const [uvDebug, setUvDebug] = useState(false);
+  const [flipV, setFlipV] = useState(true);
   const replaceTargetRef = useRef<string | null>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -1102,6 +1104,16 @@ export default function LiveryEditor() {
                 <button title="Reset camera" onClick={() => viewerRef.current?.resetView()}
                   className="p-1.5 rounded text-surface-500 hover:text-surface-200 hover:bg-overlay-4">
                   <RotateCcw size={13} />
+                </button>
+                <button title="UV debug (red=U, green=V — smooth gradient = correct UVs)"
+                  onClick={() => { setUvDebug((u) => { const nu = !u; viewerRef.current?.setUVDebug(nu); return nu; }); }}
+                  className={`p-1.5 rounded text-[9px] font-bold ${uvDebug ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
+                  UV
+                </button>
+                <button title="Flip texture V (fix upside-down liveries)"
+                  onClick={() => { setFlipV((f) => { const nf = !f; viewerRef.current?.setFlipV(nf); return nf; }); }}
+                  className={`p-1.5 rounded text-[9px] font-bold ${!flipV ? 'bg-amber-500/20 text-amber-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
+                  ⇅V
                 </button>
               </>)}
             </div>

@@ -23,6 +23,8 @@ export class VehicleViewer {
   private vehicle: LoadedVehicle | null = null;
   private overrideTex = new Map<string, THREE.CanvasTexture>();
   private forcedTex: THREE.CanvasTexture | null = null;
+  private uvDebugMat: THREE.ShaderMaterial | null = null;
+  private savedMats = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private highlightKey: string | null = null;
   private wireframe = false;
 
@@ -220,6 +222,47 @@ export class VehicleViewer {
   }
 
   isWireframe() { return this.wireframe; }
+
+  /**
+   * UV DEBUG: swap every mesh to a shader that paints UVs as colour
+   * (red = U, green = V). Correct UVs show smooth red→green gradients across
+   * each panel; broken/collapsed UVs show a flat colour. Pass false to restore.
+   */
+  setUVDebug(on: boolean) {
+    if (!this.vehicle) return;
+    if (on) {
+      if (!this.uvDebugMat) {
+        this.uvDebugMat = new THREE.ShaderMaterial({
+          side: THREE.DoubleSide,
+          vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+          fragmentShader: 'varying vec2 vUv; void main(){ gl_FragColor = vec4(fract(vUv.x), fract(vUv.y), 0.25, 1.0); }',
+        });
+      }
+      for (const m of this.vehicle.meshes) {
+        if (!this.savedMats.has(m)) this.savedMats.set(m, m.material);
+        m.material = this.uvDebugMat;
+      }
+    } else {
+      for (const m of this.vehicle.meshes) {
+        const s = this.savedMats.get(m);
+        if (s) m.material = s;
+      }
+      this.savedMats.clear();
+    }
+  }
+
+  /** Toggle DX↔GL vertical orientation of every texture (fixes upside-down liveries). */
+  setFlipV(flip: boolean) {
+    if (!this.vehicle) return;
+    const apply = (t: THREE.Texture | null | undefined) => { if (t) { t.flipY = flip; t.needsUpdate = true; } };
+    for (const slot of this.vehicle.slots) {
+      apply(slot.material.map);
+      apply(slot.originalMap);
+      slot.material.needsUpdate = true;
+    }
+    this.overrideTex.forEach((t) => apply(t));
+    if (this.forcedTex) apply(this.forcedTex);
+  }
 
   resetView() {
     if (this.vehicle) this.frame(this.vehicle);
