@@ -273,6 +273,13 @@ export default function LiveryEditor() {
   function selectTarget(id: string, list = targets) {
     const t = targetById(id, list); if (!t) return;
     setSelected(id);
+    // Reverse highlight: light up every mesh whose material uses this texture.
+    if (geometry && viewerRef.current) {
+      const ids = geometry.slots
+        .filter((s) => s.textureHint === t.name || s.name === t.name)
+        .map((s) => s.id);
+      viewerRef.current.highlightSlot(ids.length ? ids : null);
+    }
     const e = ensureEdit(t);
     setActiveLayerId(e.layers[e.layers.length - 1]?.id ?? null);
     requestAnimationFrame(() => drawCenter(e));

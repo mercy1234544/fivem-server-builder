@@ -598,19 +598,51 @@ export async function parseYftGeometry(buffer: ArrayBuffer): Promise<YftParseRes
   // Guarantee at least one neutral slot so Materials > 0 even without MATS.
   if (!mats) { shaders.push({ index: 0, filename: 'vehicle_paint', textureParams: [] }); shaderByMat.set(-1, 0); }
 
-  // ── Build geometries from the selected meshes ────────────────────────────────
-  log.push(`\n=== GEOMETRY ===`);
-  log.push(`Building ${renderEntries.length} meshes...`);
-  const geometries: ParsedGeometry[] = [];
-  for (let i = 0; i < renderEntries.length; i++) {
-    const { meshOff, matIdx } = renderEntries[i];
-    const shaderIdx = ensureShader(matIdx);
-    try {
-      const g = buildGeometry(r, meshOff, i, shaderIdx, diag);
-      if (g) geometries.push(g);
-    } catch (e: any) {
-      diag.warnings.push(`MESH[${i}] threw: ${e?.message || e}`);
+  // Global mesh→material map (across ALL GEOMs) so the fallback path can still
+  // resolve per-part materials even if it bypasses GEOM selection.
+  const meshMatMap = new Map<number, number>();
+  for (const g of geomOffs)
+    for (const e of geomEntries(r, g))
+      if (!meshMatMap.has(e.meshOff)) meshMatMap.set(e.meshOff, e.matIdx);
+
+  // ── Build geometries from a set of entries (resets per-build counters) ────────
+  const buildSet = (entries: GeomEntry[]): ParsedGeometry[] => {
+    diag.totalVertices = 0; diag.totalTriangles = 0; diag.vertexStrides = [];
+    const out: ParsedGeometry[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const shaderIdx = ensureShader(entries[i].matIdx);
+      try {
+        const g = buildGeometry(r, entries[i].meshOff, i, shaderIdx, diag);
+        if (g) out.push(g);
+      } catch (e: any) { diag.warnings.push(`MESH[${i}] threw: ${e?.message || e}`); }
     }
+    return out;
+  };
+
+  const dimsOf = (geos: ParsedGeometry[]): [number, number, number] => {
+    let nx = 1e9, xx = -1e9, ny = 1e9, xy = -1e9, nz = 1e9, xz = -1e9;
+    for (const g of geos) for (let i = 0; i < g.positions.length; i += 3) {
+      const x = g.positions[i], y = g.positions[i + 1], z = g.positions[i + 2];
+      if (x < nx) nx = x; if (x > xx) xx = x;
+      if (y < ny) ny = y; if (y > xy) xy = y;
+      if (z < nz) nz = z; if (z > xz) xz = z;
+    }
+    return geos.length ? [xx - nx, xy - ny, xz - nz] : [0, 0, 0];
+  };
+
+  // ── Build, with a hard safety net against the "tire only" failure ────────────
+  log.push(`\n=== GEOMETRY ===`);
+  log.push(`Building selected ${renderEntries.length} meshes...`);
+  let geometries = buildSet(renderEntries);
+  let dims = dimsOf(geometries);
+  // A real vehicle body is always > 3 m on its longest axis. If the selected
+  // geometry is smaller (e.g. GEOM selection grabbed a wheel), render EVERY MESH
+  // tag instead — guarantees the full vehicle shows rather than a single part.
+  if (geometries.length === 0 || Math.max(...dims) < 3.0) {
+    log.push(`  Selected set max-dim=${Math.max(...dims).toFixed(2)}m < 3m → FALLBACK: rendering all ${meshOffs.length} MESH tags.`);
+    const allEntries: GeomEntry[] = meshOffs.map((m) => ({ meshOff: m, matIdx: meshMatMap.get(m) ?? -1 }));
+    const allGeos = buildSet(allEntries);
+    if (allGeos.length > geometries.length) { geometries = allGeos; dims = dimsOf(geometries); }
   }
   diag.geometryCount = geometries.length;
 
@@ -620,18 +652,8 @@ export async function parseYftGeometry(buffer: ArrayBuffer): Promise<YftParseRes
   diag.shaders = shaders.map((s) => ({ filename: s.filename, textureParams: s.textureParams }));
   log.push(`Shaders/materials: ${shaders.length} (${texturedShaders} with a resolved texture)`);
 
-  // ── Bounding box ────────────────────────────────────────────────────────────
-  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
-  for (const g of geometries) {
-    for (let i = 0; i < g.positions.length; i += 3) {
-      const x = g.positions[i], y = g.positions[i + 1], z = g.positions[i + 2];
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (y < minY) minY = y; if (y > maxY) maxY = y;
-      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
-    }
-  }
   if (geometries.length > 0) {
-    diag.boundingBox = `${(maxX - minX).toFixed(2)} x ${(maxY - minY).toFixed(2)} x ${(maxZ - minZ).toFixed(2)} m`;
+    diag.boundingBox = `${dims[0].toFixed(2)} x ${dims[1].toFixed(2)} x ${dims[2].toFixed(2)} m`;
   }
 
   log.push(`Geometries built: ${geometries.length} / ${meshOffs.length}`);

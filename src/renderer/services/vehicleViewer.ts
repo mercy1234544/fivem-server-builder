@@ -22,7 +22,7 @@ export class VehicleViewer {
 
   private vehicle: LoadedVehicle | null = null;
   private overrideTex = new Map<string, THREE.CanvasTexture>();
-  private highlightId: string | null = null;
+  private highlightKey: string | null = null;
   private wireframe = false;
 
   onPickSlot: ((slotId: string) => void) | null = null;
@@ -156,17 +156,20 @@ export class VehicleViewer {
     tex.needsUpdate = true;
   }
 
-  highlightSlot(slotId: string | null) {
+  /** Highlight one slot, a set of slots (e.g. every mesh using a texture), or clear. */
+  highlightSlot(slotId: string | string[] | null) {
     if (!this.vehicle) return;
-    if (this.highlightId === slotId) return;
-    // reset previous
+    const ids = slotId == null ? [] : Array.isArray(slotId) ? slotId : [slotId];
+    const idSet = new Set(ids);
+    const key = ids.slice().sort().join('|');
+    if (this.highlightKey === key) return;
     for (const slot of this.vehicle.slots) {
-      const on = slot.id === slotId;
+      const on = idSet.has(slot.id);
       slot.material.emissive = new THREE.Color(on ? 0x2266ff : 0x000000);
       slot.material.emissiveIntensity = on ? 0.6 : 0;
       slot.material.needsUpdate = true;
     }
-    this.highlightId = slotId;
+    this.highlightKey = key;
   }
 
   setWireframe(on: boolean) {
