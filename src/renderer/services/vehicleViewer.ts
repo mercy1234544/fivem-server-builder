@@ -25,10 +25,11 @@ export class VehicleViewer {
   private forcedTex: THREE.CanvasTexture | null = null;
   private uvDebugMat: THREE.ShaderMaterial | null = null;
   private savedMats = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  private savedSection = new Map<string, { color: THREE.Color; map: THREE.Texture | null }>();
   private highlightKey: string | null = null;
   private wireframe = false;
 
-  onPickSlot: ((slotId: string) => void) | null = null;
+  onPickSlot: ((slotId: string, meshName: string) => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -121,7 +122,7 @@ export class VehicleViewer {
     if (!hits.length) return;
     const mesh = hits[0].object as THREE.Mesh;
     const slot = this.vehicle.slots.find((sl) => sl.meshes.includes(mesh));
-    if (slot) this.onPickSlot(slot.id);
+    if (slot) this.onPickSlot(slot.id, mesh.name || '');
   };
 
   setVehicle(vehicle: LoadedVehicle) {
@@ -248,6 +249,33 @@ export class VehicleViewer {
         if (s) m.material = s;
       }
       this.savedMats.clear();
+    }
+  }
+
+  /**
+   * SECTION DEBUG: paint each material section a unique flat colour (no texture)
+   * so you can see exactly which mesh sections share a material and compare the
+   * breakdown to OpenIV. Pass false to restore textures/colours.
+   */
+  setSectionDebug(on: boolean) {
+    if (!this.vehicle) return;
+    if (on) {
+      this.vehicle.slots.forEach((slot, i) => {
+        if (!this.savedSection.has(slot.id))
+          this.savedSection.set(slot.id, { color: slot.material.color.clone(), map: slot.material.map });
+        // Golden-ratio hue spacing → maximally distinct colours.
+        slot.material.color.setHSL((i * 0.61803398875) % 1, 0.75, 0.5);
+        slot.material.map = null;
+        slot.material.emissive = new THREE.Color(0x000000);
+        slot.material.emissiveIntensity = 0;
+        slot.material.needsUpdate = true;
+      });
+    } else {
+      for (const slot of this.vehicle.slots) {
+        const s = this.savedSection.get(slot.id);
+        if (s) { slot.material.color.copy(s.color); slot.material.map = s.map as THREE.Texture | null; slot.material.needsUpdate = true; }
+      }
+      this.savedSection.clear();
     }
   }
 

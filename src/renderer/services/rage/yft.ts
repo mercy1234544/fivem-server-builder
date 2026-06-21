@@ -45,6 +45,8 @@ export interface ParsedShader {
   index: number;
   filename: string;
   textureParams: string[];
+  /** GTA material index (from the GEOM per-mesh material array / MATS table). */
+  materialIndex: number;
 }
 
 export interface ParsedDrawable {
@@ -631,12 +633,12 @@ export async function parseYftGeometry(buffer: ArrayBuffer): Promise<YftParseRes
       const primary = pickPrimaryTexture(texs);
       if (primary) { filename = primary; texParams = [primary, ...texs.filter((t) => t !== primary)]; }
     }
-    shaders.push({ index: idx, filename, textureParams: texParams });
+    shaders.push({ index: idx, filename, textureParams: texParams, materialIndex: matIdx });
     shaderByMat.set(matIdx, idx);
     return idx;
   };
   // Guarantee at least one neutral slot so Materials > 0 even without MATS.
-  if (!mats) { shaders.push({ index: 0, filename: 'vehicle_paint', textureParams: [] }); shaderByMat.set(-1, 0); }
+  if (!mats) { shaders.push({ index: 0, filename: 'vehicle_paint', textureParams: [], materialIndex: -1 }); shaderByMat.set(-1, 0); }
 
   // Global mesh→material map (across ALL GEOMs) so the fallback path can still
   // resolve per-part materials even if it bypasses GEOM selection.

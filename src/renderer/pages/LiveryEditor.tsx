@@ -106,6 +106,8 @@ export default function LiveryEditor() {
   const [forceTexOn, setForceTexOn] = useState(false);
   const [uvDebug, setUvDebug] = useState(false);
   const [flipV, setFlipV] = useState(true);
+  const [sectionDebug, setSectionDebug] = useState(false);
+  const [pickedMesh, setPickedMesh] = useState<string>('');
   const replaceTargetRef = useRef<string | null>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -149,10 +151,11 @@ export default function LiveryEditor() {
     v.setVehicle(geometry);
 
     // Clicking a mesh → select the matching texture (uses ref, not stale closure).
-    v.onPickSlot = (slotId) => {
+    v.onPickSlot = (slotId, meshName) => {
       const slot = geometry.slots.find((s) => s.id === slotId);
       if (!slot) return;
       setPickedSlotId(slotId);
+      setPickedMesh(meshName);
       const currentTargets = targetsRef.current;
       const match =
         currentTargets.find((t) => t.name === slot.textureHint) ||
@@ -1115,6 +1118,11 @@ export default function LiveryEditor() {
                   className={`p-1.5 rounded text-[9px] font-bold ${!flipV ? 'bg-amber-500/20 text-amber-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
                   ⇅V
                 </button>
+                <button title="Section debug — colour each material section uniquely (compare to OpenIV)"
+                  onClick={() => { setSectionDebug((s) => { const ns = !s; viewerRef.current?.setSectionDebug(ns); return ns; }); }}
+                  className={`p-1.5 rounded ${sectionDebug ? 'bg-fuchsia-500/20 text-fuchsia-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
+                  <Grid3x3 size={13} />
+                </button>
               </>)}
             </div>
 
@@ -1196,12 +1204,17 @@ export default function LiveryEditor() {
                   {picked ? (
                     <div className="rounded bg-surface-900/50 px-2 py-1.5 space-y-0.5">
                       <p className="text-surface-500 uppercase tracking-wider text-[9px]">Selected mesh material</p>
-                      <Row k="Material" v={picked.name} />
+                      <Row k="Mesh" v={pickedMesh || '—'} />
+                      <Row k="Shader" v={picked.name} />
+                      <Row k="Mat index" v={picked.materialIndex !== undefined ? String(picked.materialIndex) : '—'} />
                       <Row k="Section" v={picked.section} />
                       <Row k="Meshes" v={String(picked.meshes.length)} />
                       <Row k="Diffuse" v={diffuse} ok={inYtd(diffuse)} />
                       <Row k="Normal" v={normal} ok={inYtd(normal)} />
                       <Row k="Specular" v={spec} ok={inYtd(spec)} />
+                      {picked.textures.length > 0 && (
+                        <p className="text-[9px] text-surface-500 pt-0.5 break-all">all: {picked.textures.join(', ')}</p>
+                      )}
                       <p className="text-[9px] text-surface-600 pt-0.5">✓ = name resolves to a decoded YTD texture</p>
                     </div>
                   ) : (

@@ -17,6 +17,8 @@ export interface VehicleMaterialSlot {
   textureHint?: string;
   /** All texture-parameter names for this material (diffuse, normal, spec, …). */
   textures: string[];
+  /** GTA material index (for debug / OpenIV comparison). */
+  materialIndex?: number;
 }
 
 export interface LoadedVehicle {
@@ -204,6 +206,7 @@ export function buildVehicleFromDrawable(
       section: guessSection(sectionHint),
       textureHint: texName ?? undefined,
       textures: shader.textureParams ?? [],
+      materialIndex: shader.materialIndex,
     });
   }
 
