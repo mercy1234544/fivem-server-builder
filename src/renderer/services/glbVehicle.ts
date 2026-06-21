@@ -150,8 +150,12 @@ function buildVehicle(scene: THREE.Group): LoadedVehicle {
 //   Mapping:  three = (gtaX, gtaZ, -gtaY).
 //   Determinant = 1 → no winding-order flip needed.
 //
-// UV convention: GTA V uses DX (v=0 at top). Three.js CanvasTexture with
-// flipY=true (default) already flips the image so DX UVs are correct as-is.
+// UV convention: GTA V uses DirectX UVs (v=0 at the TOP of the texture) and the
+// YFT stores them that way. We feed those UVs to Three.js unchanged, so the
+// texture must NOT be vertically flipped on upload → flipY = FALSE. (flipY=true,
+// the Three.js default for OpenGL-convention UVs, would sample v=0 from the
+// BOTTOM, vertically mirroring every texture — invisible on uniform paint but it
+// scatters a livery atlas to the wrong panels.)
 
 function gtaPos(x: number, y: number, z: number): [number, number, number] {
   return [x, z, -y];
@@ -181,7 +185,7 @@ export function buildVehicleFromDrawable(
       c.width = imgData.width; c.height = imgData.height;
       c.getContext('2d')!.putImageData(imgData, 0, 0);
       map = new THREE.CanvasTexture(c);
-      map.flipY       = true;  // DX → OpenGL: flip image vertically
+      map.flipY       = false; // GTA DX UVs (v=0 top) used as-is → do not flip
       map.colorSpace  = THREE.SRGBColorSpace;
       map.anisotropy  = 8;
     }

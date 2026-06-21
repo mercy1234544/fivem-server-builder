@@ -145,7 +145,7 @@ export class VehicleViewer {
   }
 
   /** Push the edited canvas onto a specific material's map — live, no reload. */
-  setSlotTexture(slot: VehicleMaterialSlot, canvas: HTMLCanvasElement, flipY = true) {
+  setSlotTexture(slot: VehicleMaterialSlot, canvas: HTMLCanvasElement, flipY = false) {
     let tex = this.overrideTex.get(slot.id);
     if (!tex) {
       tex = new THREE.CanvasTexture(canvas);
@@ -169,7 +169,7 @@ export class VehicleViewer {
    * materials affected. Used by the "Force Selected Texture" test button to
    * prove the live-texture pipeline independently of material→texture mapping.
    */
-  forceTextureOnAll(canvas: HTMLCanvasElement | null, flipY = true): number {
+  forceTextureOnAll(canvas: HTMLCanvasElement | null, flipY = false): number {
     if (!this.vehicle) return 0;
     if (!canvas) {
       for (const slot of this.vehicle.slots) {

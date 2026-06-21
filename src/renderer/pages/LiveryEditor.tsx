@@ -105,7 +105,7 @@ export default function LiveryEditor() {
   const [pickedSlotId, setPickedSlotId] = useState<string | null>(null);
   const [forceTexOn, setForceTexOn] = useState(false);
   const [uvDebug, setUvDebug] = useState(false);
-  const [flipV, setFlipV] = useState(true);
+  const [flipV, setFlipV] = useState(false);
   const [sectionDebug, setSectionDebug] = useState(false);
   const [pickedMesh, setPickedMesh] = useState<string>('');
   const replaceTargetRef = useRef<string | null>(null);
@@ -1113,9 +1113,9 @@ export default function LiveryEditor() {
                   className={`p-1.5 rounded text-[9px] font-bold ${uvDebug ? 'bg-primary-600/20 text-primary-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
                   UV
                 </button>
-                <button title="Flip texture V (fix upside-down liveries)"
+                <button title="Flip texture V (only if a livery looks vertically mirrored)"
                   onClick={() => { setFlipV((f) => { const nf = !f; viewerRef.current?.setFlipV(nf); return nf; }); }}
-                  className={`p-1.5 rounded text-[9px] font-bold ${!flipV ? 'bg-amber-500/20 text-amber-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
+                  className={`p-1.5 rounded text-[9px] font-bold ${flipV ? 'bg-amber-500/20 text-amber-300' : 'text-surface-500 hover:text-surface-200 hover:bg-overlay-4'}`}>
                   ⇅V
                 </button>
                 <button title="Section debug — colour each material section uniquely (compare to OpenIV)"
