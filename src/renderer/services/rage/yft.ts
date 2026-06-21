@@ -196,7 +196,11 @@ function censusTags(buf: Uint8Array): Record<string, number> {
 // the slot that yields the most normalized UVs (half2 in ~[0,1]) and the most
 // unit-length float3 normals.
 
-interface VLayout { posOff: number; uvOff: number; uvIsHalf: boolean; normalOff: number; }
+interface VLayout {
+  posOff: number; normalOff: number;
+  uvOff: number; uvIsHalf: boolean;
+  uv1Off: number; uv1IsHalf: boolean; // texcoord1 — some shaders bind the diffuse here
+}
 
 // CodeWalker grcFvf component byte-sizes, indexed by the 4-bit type nibble:
 //   0 Half(2) 1 Half2(4) 2 Half3(6) 3 Half4(8) 4 Float(4) 5 Float2(8)
@@ -216,12 +220,13 @@ function decodeDeclaration(r: ResourceReader, declOff: number, stride: number): 
   const typeOf = (ch: number) => ((ch < 8 ? tlo : thi) >>> ((ch % 8) * 4)) & 0xf;
   let off = 0;
   const elemOff: Record<number, number> = {};
-  let uvType = -1;
+  let uvType = -1, uv1Type = -1;
   for (let ch = 0; ch < 16; ch++) {
     if (!((fvf >>> ch) & 1)) continue;
     const t = typeOf(ch);
     elemOff[ch] = off;
     if (ch === 6) uvType = t;
+    if (ch === 7) uv1Type = t;
     off += FVF_SIZE[t];
   }
   // The computed stride MUST equal the declared stride, or our decode is wrong.
@@ -231,6 +236,8 @@ function decodeDeclaration(r: ResourceReader, declOff: number, stride: number): 
     normalOff: elemOff[3] ?? -1,
     uvOff: elemOff[6] ?? -1,
     uvIsHalf: uvType >= 0 && uvType <= 3, // 0-3 half formats, 4-7 float formats
+    uv1Off: elemOff[7] ?? -1,
+    uv1IsHalf: uv1Type >= 0 && uv1Type <= 3,
   };
 }
 
@@ -277,6 +284,7 @@ function discoverVertexLayout(r: ResourceReader, dataOff: number, count: number,
     posOff: 0,
     uvOff: bestUvScore > N * 0.5 ? bestUv : -1,
     uvIsHalf: bestUvHalf,
+    uv1Off: -1, uv1IsHalf: true,
     normalOff: bestNrmScore > N * 0.5 ? bestNrm : -1,
   };
 }
@@ -330,7 +338,6 @@ function buildGeometry(
 
   const positions = new Float32Array(vb.count * 3);
   const normals = layout.normalOff >= 0 ? new Float32Array(vb.count * 3) : null;
-  const uvs = layout.uvOff >= 0 ? new Float32Array(vb.count * 2) : null;
 
   for (let i = 0; i < vb.count; i++) {
     const vo = vb.dataOff + i * vb.stride;
@@ -344,16 +351,33 @@ function buildGeometry(
       normals[i * 3 + 1] = sf32(r, vo + layout.normalOff + 4);
       normals[i * 3 + 2] = sf32(r, vo + layout.normalOff + 8);
     }
+  }
 
-    if (uvs && layout.uvOff >= 0) {
-      if (layout.uvIsHalf) {
-        uvs[i * 2]     = decodeHalf(su16(r, vo + layout.uvOff));
-        uvs[i * 2 + 1] = decodeHalf(su16(r, vo + layout.uvOff + 2));
-      } else {
-        uvs[i * 2]     = sf32(r, vo + layout.uvOff);
-        uvs[i * 2 + 1] = sf32(r, vo + layout.uvOff + 4);
-      }
+  // UVs: read texcoord0; if it is degenerate (every vertex maps to one point —
+  // some GTA shaders leave UV0 unused and bind the diffuse to texcoord1), use
+  // texcoord1 instead. This is the real per-shader UV-channel binding, detected
+  // from the data rather than assumed.
+  const readUVChannel = (uvOff: number, isHalf: boolean): { uvs: Float32Array; ext: number } | null => {
+    if (uvOff < 0) return null;
+    const out = new Float32Array(vb.count * 2);
+    let mnU = 1e9, mxU = -1e9, mnV = 1e9, mxV = -1e9;
+    for (let i = 0; i < vb.count; i++) {
+      const o = vb.dataOff + i * vb.stride + uvOff;
+      const u = isHalf ? decodeHalf(su16(r, o)) : sf32(r, o);
+      const v = isHalf ? decodeHalf(su16(r, o + 2)) : sf32(r, o + 4);
+      out[i * 2] = u; out[i * 2 + 1] = v;
+      if (u < mnU) mnU = u; if (u > mxU) mxU = u;
+      if (v < mnV) mnV = v; if (v > mxV) mxV = v;
     }
+    return { uvs: out, ext: Math.max(mxU - mnU, mxV - mnV) };
+  };
+  let uvs: Float32Array | null = null;
+  const uv0 = readUVChannel(layout.uvOff, layout.uvIsHalf);
+  if (uv0 && uv0.ext > 0.002) {
+    uvs = uv0.uvs;
+  } else {
+    const uv1 = readUVChannel(layout.uv1Off, layout.uv1IsHalf);
+    uvs = uv1 && uv1.ext > 0.002 ? uv1.uvs : (uv0 ? uv0.uvs : null);
   }
 
   const triCount = Math.floor(ib.count / 3);
