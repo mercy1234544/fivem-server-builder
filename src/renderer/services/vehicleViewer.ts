@@ -22,6 +22,7 @@ export class VehicleViewer {
 
   private vehicle: LoadedVehicle | null = null;
   private overrideTex = new Map<string, THREE.CanvasTexture>();
+  private forcedTex: THREE.CanvasTexture | null = null;
   private highlightKey: string | null = null;
   private wireframe = false;
 
@@ -149,11 +150,47 @@ export class VehicleViewer {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
       this.overrideTex.set(slot.id, tex);
-      slot.material.map = tex;
-      slot.material.needsUpdate = true;
     }
+    // Always (re)assign the map + force white base so the texture isn't tinted
+    // out by the material's flat colour, then flag both for GPU re-upload.
+    slot.material.map = tex;
+    slot.material.color.set(0xffffff);
+    slot.material.needsUpdate = true;
     tex.image = canvas;
     tex.needsUpdate = true;
+  }
+
+  /**
+   * DEBUG: apply one canvas as the diffuse map of EVERY material (or pass null to
+   * restore each material's original/override map). Returns the number of
+   * materials affected. Used by the "Force Selected Texture" test button to
+   * prove the live-texture pipeline independently of material→texture mapping.
+   */
+  forceTextureOnAll(canvas: HTMLCanvasElement | null, flipY = true): number {
+    if (!this.vehicle) return 0;
+    if (!canvas) {
+      for (const slot of this.vehicle.slots) {
+        const restore = this.overrideTex.get(slot.id) ?? slot.originalMap;
+        slot.material.map = restore as THREE.Texture | null;
+        slot.material.color.set(restore ? 0xffffff : 0xc0c0c0);
+        slot.material.needsUpdate = true;
+      }
+      return 0;
+    }
+    if (!this.forcedTex) {
+      this.forcedTex = new THREE.CanvasTexture(canvas);
+      this.forcedTex.colorSpace = THREE.SRGBColorSpace;
+      this.forcedTex.anisotropy = 8;
+    }
+    this.forcedTex.flipY = flipY;
+    this.forcedTex.image = canvas;
+    this.forcedTex.needsUpdate = true;
+    for (const slot of this.vehicle.slots) {
+      slot.material.map = this.forcedTex;
+      slot.material.color.set(0xffffff);
+      slot.material.needsUpdate = true;
+    }
+    return this.vehicle.slots.length;
   }
 
   /** Highlight one slot, a set of slots (e.g. every mesh using a texture), or clear. */
@@ -165,8 +202,9 @@ export class VehicleViewer {
     if (this.highlightKey === key) return;
     for (const slot of this.vehicle.slots) {
       const on = idSet.has(slot.id);
-      slot.material.emissive = new THREE.Color(on ? 0x2266ff : 0x000000);
-      slot.material.emissiveIntensity = on ? 0.6 : 0;
+      // Subtle tint only — must NOT mask the (painted) diffuse texture underneath.
+      slot.material.emissive = new THREE.Color(on ? 0x1133aa : 0x000000);
+      slot.material.emissiveIntensity = on ? 0.18 : 0;
       slot.material.needsUpdate = true;
     }
     this.highlightKey = key;

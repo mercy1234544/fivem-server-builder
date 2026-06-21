@@ -15,6 +15,8 @@ export interface VehicleMaterialSlot {
   section: string;
   /** Primary texture name this slot uses (from YTD dictionary key). */
   textureHint?: string;
+  /** All texture-parameter names for this material (diffuse, normal, spec, …). */
+  textures: string[];
 }
 
 export interface LoadedVehicle {
@@ -107,6 +109,7 @@ function buildVehicle(scene: THREE.Group): LoadedVehicle {
           meshes: [],
           originalMap: mat.map ?? null,
           section: guessSection(`${name} ${mesh.name}`),
+          textures: [],
         };
         slotByMaterial.set(mat, slot);
       }
@@ -200,12 +203,13 @@ export function buildVehicleFromDrawable(
       originalMap: map,
       section: guessSection(sectionHint),
       textureHint: texName ?? undefined,
+      textures: shader.textureParams ?? [],
     });
   }
 
   // Fallback material for shader indices with no parsed shader.
   const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.3, roughness: 0.6, name: 'fallback' });
-  const fallbackSlot: VehicleMaterialSlot = { id: 'slot_fallback', name: 'Other', material: fallbackMat, meshes: [], originalMap: null, section: 'Other' };
+  const fallbackSlot: VehicleMaterialSlot = { id: 'slot_fallback', name: 'Other', material: fallbackMat, meshes: [], originalMap: null, section: 'Other', textures: [] };
 
   // Build Three.js BufferGeometry for each parsed geometry.
   for (const geo of drawable.geometries) {

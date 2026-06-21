@@ -66,6 +66,19 @@ function renderTextLayer(l: Layer) {
 
 type Phase = 'empty' | 'list' | 'loading' | 'edit';
 
+// Compact key/value row for the material inspector. `ok` shows a YTD-resolution tick.
+function Row({ k, v, ok }: { k: string; v?: string; ok?: boolean }) {
+  return (
+    <div className="flex items-baseline gap-1">
+      <span className="text-surface-600 w-14 shrink-0">{k}</span>
+      <span className="text-surface-300 truncate flex-1" title={v}>{v || '—'}</span>
+      {v && ok !== undefined && (
+        <span className={ok ? 'text-emerald-400' : 'text-red-400'}>{ok ? '✓' : '✗'}</span>
+      )}
+    </div>
+  );
+}
+
 export default function LiveryEditor() {
   const [phase, setPhase] = useState<Phase>('empty');
   const [vehicles, setVehicles] = useState<DetectedVehicle[]>([]);
@@ -89,6 +102,8 @@ export default function LiveryEditor() {
   const [numScale, setNumScale] = useState(1.0);
   const [view, setView] = useState<'browser' | 'editor'>('browser');
   const [wireframe, setWireframe] = useState(false);
+  const [pickedSlotId, setPickedSlotId] = useState<string | null>(null);
+  const [forceTexOn, setForceTexOn] = useState(false);
   const replaceTargetRef = useRef<string | null>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -135,6 +150,7 @@ export default function LiveryEditor() {
     v.onPickSlot = (slotId) => {
       const slot = geometry.slots.find((s) => s.id === slotId);
       if (!slot) return;
+      setPickedSlotId(slotId);
       const currentTargets = targetsRef.current;
       const match =
         currentTargets.find((t) => t.name === slot.textureHint) ||
@@ -249,12 +265,18 @@ export default function LiveryEditor() {
     }
     if (id === selected) drawCenter(e);
 
-    // Push edited canvas live onto the matching vehicle material slot.
+    // Push edited canvas live onto EVERY material that references this texture
+    // (as diffuse or any param), case-insensitively — not just the one whose
+    // primary name matches. A material can use the painted texture in any slot.
     if (geometry && viewerRef.current) {
       const t = targets.find((tx) => tx.id === id);
       if (t) {
-        const slot = geometry.slots.find((s) => s.textureHint === t.name);
-        if (slot) viewerRef.current.setSlotTexture(slot, e.canvas);
+        const tn = t.name.toLowerCase();
+        const slots = geometry.slots.filter(
+          (s) => s.textureHint?.toLowerCase() === tn ||
+                 s.textures.some((tx) => tx.toLowerCase() === tn)
+        );
+        for (const slot of slots) viewerRef.current.setSlotTexture(slot, e.canvas);
       }
     }
   }
@@ -1112,14 +1134,70 @@ export default function LiveryEditor() {
               </div>
             )}
 
-            {/* Footer hint when geometry is showing */}
-            {geometry && (
-              <div className="shrink-0 border-t border-overlay-6 px-3 py-1.5">
-                <p className="text-[10px] text-surface-600 leading-tight">
-                  <b className="text-surface-400">Click</b> a mesh part → selects texture · edits apply live
-                </p>
-              </div>
-            )}
+            {/* Material / texture diagnostics */}
+            {geometry && (() => {
+              const inYtd = (n?: string) => !!n && targets.some((t) => t.name.toLowerCase() === n.toLowerCase());
+              const picked = pickedSlotId ? geometry.slots.find((s) => s.id === pickedSlotId) : null;
+              const sel = selected ? targets.find((t) => t.id === selected) : null;
+              // Materials/meshes that reference the selected texture.
+              const usingSel = sel
+                ? geometry.slots.filter((s) =>
+                    s.textureHint?.toLowerCase() === sel.name.toLowerCase() ||
+                    s.textures.some((tx) => tx.toLowerCase() === sel.name.toLowerCase()))
+                : [];
+              const meshCount = usingSel.reduce((n, s) => n + s.meshes.length, 0);
+              const diffuse = picked ? (picked.textureHint || picked.textures[0]) : undefined;
+              const normal = picked?.textures.find((t) => /normal|_n$|_nrm|blank_normal/i.test(t));
+              const spec = picked?.textures.find((t) => /spec|_s$/i.test(t));
+              const curEditCanvas = selected ? edits.current.get(selected)?.canvas : null;
+              return (
+                <div className="shrink-0 border-t border-overlay-6 px-3 py-2 space-y-2 max-h-72 overflow-y-auto text-[10px]">
+                  {/* Force Selected Texture test */}
+                  <button
+                    disabled={!curEditCanvas}
+                    onClick={() => {
+                      const nv = !forceTexOn;
+                      setForceTexOn(nv);
+                      viewerRef.current?.forceTextureOnAll(nv && curEditCanvas ? curEditCanvas : null);
+                    }}
+                    className={`w-full px-2 py-1.5 rounded font-semibold ${forceTexOn ? 'bg-amber-500/25 text-amber-300 ring-1 ring-amber-400/40' : curEditCanvas ? 'bg-overlay-6 text-surface-200 hover:bg-overlay-8' : 'bg-overlay-4 text-surface-600 cursor-not-allowed'}`}
+                    title="Apply the selected texture to EVERY material to test the live pipeline"
+                  >
+                    {forceTexOn ? '● Forcing selected texture on ALL — click to restore' : 'Force Selected Texture (test all materials)'}
+                  </button>
+
+                  {/* Selected-texture usage */}
+                  {sel && (
+                    <div className="rounded bg-surface-900/50 px-2 py-1.5">
+                      <p className="text-surface-300 font-semibold truncate">Texture: {sel.name}</p>
+                      <p className={meshCount > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                        used by {usingSel.length} material(s) · {meshCount} mesh(es)
+                        {meshCount === 0 && ' — no mesh uses this texture (mapping miss)'}
+                      </p>
+                      <button
+                        onClick={() => viewerRef.current?.highlightSlot(usingSel.length ? usingSel.map((s) => s.id) : null)}
+                        className="mt-1 text-cyan-400 underline">Highlight {meshCount} mesh(es)</button>
+                    </div>
+                  )}
+
+                  {/* Picked-mesh material inspector */}
+                  {picked ? (
+                    <div className="rounded bg-surface-900/50 px-2 py-1.5 space-y-0.5">
+                      <p className="text-surface-500 uppercase tracking-wider text-[9px]">Selected mesh material</p>
+                      <Row k="Material" v={picked.name} />
+                      <Row k="Section" v={picked.section} />
+                      <Row k="Meshes" v={String(picked.meshes.length)} />
+                      <Row k="Diffuse" v={diffuse} ok={inYtd(diffuse)} />
+                      <Row k="Normal" v={normal} ok={inYtd(normal)} />
+                      <Row k="Specular" v={spec} ok={inYtd(spec)} />
+                      <p className="text-[9px] text-surface-600 pt-0.5">✓ = name resolves to a decoded YTD texture</p>
+                    </div>
+                  ) : (
+                    <p className="text-surface-600">Click a mesh part to inspect its material → texture mapping.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
