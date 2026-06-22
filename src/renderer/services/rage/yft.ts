@@ -39,6 +39,8 @@ export interface ParsedGeometry {
   shaderIndex: number;
   vertexStride: number;
   fvf: number;
+  /** Which texcoord channel the UVs were read from (0 or 1). */
+  uvChannel: number;
 }
 
 export interface ParsedShader {
@@ -47,6 +49,10 @@ export interface ParsedShader {
   textureParams: string[];
   /** GTA material index (from the GEOM per-mesh material array / MATS table). */
   materialIndex: number;
+  /** GTA shader name hash (material struct +0x08) — for OpenIV/CodeWalker compare. */
+  shaderHash: string;
+  /** Texture-parameter slot the chosen diffuse came from. */
+  diffuseSlot: number;
 }
 
 export interface ParsedDrawable {
@@ -372,12 +378,14 @@ function buildGeometry(
     return { uvs: out, ext: Math.max(mxU - mnU, mxV - mnV) };
   };
   let uvs: Float32Array | null = null;
+  let uvChannel = 0;
   const uv0 = readUVChannel(layout.uvOff, layout.uvIsHalf);
   if (uv0 && uv0.ext > 0.002) {
     uvs = uv0.uvs;
   } else {
     const uv1 = readUVChannel(layout.uv1Off, layout.uv1IsHalf);
-    uvs = uv1 && uv1.ext > 0.002 ? uv1.uvs : (uv0 ? uv0.uvs : null);
+    if (uv1 && uv1.ext > 0.002) { uvs = uv1.uvs; uvChannel = 1; }
+    else uvs = uv0 ? uv0.uvs : null;
   }
 
   const triCount = Math.floor(ib.count / 3);
@@ -400,7 +408,7 @@ function buildGeometry(
   return {
     name: `mesh_${geoIdx}`,
     positions, uvs, normals, indices,
-    shaderIndex, vertexStride: vb.stride, fvf: 0,
+    shaderIndex, vertexStride: vb.stride, fvf: 0, uvChannel,
   };
 }
 
@@ -652,17 +660,20 @@ export async function parseYftGeometry(buffer: ArrayBuffer): Promise<YftParseRes
     const idx = shaders.length;
     let filename = `material_${matIdx}`;
     let texParams: string[] = [];
+    let shaderHash = '0x0', diffuseSlot = -1;
     if (mats && matIdx >= 0) {
       const texs = materialTextures(r, matIdx, mats);
       const primary = pickPrimaryTexture(texs);
-      if (primary) { filename = primary; texParams = [primary, ...texs.filter((t) => t !== primary)]; }
+      if (primary) { filename = primary; texParams = [primary, ...texs.filter((t) => t !== primary)]; diffuseSlot = texs.indexOf(primary); }
+      const mOff = r.resolve(sptr(r, mats.arrOff + matIdx * 8));
+      if (mOff >= 0) shaderHash = `0x${su32(r, mOff + 0x08).toString(16)}`;
     }
-    shaders.push({ index: idx, filename, textureParams: texParams, materialIndex: matIdx });
+    shaders.push({ index: idx, filename, textureParams: texParams, materialIndex: matIdx, shaderHash, diffuseSlot });
     shaderByMat.set(matIdx, idx);
     return idx;
   };
   // Guarantee at least one neutral slot so Materials > 0 even without MATS.
-  if (!mats) { shaders.push({ index: 0, filename: 'vehicle_paint', textureParams: [], materialIndex: -1 }); shaderByMat.set(-1, 0); }
+  if (!mats) { shaders.push({ index: 0, filename: 'vehicle_paint', textureParams: [], materialIndex: -1, shaderHash: '0x0', diffuseSlot: -1 }); shaderByMat.set(-1, 0); }
 
   // Global mesh→material map (across ALL GEOMs) so the fallback path can still
   // resolve per-part materials even if it bypasses GEOM selection.

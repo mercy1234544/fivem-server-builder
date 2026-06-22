@@ -48,6 +48,15 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
+  // Allow opening DevTools in the packaged build (F12 / Ctrl+Shift+I) so the
+  // per-mesh texture trace logged to the console is accessible for debugging.
+  mainWindow.webContents.on('before-input-event', (_evt, input) => {
+    if (input.type !== 'keyDown') return;
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      mainWindow!.webContents.toggleDevTools();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

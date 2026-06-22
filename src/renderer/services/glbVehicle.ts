@@ -19,6 +19,12 @@ export interface VehicleMaterialSlot {
   textures: string[];
   /** GTA material index (for debug / OpenIV comparison). */
   materialIndex?: number;
+  /** GTA shader name hash (for OpenIV/CodeWalker comparison). */
+  shaderHash?: string;
+  /** Texture-list slot the chosen diffuse came from. */
+  diffuseSlot?: number;
+  /** Which texcoord channel this slot's meshes use (0 or 1). */
+  uvChannel?: number;
 }
 
 export interface LoadedVehicle {
@@ -211,6 +217,8 @@ export function buildVehicleFromDrawable(
       textureHint: texName ?? undefined,
       textures: shader.textureParams ?? [],
       materialIndex: shader.materialIndex,
+      shaderHash: shader.shaderHash,
+      diffuseSlot: shader.diffuseSlot,
     });
   }
 
@@ -257,10 +265,42 @@ export function buildVehicleFromDrawable(
     mesh.receiveShadow = true;
     mesh.name          = geo.name;
     mesh.frustumCulled = false; // never cull on a (possibly wrong) bounding sphere
+    // Per-mesh trace data (read back by the editor's click inspector / console trace).
+    mesh.userData = {
+      uvChannel: geo.uvChannel,
+      vertexCount: geo.positions.length / 3,
+      triCount: geo.indices.length / 3,
+      vertexStride: geo.vertexStride,
+      materialIndex: slot.materialIndex,
+      shaderHash: slot.shaderHash,
+      diffuse: slot.textureHint,
+      diffuseSlot: slot.diffuseSlot,
+      hasTexture: !!slot.originalMap,
+      texSource: slot.originalMap ? 'YTD' : 'none',
+    };
+    slot.uvChannel = geo.uvChannel;
     root.add(mesh);
     meshes.push(mesh);
     if (!slot.meshes.includes(mesh)) slot.meshes.push(mesh);
   }
+
+  // ── Complete texture trace (console) — one row per rendered mesh ──────────────
+  try {
+    const rows = meshes.map((m, i) => ({
+      mesh: m.name, idx: i,
+      matIdx: m.userData.materialIndex,
+      shaderHash: m.userData.shaderHash,
+      diffuse: m.userData.diffuse,
+      diffuseSlot: m.userData.diffuseSlot,
+      uvCh: m.userData.uvChannel,
+      verts: m.userData.vertexCount,
+      texSource: m.userData.texSource,
+    }));
+    // eslint-disable-next-line no-console
+    console.log('%c[YFT texture trace] %d meshes', 'color:#4ea1ff;font-weight:bold', rows.length);
+    // eslint-disable-next-line no-console
+    console.table(rows);
+  } catch { /* ignore */ }
 
   // Collect slots — prefer livery/body slots first.
   const slots = [

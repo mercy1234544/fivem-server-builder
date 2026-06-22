@@ -149,10 +149,12 @@ export class VehicleViewer {
     let tex = this.overrideTex.get(slot.id);
     if (!tex) {
       tex = new THREE.CanvasTexture(canvas);
-      tex.flipY      = flipY;    // true for native GTA V (DX→GL), false for GLB
+      tex.flipY      = flipY;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
       this.overrideTex.set(slot.id, tex);
+      // eslint-disable-next-line no-console
+      console.log(`[setSlotTexture] slot=${slot.id} (${slot.name}) mat=${slot.materialIndex} → NEW override ${canvas.width}×${canvas.height} flipY=${flipY}`);
     }
     // Always (re)assign the map + force white base so the texture isn't tinted
     // out by the material's flat colour, then flag both for GPU re-upload.
@@ -193,6 +195,8 @@ export class VehicleViewer {
       slot.material.color.set(0xffffff);
       slot.material.needsUpdate = true;
     }
+    // eslint-disable-next-line no-console
+    console.log(`[forceTextureOnAll] applied ${canvas.width}×${canvas.height} (flipY=${flipY}) to ${this.vehicle.slots.length} materials`);
     return this.vehicle.slots.length;
   }
 

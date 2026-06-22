@@ -302,10 +302,13 @@ export default function LiveryEditor() {
     setSelected(id);
     // Reverse highlight: light up every mesh whose material uses this texture.
     if (geometry && viewerRef.current) {
-      const ids = geometry.slots
-        .filter((s) => s.textureHint === t.name || s.name === t.name)
-        .map((s) => s.id);
-      viewerRef.current.highlightSlot(ids.length ? ids : null);
+      const tn = t.name.toLowerCase();
+      const using = geometry.slots.filter(
+        (s) => s.textureHint?.toLowerCase() === tn || s.textures.some((tx) => tx.toLowerCase() === tn));
+      // eslint-disable-next-line no-console
+      console.log(`[select] texture="${t.name}" maps to ${using.length} material slot(s):`,
+        using.map((s) => `mat${s.materialIndex}/${s.shaderHash}(${s.meshes.length} mesh, uv${s.uvChannel})`));
+      viewerRef.current.highlightSlot(using.length ? using.map((s) => s.id) : null);
     }
     const e = ensureEdit(t);
     setActiveLayerId(e.layers[e.layers.length - 1]?.id ?? null);
@@ -1170,6 +1173,9 @@ export default function LiveryEditor() {
               const normal = picked?.textures.find((t) => /normal|_n$|_nrm|blank_normal/i.test(t));
               const spec = picked?.textures.find((t) => /spec|_s$/i.test(t));
               const curEditCanvas = selected ? edits.current.get(selected)?.canvas : null;
+              const diffuseTarget = diffuse ? targets.find((t) => t.name.toLowerCase() === diffuse.toLowerCase()) : undefined;
+              const texSize = diffuseTarget ? `${diffuseTarget.w}×${diffuseTarget.h}` : (inYtd(diffuse) ? '?' : '—');
+              const texSource = picked && edits.current.get(diffuseTarget?.id || '') ? 'edited canvas' : (inYtd(diffuse) ? 'original YTD' : 'none');
               return (
                 <div className="shrink-0 border-t border-overlay-6 px-3 py-2 space-y-2 max-h-72 overflow-y-auto text-[10px]">
                   {/* Force Selected Texture test */}
@@ -1206,10 +1212,14 @@ export default function LiveryEditor() {
                       <p className="text-surface-500 uppercase tracking-wider text-[9px]">Selected mesh material</p>
                       <Row k="Mesh" v={pickedMesh || '—'} />
                       <Row k="Shader" v={picked.name} />
+                      <Row k="Shader#" v={picked.shaderHash} />
                       <Row k="Mat index" v={picked.materialIndex !== undefined ? String(picked.materialIndex) : '—'} />
+                      <Row k="UV channel" v={picked.uvChannel !== undefined ? `texcoord${picked.uvChannel}` : '—'} />
                       <Row k="Section" v={picked.section} />
                       <Row k="Meshes" v={String(picked.meshes.length)} />
                       <Row k="Diffuse" v={diffuse} ok={inYtd(diffuse)} />
+                      <Row k="Tex size" v={texSize} />
+                      <Row k="Source" v={texSource} />
                       <Row k="Normal" v={normal} ok={inYtd(normal)} />
                       <Row k="Specular" v={spec} ok={inYtd(spec)} />
                       {picked.textures.length > 0 && (
