@@ -18,6 +18,7 @@ import ImportResources from './pages/ImportResources';
 import ResourceUpdater from './pages/ResourceUpdater';
 import VehiclePackManager from './pages/VehiclePackManager';
 import ServerConsole from './pages/ServerConsole';
+import ServerPanel from './pages/ServerPanel';
 import LiveryEditor from './pages/LiveryEditor';
 import Settings from './pages/Settings';
 
@@ -50,6 +51,7 @@ export default function App() {
           <AnimatePresence mode="wait">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/server/:id" element={<ServerPanel />} />
               <Route path="/create" element={<ServerWizard />} />
               <Route path="/resources" element={<ResourceManager />} />
               <Route path="/organizer" element={<ResourceOrganizer />} />

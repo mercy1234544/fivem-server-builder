@@ -313,7 +313,7 @@ export default function Dashboard() {
               >
                 <ServerCard
                   server={server}
-                  onSelect={() => { setActiveServer(server.id); navigate('/resources'); }}
+                  onSelect={() => { setActiveServer(server.id); navigate(`/server/${server.id}`); }}
                   onDelete={(e) => handleDeleteServer(e, server)}
                   onToggle={(e) => handleToggleServer(e, server)}
                 />

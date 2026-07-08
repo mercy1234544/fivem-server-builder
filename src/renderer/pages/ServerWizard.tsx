@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Check,
   Server,
-  Monitor,
   Database,
   Download,
   FolderOpen,
@@ -20,9 +19,10 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 
+// Servers are always built for Windows locally — you test on this machine.
+// (Pushing a finished server to a remote Linux box will be its own feature.)
 const STEPS = [
   { title: 'Framework', description: 'Choose your server framework' },
-  { title: 'Operating System', description: 'Select target OS' },
   { title: 'Database', description: 'Choose database engine' },
   { title: 'Artifacts', description: 'Select artifact version' },
   { title: 'Details', description: 'Name and install location' },
@@ -59,10 +59,9 @@ export default function ServerWizard() {
   const canProceed = () => {
     switch (step) {
       case 0: return !!config.framework;
-      case 1: return !!config.os;
-      case 2: return !!config.database;
-      case 3: return !!config.artifactVersion;
-      case 4: return !!config.installPath && !!config.name && !!config.licenseKey;
+      case 1: return !!config.database;
+      case 2: return !!config.artifactVersion;
+      case 3: return !!config.installPath && !!config.name && !!config.licenseKey;
       default: return true;
     }
   };
@@ -267,35 +266,6 @@ export default function ServerWizard() {
 
             {step === 1 && (
               <div className="space-y-4">
-                <h2 className="text-lg font-semibold">Operating System</h2>
-                <p className="text-sm text-surface-400">Select the OS your server will run on</p>
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  {[
-                    { id: 'windows', name: 'Windows', icon: Monitor, desc: 'Windows Server / Desktop' },
-                    { id: 'linux', name: 'Linux', icon: Server, desc: 'Ubuntu / Debian / CentOS' },
-                  ].map((os) => (
-                    <motion.button
-                      key={os.id}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setConfig({ ...config, os: os.id as any })}
-                      className={`p-6 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${
-                        config.os === os.id
-                          ? 'border-primary-500 bg-primary-500/10'
-                          : 'border-surface-700 hover:border-surface-500'
-                      }`}
-                    >
-                      <os.icon size={36} className={config.os === os.id ? 'text-primary-400' : 'text-surface-400'} />
-                      <span className="font-semibold text-surface-100">{os.name}</span>
-                      <span className="text-xs text-surface-400">{os.desc}</span>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {step === 2 && (
-              <div className="space-y-4">
                 <h2 className="text-lg font-semibold">Database Engine</h2>
                 <p className="text-sm text-surface-400">Choose your database server</p>
                 <div className="grid grid-cols-2 gap-4 mt-4">
@@ -328,7 +298,7 @@ export default function ServerWizard() {
               </div>
             )}
 
-            {step === 3 && (
+            {step === 2 && (
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold">Artifact Version</h2>
                 <p className="text-sm text-surface-400">Select the FiveM server artifact build</p>
@@ -359,7 +329,7 @@ export default function ServerWizard() {
               </div>
             )}
 
-            {step === 4 && (
+            {step === 3 && (
               <div className="space-y-5">
                 <h2 className="text-lg font-semibold">Server Details</h2>
                 <p className="text-sm text-surface-400">Give your server a name and choose where to install it</p>
@@ -409,13 +379,12 @@ export default function ServerWizard() {
               </div>
             )}
 
-            {step === 5 && (
+            {step === 4 && (
               <div className="space-y-6">
                 <h2 className="text-lg font-semibold">Build Summary</h2>
                 <div className="space-y-2.5">
                   <SummaryRow label="Server Name" value={config.name || 'Unnamed'} />
                   <SummaryRow label="Framework" value={FRAMEWORKS.find(f => f.id === config.framework)?.name || config.framework} />
-                  <SummaryRow label="Operating System" value={config.os === 'windows' ? 'Windows' : 'Linux'} />
                   <SummaryRow label="Database" value={config.database === 'mariadb' ? 'MariaDB' : 'MySQL'} />
                   <SummaryRow label="Artifacts" value={config.artifactVersion === 'recommended' ? 'Latest Recommended' : config.artifactVersion === 'experimental' ? 'Latest Experimental' : 'Custom'} />
                   <SummaryRow label="License Key" value={config.licenseKey ? `${config.licenseKey.substring(0, 12)}...` : 'Not set'} mono />
