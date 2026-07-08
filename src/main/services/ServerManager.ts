@@ -28,7 +28,10 @@ export interface Server {
   artifactVersion: string;
   installPath: string;
   resourceCount: number;
-  status: 'stopped' | 'running' | 'error';
+  // 'starting' = process spawned but the server isn't ready yet (yellow dot,
+  // like txAdmin's partial state). Promoted to 'running' when the console
+  // shows readiness output.
+  status: 'stopped' | 'starting' | 'running' | 'error';
   lastBackup: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1412,15 +1415,30 @@ export class ServerManager {
 
       this.processes.set(id, proc);
       this.consoleLogs.set(id, []);
-      server.status = 'running';
+      // Process is up but the server isn't ready yet — txAdmin-style yellow.
+      server.status = 'starting';
       this.saveServers();
 
       const mainWin = BrowserWindow.getAllWindows()[0];
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('server:statusChange', { serverId: id, status: 'starting' });
+      }
+
+      // Promote starting → running once console output shows the server is
+      // actually up (resources booting / license authenticated / txAdmin ready).
+      const READY_RE = /Started resource |All Ready|authentication succeeded|Authenticated with cfx\.re/i;
 
       if (proc.stdout) {
         proc.stdout.on('data', (data: Buffer) => {
           const line = data.toString();
           this.bufferConsoleLine(id, line);
+          if (server.status === 'starting' && READY_RE.test(line)) {
+            server.status = 'running';
+            this.saveServers();
+            if (mainWin && !mainWin.isDestroyed()) {
+              mainWin.webContents.send('server:statusChange', { serverId: id, status: 'running' });
+            }
+          }
           if (mainWin && !mainWin.isDestroyed()) {
             mainWin.webContents.send('server:console', { serverId: id, line });
           }
@@ -1487,6 +1505,73 @@ export class ServerManager {
     }
     this.consoleLogs.delete(id);
     return true;
+  }
+
+  /**
+   * Auto-apply known config fixes to an existing server. Runs at app startup
+   * for every server and when a server panel opens, so fixes that ship with an
+   * app update land on ALREADY-BUILT servers too — no reinstall needed.
+   * Every rule is idempotent: once applied, it never matches again.
+   * Returns human-readable descriptions of what was changed.
+   */
+  applyMaintenanceFixes(id: string): string[] {
+    const server = this.servers.get(id);
+    if (!server || !fs.existsSync(server.installPath)) return [];
+    const fixes: string[] = [];
+
+    // Rule 1 — empty "" values in set/sets/setr lines. FXServer's cfg parser
+    // drops the empty argument → "[cmd] Argument count mismatch (passed 1,
+    // wanted 2)" at every boot. Comment those lines out.
+    const cfgFiles = ['server.cfg', 'ox.cfg', 'voice.cfg', 'misc.cfg', 'permissions.cfg'];
+    for (const f of cfgFiles) {
+      const p = path.join(server.installPath, f);
+      if (!fs.existsSync(p)) continue;
+      try {
+        const lines = fs.readFileSync(p, 'utf-8').split(/\r?\n/);
+        let changed = false;
+        for (let i = 0; i < lines.length; i++) {
+          const t = lines[i].trim();
+          if (/^(set|sets|setr)\s+\S+\s+""\s*$/.test(t)) {
+            lines[i] = `# ${t}  # auto-fixed by FiveM Server Builder — empty "" value causes "Argument count mismatch"`;
+            fixes.push(`${f}: commented out "${t}" (empty value breaks the cfg parser)`);
+            changed = true;
+          }
+        }
+        if (changed) fs.writeFileSync(p, lines.join('\n'), 'utf-8');
+      } catch { /* unreadable cfg — skip */ }
+    }
+
+    // Rule 2 — missing sv_projectName/sv_projectDesc (server name gets cut off
+    // in the server list; FXServer prints a notice every boot).
+    const cfgPath = path.join(server.installPath, 'server.cfg');
+    if (fs.existsSync(cfgPath)) {
+      try {
+        let c = fs.readFileSync(cfgPath, 'utf-8');
+        if (!/^\s*sets\s+sv_projectName/m.test(c) && /^\s*sv_hostname\s/m.test(c)) {
+          c = c.replace(
+            /^(\s*sv_hostname[^\n]*\n)/m,
+            `$1sets sv_projectName "${server.name}"\nsets sv_projectDesc "Powered by FiveM Server Builder"\n`
+          );
+          fs.writeFileSync(cfgPath, c, 'utf-8');
+          fixes.push('server.cfg: added sv_projectName / sv_projectDesc (server-list name fix)');
+        }
+      } catch { /* skip */ }
+    }
+
+    if (fixes.length > 0) {
+      console.log(`[Maintenance] ${server.name}: applied ${fixes.length} fix(es):\n  - ${fixes.join('\n  - ')}`);
+    }
+    return fixes;
+  }
+
+  /** Run maintenance for every registered server (called once at app startup). */
+  applyMaintenanceToAll(): Record<string, string[]> {
+    const results: Record<string, string[]> = {};
+    for (const [id] of this.servers) {
+      const fixes = this.applyMaintenanceFixes(id);
+      if (fixes.length > 0) results[id] = fixes;
+    }
+    return results;
   }
 
   sendCommand(id: string, command: string): boolean {

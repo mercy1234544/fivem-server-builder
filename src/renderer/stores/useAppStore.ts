@@ -9,7 +9,7 @@ export interface Server {
   artifactVersion: string;
   installPath: string;
   resourceCount: number;
-  status: 'stopped' | 'running' | 'error';
+  status: 'stopped' | 'starting' | 'running' | 'error';
   lastBackup: string | null;
   createdAt: string;
   updatedAt: string;

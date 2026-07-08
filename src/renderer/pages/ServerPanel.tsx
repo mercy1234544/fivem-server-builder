@@ -27,6 +27,25 @@ function lineClass(l: string): string {
   return 'text-surface-300';
 }
 
+// ── txAdmin-style status indicator ────────────────────────────────────────────
+// green = online, yellow (pulsing) = starting/partial, red = offline/error.
+const STATUS_META: Record<string, { dot: string; label: string; text: string; pulse?: boolean }> = {
+  running:  { dot: 'bg-emerald-400', label: 'Online',   text: 'text-emerald-400' },
+  starting: { dot: 'bg-amber-400',   label: 'Starting', text: 'text-amber-400', pulse: true },
+  stopped:  { dot: 'bg-red-500',     label: 'Offline',  text: 'text-red-400' },
+  error:    { dot: 'bg-red-500',     label: 'Error',    text: 'text-red-400' },
+};
+
+function StatusDot({ status, size = 8, showLabel = false }: { status: string; size?: number; showLabel?: boolean }) {
+  const m = STATUS_META[status] || STATUS_META.stopped;
+  return (
+    <span className="inline-flex items-center gap-1.5 shrink-0">
+      <span className={`rounded-full ${m.dot} ${m.pulse ? 'animate-pulse' : ''}`} style={{ width: size, height: size }} />
+      {showLabel && <span className={`text-[10px] font-bold ${m.text}`}>{m.label}</span>}
+    </span>
+  );
+}
+
 // ── File tree types ───────────────────────────────────────────────────────────
 interface FileEntry {
   name: string; path: string; type: 'directory' | 'file';
@@ -68,6 +87,17 @@ export default function ServerPanel() {
     return window.electronAPI.onServerStatusChange((d) => updateServer(d.serverId, { status: d.status as any }));
   }, []);
 
+  // Auto-apply config fixes that shipped with app updates — existing servers
+  // get patched when their panel opens, no reinstall needed.
+  useEffect(() => {
+    if (!id || !window.electronAPI?.server?.maintenance) return;
+    window.electronAPI.server.maintenance(id).then((fixes) => {
+      if (fixes && fixes.length > 0) {
+        toast.success(`Auto-fixed ${fixes.length} server config issue${fixes.length !== 1 ? 's' : ''} from the latest update`, { duration: 6000 });
+      }
+    }).catch(() => {});
+  }, [id]);
+
   // ── Console state (subscribes for the OPEN server only) ─────────────────────
   const [lines, setLines] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -99,7 +129,9 @@ export default function ServerPanel() {
     setLines((p) => [...p, '> Starting server...']);
     try {
       const r = await window.electronAPI.server.start(server.id);
-      if (r.success) { updateServer(server.id, { status: 'running' }); logAction('Server Started', server.name, 'success'); }
+      // Backend reports 'starting' immediately and promotes to 'running' when
+      // the console shows the server is ready (yellow → green, like txAdmin).
+      if (r.success) { updateServer(server.id, { status: 'starting' }); logAction('Server Started', server.name, 'success'); }
       else { toast.error(r.error || 'Failed to start'); setLines((p) => [...p, `> ERROR: ${r.error}`]); }
     } catch (e: any) { toast.error(e.message); }
     setBusy(null);
@@ -122,12 +154,12 @@ export default function ServerPanel() {
     setBusy('restart');
     setLines((p) => [...p, '> Restarting server...']);
     try {
-      if (server.status === 'running') {
+      if (server.status === 'running' || server.status === 'starting') {
         await window.electronAPI.server.stop(server.id);
         await new Promise((r) => setTimeout(r, 1500));
       }
       const r = await window.electronAPI.server.start(server.id);
-      if (r.success) { updateServer(server.id, { status: 'running' }); toast.success('Server restarted'); }
+      if (r.success) { updateServer(server.id, { status: 'starting' }); toast.success('Server restarting'); }
       else toast.error(r.error || 'Failed to restart');
     } catch (e: any) { toast.error(e.message); }
     setBusy(null);
@@ -172,10 +204,7 @@ export default function ServerPanel() {
                   <p className="text-xs font-semibold text-surface-100 truncate">{s.name}</p>
                   <p className="text-[10px] text-surface-500 truncate">FiveM Server</p>
                 </div>
-                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                  s.status === 'running' ? 'bg-emerald-500/15 text-emerald-400' :
-                  s.status === 'error' ? 'bg-red-500/15 text-red-400' : 'bg-overlay-6 text-surface-500'
-                }`}>{s.status}</span>
+                <StatusDot status={s.status} showLabel />
               </button>
             ))}
           </div>
@@ -204,7 +233,8 @@ export default function ServerPanel() {
     );
   }
 
-  const running = server.status === 'running';
+  // 'starting' counts as up for button purposes (you can Stop a starting server).
+  const isUp = server.status === 'running' || server.status === 'starting';
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -229,12 +259,7 @@ export default function ServerPanel() {
                 <p className="text-xs font-semibold text-surface-100 truncate">{s.name}</p>
                 <p className="text-[10px] text-surface-500 truncate">FiveM Server</p>
               </div>
-              <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                s.status === 'running' ? 'bg-emerald-500/15 text-emerald-400' :
-                s.status === 'error' ? 'bg-red-500/15 text-red-400' : 'bg-overlay-6 text-surface-500'
-              }`}>
-                {s.status === 'running' ? 'running' : s.status === 'error' ? 'error' : 'stopped'}
-              </span>
+              <StatusDot status={s.status} showLabel />
             </button>
           ))}
         </div>
@@ -253,13 +278,16 @@ export default function ServerPanel() {
                 <Server size={24} className="text-primary-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-xl font-extrabold text-surface-100 truncate">{server.name}</h1>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <h1 className="text-xl font-extrabold text-surface-100 truncate">{server.name}</h1>
+                  <StatusDot status={server.status} size={10} showLabel />
+                </div>
                 <p className="text-xs text-surface-500">FiveM Server &middot; {server.framework}</p>
                 <p className="text-[10px] text-surface-600 font-mono truncate">{server.installPath}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {running ? (
+              {isUp ? (
                 <button onClick={doStop} disabled={!!busy}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-overlay-6 text-surface-200 hover:bg-overlay-10 border border-overlay-8 transition-all disabled:opacity-50">
                   {busy === 'stop' ? <Loader2 size={13} className="animate-spin" /> : <Square size={13} />} Stop
@@ -438,6 +466,8 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
   };
 
   const running = server.status === 'running';
+  // stdin is available as soon as the process spawns — allow commands while starting.
+  const consoleUp = running || server.status === 'starting';
 
   // ── Command input (writes to the FXServer console) ──────────────────────────
   const [cmd, setCmd] = useState('');
@@ -478,8 +508,9 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
   }, [lines]);
 
   const stats = [
-    { label: 'Status', value: running ? 'Running' : server.status === 'error' ? 'Error' : 'Stopped',
-      color: running ? 'text-emerald-400' : server.status === 'error' ? 'text-red-400' : 'text-surface-300' },
+    { label: 'Status',
+      value: running ? 'Online' : server.status === 'starting' ? 'Starting…' : server.status === 'error' ? 'Error' : 'Offline',
+      color: running ? 'text-emerald-400' : server.status === 'starting' ? 'text-amber-400' : 'text-red-400' },
     { label: 'Framework', value: server.framework || 'custom', color: 'text-surface-100' },
     { label: 'Artifacts', value: server.artifactVersion || 'unknown', color: 'text-surface-100' },
     { label: 'Resources', value: String(server.resourceCount ?? 0), color: 'text-surface-100' },
@@ -528,7 +559,7 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
         className="flex-1 min-h-0 bg-[#0d1117] rounded-xl border border-overlay-6 p-4 overflow-y-auto font-mono text-[11px] leading-[1.65]">
         {lines.length === 0 ? (
           <div className="text-surface-600 text-center py-12">
-            {running ? 'Waiting for output…' : 'Start the server to see console output'}
+            {consoleUp ? 'Waiting for output…' : 'Start the server to see console output'}
           </div>
         ) : lines.map((l, i) => (
           <div key={i} className={`${lineClass(l)} break-words hover:bg-white/[0.02] -mx-2 px-2 rounded`}>{l}</div>
@@ -538,21 +569,21 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
 
       {/* Command input — like txAdmin's live console */}
       <div className={`shrink-0 flex items-center gap-2 rounded-xl border px-3 py-2 bg-[#0d1117] ${
-        running ? 'border-overlay-8 focus-within:border-primary-500/40' : 'border-overlay-6 opacity-60'
+        consoleUp ? 'border-overlay-8 focus-within:border-primary-500/40' : 'border-overlay-6 opacity-60'
       }`}>
-        <ChevronRight size={14} className={running ? 'text-primary-400' : 'text-surface-600'} />
+        <ChevronRight size={14} className={consoleUp ? 'text-primary-400' : 'text-surface-600'} />
         <input
           value={cmd}
           onChange={(e) => { setCmd(e.target.value); setHistIdx(-1); }}
           onKeyDown={onCmdKey}
-          disabled={!running}
-          placeholder={running ? 'Type a server command… (restart <resource>, refresh, txadmin…)  ↑ for history' : 'Start the server to send commands'}
+          disabled={!consoleUp}
+          placeholder={consoleUp ? 'Type a server command… (restart <resource>, refresh, txadmin…)  ↑ for history' : 'Start the server to send commands'}
           className="flex-1 bg-transparent text-[12px] font-mono text-surface-100 placeholder-surface-600 focus:outline-none"
           spellCheck={false}
         />
-        <button onClick={sendCmd} disabled={!running || !cmd.trim()}
+        <button onClick={sendCmd} disabled={!consoleUp || !cmd.trim()}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-            running && cmd.trim() ? 'bg-primary-600 text-white hover:bg-primary-500' : 'bg-overlay-4 text-surface-600 cursor-not-allowed'
+            consoleUp && cmd.trim() ? 'bg-primary-600 text-white hover:bg-primary-500' : 'bg-overlay-4 text-surface-600 cursor-not-allowed'
           }`}>
           <CornerDownLeft size={11} /> Send
         </button>
@@ -856,7 +887,7 @@ function ResourcesTab({ server }: { server: ServerType }) {
   const [search, setSearch] = useState('');
   const [acting, setActing] = useState<string | null>(null); // "name:cmd" while a live command sends
 
-  const live = server.status === 'running';
+  const live = server.status === 'running' || server.status === 'starting';
 
   const scan = async () => {
     setLoading(true);

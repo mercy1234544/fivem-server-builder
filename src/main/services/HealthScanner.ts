@@ -34,6 +34,9 @@ export interface HealthReport {
 export class HealthScanner {
   private dbManager: DatabaseManager | null = null;
   private fixError = '';
+  // Runtime issue ids that were successfully fixed this session — the console
+  // buffer still contains the old lines, so scans must not re-report them.
+  private resolvedRuntimeIds = new Set<string>();
 
   setDatabaseManager(dbManager: DatabaseManager) {
     this.dbManager = dbManager;
@@ -169,6 +172,15 @@ export class HealthScanner {
 
     if (consoleLogs && consoleLogs.length > 0) {
       this.checkConsoleLogs(consoleLogs, issues);
+    }
+
+    // Runtime issues come from the buffered console log — once one is FIXED,
+    // the old lines are still in the buffer, so without this filter a rescan
+    // would re-report the exact issue the user just fixed ("fix does nothing").
+    if (this.resolvedRuntimeIds.size > 0) {
+      const filtered = issues.filter((i) => !this.resolvedRuntimeIds.has(i.id));
+      issues.length = 0;
+      issues.push(...filtered);
     }
 
     // Deduplicate — if same category+resource appears multiple times, keep the most severe
@@ -994,25 +1006,33 @@ export class HealthScanner {
       if (seenIds.has(id)) continue;
       seenIds.add(id);
 
-      // Detect specific fixable patterns
-      let fixAction = `restart:${w.resource}`;
-      let suggestion = `Will restart ${w.resource}`;
+      const cleanMessage = w.message.replace(/^\[([^\]]+)\]\s*/, '').replace(/\[WARN\]\s*/i, '').replace(/Warning:\s*/i, '').trim();
 
-      // Entity blacklist warning
+      // Entity blacklist notice: intentional QBox behaviour, and the config is
+      // a table of entity names (no enable flag) — nothing to auto-fix. The old
+      // "config:" fix always failed, so report it honestly as informational.
       if (w.message.includes('entity blacklist') || w.message.includes('entitiesblacklist')) {
-        fixAction = `config:${w.resource}:entitiesblacklist:false`;
-        suggestion = `Will disable entity blacklist in ${w.resource} config`;
+        issues.push({
+          id,
+          severity: 'info',
+          category: 'Runtime',
+          message: cleanMessage,
+          resource: w.resource,
+          suggestion: 'Intentional QBox behaviour — edit resources/[qbx]/qbx_smallresources/qbx_entitiesblacklist/config.lua to change which entities are blocked.',
+          autoFixable: false,
+        });
+        continue;
       }
 
       issues.push({
         id,
         severity: 'warning',
         category: 'Runtime',
-        message: w.message.replace(/^\[([^\]]+)\]\s*/, '').replace(/\[WARN\]\s*/i, '').replace(/Warning:\s*/i, '').trim(),
+        message: cleanMessage,
         resource: w.resource,
-        suggestion,
+        suggestion: `Will restart ${w.resource}`,
         autoFixable: true,
-        fixAction,
+        fixAction: `restart:${w.resource}`,
       });
     }
   }
@@ -1039,6 +1059,8 @@ export class HealthScanner {
     this.fixError = '';
     try {
       const ok = await this.doFix(serverPath, issue, serverManager);
+      // Fixed runtime issues must not be re-reported from the stale console buffer.
+      if (ok && issue.id.startsWith('runtime-')) this.resolvedRuntimeIds.add(issue.id);
       return {
         success: ok,
         error: ok ? undefined : (this.fixError || `No fix could be applied for "${issue.message}" — ${issue.suggestion || 'manual fix needed'}`),

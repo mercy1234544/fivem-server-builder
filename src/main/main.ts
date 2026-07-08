@@ -134,6 +134,8 @@ function registerIpcHandlers() {
   ipcMain.handle('server:stop', (_, id) => serverManager.stopServer(id));
   // Write a command to the running FXServer console (restart <res>, stop <res>, …)
   ipcMain.handle('server:command', (_, id: string, command: string) => serverManager.sendCommand(id, command));
+  // Apply known config fixes shipped with app updates to an existing server
+  ipcMain.handle('server:maintenance', (_, id: string) => serverManager.applyMaintenanceFixes(id));
   ipcMain.handle('server:import', (_, serverPath: string, name?: string) =>
     serverManager.importExistingServer(serverPath, name));
   ipcMain.handle('server:scan', (_, serverPath: string) =>
@@ -1145,6 +1147,16 @@ app.whenReady().then(() => {
   initializeServices();
   registerIpcHandlers();
   createWindow();
+
+  // Apply maintenance fixes shipped with this app version to every registered
+  // server — updates land on already-built servers without a reinstall.
+  setTimeout(() => {
+    try {
+      const results = serverManager.applyMaintenanceToAll();
+      const total = Object.values(results).reduce((n, f) => n + f.length, 0);
+      if (total > 0) console.log(`[Maintenance] Startup pass applied ${total} fix(es) across ${Object.keys(results).length} server(s)`);
+    } catch (e) { console.error('[Maintenance] startup pass failed:', e); }
+  }, 2000);
 
   // Auto-update IPC handlers
   ipcMain.handle('updater:check', async () => {
