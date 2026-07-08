@@ -57,6 +57,13 @@ function createWindow() {
     }
   });
 
+  // Any window.open / target="_blank" from the renderer (e.g. "Request Access"
+  // Discord links) opens in the system browser — never a child Electron window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

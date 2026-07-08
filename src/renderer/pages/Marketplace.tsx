@@ -36,6 +36,9 @@ interface MarketplaceItem {
   premium?: boolean;
 }
 
+// Discord server for Exclusive access requests.
+const DISCORD_INVITE = 'https://discord.gg/tt6Mv6J6RB';
+
 // â”€â”€â”€ MASSIVE RESOURCE CATALOG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MARKETPLACE_ITEMS: MarketplaceItem[] = [
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -850,14 +853,14 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
     author: 'Advances', repo: '', category: 'Exclusive', stars: 0, installed: false, version: '1.0.0',
     dependencies: ['qbx_core', 'ox_lib'], installFolder: '[admin]',
     locked: true, premium: true,
-    accessUrl: 'https://discord.gg/YOUR_DISCORD_INVITE',
+    accessUrl: DISCORD_INVITE,
   },
   {
     id: 'AdvancesWeather', name: 'AdvancesWeather', description: 'Premium dynamic weather & environment dashboard for Qbox. Server-synced weather, snow mode, blackout, 11 disaster events (earthquakes, tornadoes, tsunamis), emergency broadcasts, glassmorphism UI, and live forecast.',
     author: 'Advances', repo: '', category: 'Exclusive', stars: 0, installed: false, version: '1.0.0',
     dependencies: ['qbx_core'], installFolder: '[environment]',
     locked: true, premium: true,
-    accessUrl: 'https://discord.gg/YOUR_DISCORD_INVITE',
+    accessUrl: DISCORD_INVITE,
   },
 ];
 
@@ -1155,16 +1158,15 @@ export default function Marketplace() {
                 </span>
               </div>
               {item.locked ? (
-                <a
-                  href={item.accessUrl || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => window.electronAPI?.openExternal(item.accessUrl || DISCORD_INVITE)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded-lg text-xs font-medium text-amber-300 transition-all cursor-pointer"
+                  title="Join the Discord to request access"
                 >
                   <Lock size={12} />
                   Request Access
                   <ExternalLink size={10} className="opacity-60" />
-                </a>
+                </button>
               ) : item.installed ? (
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1 text-xs text-green-400 font-medium">
