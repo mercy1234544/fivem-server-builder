@@ -12,6 +12,7 @@ import {
   Terminal, Folder, FolderPlus, FilePlus, File as FileIcon, ChevronRight, ChevronDown,
   Package, Archive, Loader2, Search, Save, Upload, RefreshCw, ArrowDown,
   ToggleLeft, ToggleRight, AlertTriangle, Globe, X, Download, HardDrive,
+  Wrench, HeartPulse, FileCode, Import as ImportIcon, Car, Palette, FolderTree, ListOrdered,
 } from 'lucide-react';
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 
@@ -44,7 +45,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-type Tab = 'overview' | 'files' | 'resources' | 'backups';
+type Tab = 'overview' | 'files' | 'resources' | 'backups' | 'tools';
 
 export default function ServerPanel() {
   const { id } = useParams<{ id: string }>();
@@ -133,14 +134,22 @@ export default function ServerPanel() {
 
   // ── Delete modal ─────────────────────────────────────────────────────────────
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const doDelete = async () => {
     if (!server) return;
+    setDeleting(true);
     try {
       await window.electronAPI.server.delete(server.id);
+      if (deleteFiles && server.installPath) {
+        try { await window.electronAPI.file.delete(server.installPath); } catch {}
+      }
       removeServer(server.id);
-      toast.success(`${server.name} removed`);
+      logAction('Server Deleted', `${server.name} ${deleteFiles ? 'permanently deleted' : 'removed from builder'}`, 'warning');
+      toast.success(`${server.name} ${deleteFiles ? 'deleted' : 'removed'}`);
       navigate('/servers');
     } catch (e: any) { toast.error(e.message); }
+    setDeleting(false);
   };
 
   // "My Servers" with nothing selected (or a stale id): show the rail + an
@@ -281,9 +290,9 @@ export default function ServerPanel() {
                 className="p-2 rounded-xl text-surface-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all" title="Delete server">
                 <Trash2 size={15} />
               </button>
-              <button onClick={() => navigate('/editor')}
+              <button onClick={() => setTab('tools')}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-overlay-6 text-surface-200 hover:bg-overlay-10 border border-overlay-8 transition-all">
-                <SettingsIcon size={13} /> Settings
+                <Wrench size={13} /> Tools
               </button>
             </div>
           </div>
@@ -295,6 +304,7 @@ export default function ServerPanel() {
               { id: 'files', label: 'File Manager', icon: Folder },
               { id: 'resources', label: 'Resources', icon: Package },
               { id: 'backups', label: 'Backups', icon: Archive },
+              { id: 'tools', label: 'Tools', icon: Wrench },
             ] as { id: Tab; label: string; icon: any }[]).map((t) => (
               <button
                 key={t.id}
@@ -323,6 +333,7 @@ export default function ServerPanel() {
           {tab === 'files' && <FileManagerTab server={server} />}
           {tab === 'resources' && <ResourcesTab server={server} />}
           {tab === 'backups' && <BackupsTab server={server} updateServer={updateServer} />}
+          {tab === 'tools' && <ToolsTab />}
         </div>
       </div>
 
@@ -333,22 +344,52 @@ export default function ServerPanel() {
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
             onClick={() => setConfirmDelete(false)}>
             <motion.div initial={{ scale: 0.92, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 16 }}
-              onClick={(e) => e.stopPropagation()} className="glass-panel p-6 max-w-sm w-full mx-4">
+              onClick={(e) => e.stopPropagation()} className="glass-panel p-6 max-w-md w-full mx-4">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
                   <AlertTriangle size={18} className="text-red-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-surface-100">Remove server?</h3>
-                  <p className="text-xs text-surface-400 mt-1">
-                    Removes <span className="font-semibold text-surface-200">{server.name}</span> from the builder.
-                    Files on disk are kept.
-                  </p>
+                  <h3 className="font-bold text-surface-100">Delete {server.name}?</h3>
+                  <p className="text-xs text-surface-400 mt-1">Choose what to remove.</p>
                 </div>
               </div>
+              <div className="bg-overlay-3 border border-overlay-6 rounded-xl p-4 mb-4 space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(false)}>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${!deleteFiles ? 'border-primary-400 bg-primary-500' : 'border-surface-600'}`}>
+                    {!deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-surface-100">Remove from builder only</p>
+                    <p className="text-xs text-surface-400 mt-0.5">Keep server files on your computer</p>
+                  </div>
+                </label>
+                <div className="border-t border-overlay-4" />
+                <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(true)}>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${deleteFiles ? 'border-red-400 bg-red-500' : 'border-surface-600'}`}>
+                    {deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-surface-100">Delete everything</p>
+                    <p className="text-xs text-surface-400 mt-0.5">Remove from builder <span className="text-red-400 font-medium">AND delete all files</span></p>
+                    <p className="text-[10px] text-surface-600 font-mono mt-1 truncate">{server.installPath}</p>
+                  </div>
+                </label>
+              </div>
+              {deleteFiles && (
+                <div className="bg-red-500/8 border border-red-500/15 rounded-xl p-3 mb-4">
+                  <p className="text-xs text-red-300 flex items-center gap-2">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    Permanently deletes all server files, resources, and configs. Cannot be undone.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2">
-                <button onClick={() => setConfirmDelete(false)} className="flex-1 btn-secondary text-sm">Cancel</button>
-                <button onClick={doDelete} className="flex-1 btn-danger text-sm">Remove</button>
+                <button onClick={() => !deleting && setConfirmDelete(false)} disabled={deleting} className="flex-1 btn-secondary text-sm">Cancel</button>
+                <button onClick={doDelete} disabled={deleting} className="flex-1 btn-danger text-sm flex items-center justify-center gap-2">
+                  {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {deleteFiles ? 'Delete Everything' : 'Remove'}
+                </button>
               </div>
             </motion.div>
           </motion.div>
@@ -846,6 +887,43 @@ function BackupsTab({ server, updateServer }: { server: ServerType; updateServer
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ Tools ═══════════════════ */
+// All the utilities that used to clutter the global sidebar — now scoped to the
+// selected server (they operate on the active server set by this panel).
+
+function ToolsTab() {
+  const navigate = useNavigate();
+  const tools = [
+    { icon: HeartPulse, title: 'Health Scanner', desc: 'Scan for config issues & broken resources', path: '/health', tint: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20' },
+    { icon: FileCode, title: 'server.cfg Editor', desc: 'Edit your server configuration', path: '/editor', tint: 'bg-sky-600/20 text-sky-400 border-sky-500/20' },
+    { icon: ImportIcon, title: 'Import Resources', desc: 'Install scripts from ZIPs or folders', path: '/import', tint: 'bg-cyan-600/20 text-cyan-400 border-cyan-500/20' },
+    { icon: RefreshCw, title: 'Resource Updater', desc: 'Update GitHub-installed resources', path: '/updater', tint: 'bg-teal-600/20 text-teal-400 border-teal-500/20' },
+    { icon: Car, title: 'Vehicle Packs', desc: 'Import vehicle packs with auto manifests', path: '/vehicles', tint: 'bg-amber-600/20 text-amber-400 border-amber-500/20' },
+    { icon: Palette, title: 'Livery Editor', desc: 'Paint vehicle liveries on the 3D model', path: '/livery', tint: 'bg-pink-600/20 text-pink-400 border-pink-500/20' },
+    { icon: FolderTree, title: 'Organizer', desc: 'Sort resources into bracket categories', path: '/organizer', tint: 'bg-purple-600/20 text-purple-400 border-purple-500/20' },
+    { icon: ListOrdered, title: 'Startup Order', desc: 'Reorder resource start sequence', path: '/startup', tint: 'bg-indigo-600/20 text-indigo-400 border-indigo-500/20' },
+  ];
+  return (
+    <div className="h-full overflow-y-auto p-5">
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
+        {tools.map((t) => (
+          <button key={t.path} onClick={() => navigate(t.path)}
+            className="group flex items-start gap-4 rounded-2xl border border-overlay-6 bg-surface-900/40 hover:bg-overlay-4 hover:border-overlay-10 p-5 text-left transition-all">
+            <div className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 ${t.tint}`}>
+              <t.icon size={19} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-surface-100 group-hover:text-primary-200 transition-colors">{t.title}</p>
+              <p className="text-xs text-surface-500 mt-0.5 leading-snug">{t.desc}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-surface-600 mt-4">These tools work on this server — use the My Servers tab in the top bar to come back.</p>
     </div>
   );
 }

@@ -1,50 +1,77 @@
 import React from 'react';
-import { Minus, Square, X, Hexagon } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Minus, Square, X, Hexagon, Home, Store, Server, Settings } from 'lucide-react';
+
+// HTN-style top bar: brand left, primary nav in the middle, window controls
+// right. This replaces the old left sidebar — all per-server tools live inside
+// My Servers → server → tabs.
+const NAV = [
+  { path: '/', label: 'Home', icon: Home, match: (p: string) => p === '/' },
+  { path: '/marketplace', label: 'Store', icon: Store, match: (p: string) => p.startsWith('/marketplace') },
+  { path: '/servers', label: 'My Servers', icon: Server, match: (p: string) => p.startsWith('/server') },
+  { path: '/settings', label: 'Settings', icon: Settings, match: (p: string) => p.startsWith('/settings') },
+];
 
 export default function TitleBar() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const handleMinimize = () => window.electronAPI?.minimize();
   const handleMaximize = () => window.electronAPI?.maximize();
   const handleClose = () => window.electronAPI?.close();
 
   return (
     <div
-      className="h-10 bg-surface-950/80 backdrop-blur-xl border-b border-overlay-6 flex items-center justify-between select-none relative z-50"
+      className="h-12 bg-surface-950/85 backdrop-blur-xl border-b border-overlay-6 flex items-center select-none relative z-50"
       style={{ WebkitAppRegion: 'drag' } as any}
     >
-      {/* App title */}
-      <div className="flex items-center gap-2.5 pl-4">
-        <div className="relative">
-          <div className="w-5 h-5 rounded-md bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-glow-sm">
-            <Hexagon size={11} className="text-white" strokeWidth={2.5} />
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 pl-4 w-56 shrink-0">
+        <div className="w-6 h-6 rounded-md bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-glow-sm">
+          <Hexagon size={13} className="text-white" strokeWidth={2.5} />
+        </div>
+        <div className="leading-none">
+          <div className="flex items-center gap-1">
+            <span className="text-sm font-extrabold text-surface-100 tracking-wide">FIVEM</span>
+            <span className="text-sm font-extrabold text-primary-400 tracking-wide">BUILDER</span>
           </div>
+          <span className="text-[8px] text-surface-500 tracking-[0.18em] uppercase">Server Management</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-surface-100/90 tracking-wide">FIVEM</span>
-          <span className="text-xs font-medium text-surface-400 tracking-wide">Server Builder</span>
-        </div>
-        <span className="text-[9px] px-1.5 py-0.5 bg-primary-500/10 border border-primary-500/20 rounded text-primary-400 font-medium ml-0.5">
-          BETA
-        </span>
       </div>
 
+      {/* Center nav */}
+      <nav
+        className="flex-1 flex items-center justify-center gap-1"
+        style={{ WebkitAppRegion: 'no-drag' } as any}
+      >
+        {NAV.map((item) => {
+          const active = item.match(location.pathname);
+          return (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-all ${
+                active
+                  ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30'
+                  : 'text-surface-400 hover:text-surface-100 hover:bg-overlay-6 border border-transparent'
+              }`}
+            >
+              <item.icon size={14} />
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+
       {/* Window controls */}
-      <div className="flex" style={{ WebkitAppRegion: 'no-drag' } as any}>
-        <button
-          onClick={handleMinimize}
-          className="w-12 h-10 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150"
-        >
+      <div className="flex w-56 shrink-0 justify-end" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <button onClick={handleMinimize} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150">
           <Minus size={14} />
         </button>
-        <button
-          onClick={handleMaximize}
-          className="w-12 h-10 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150"
-        >
+        <button onClick={handleMaximize} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150">
           <Square size={11} />
         </button>
-        <button
-          onClick={handleClose}
-          className="w-12 h-10 flex items-center justify-center text-surface-500 hover:text-surface-100 hover:bg-red-600/90 transition-all duration-150"
-        >
+        <button onClick={handleClose} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-100 hover:bg-red-600/90 transition-all duration-150">
           <X size={14} />
         </button>
       </div>

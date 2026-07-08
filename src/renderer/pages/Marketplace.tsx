@@ -1014,7 +1014,7 @@ export default function Marketplace() {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
+      className="space-y-6 p-6 max-w-7xl mx-auto"
     >
       <div className="flex items-center justify-between">
         <div>

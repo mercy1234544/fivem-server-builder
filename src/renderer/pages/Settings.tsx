@@ -41,7 +41,7 @@ export default function Settings() {
   const diskPct = sys?.disk ? (diskUsed / sys.disk.total) * 100 : 0;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-6 space-y-7 max-w-5xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-6 space-y-7 max-w-5xl mx-auto">
       <div>
         <h1 className="text-2xl font-extrabold text-surface-100">Settings</h1>
         <p className="text-sm text-surface-400 mt-1">Manage your storage, system resources, and configuration</p>

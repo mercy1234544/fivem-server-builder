@@ -32,12 +32,6 @@ import {
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
-const statusConfig = {
-  running: { color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-500/25', dot: 'glow-dot-green', label: 'Running' },
-  stopped: { color: 'text-surface-400', bg: 'bg-surface-400/10', border: 'border-surface-500/25', dot: 'glow-dot-amber', label: 'Stopped' },
-  error:   { color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-500/25', dot: 'glow-dot-red', label: 'Error' },
-};
-
 const containerVariants = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.06 } },
@@ -78,10 +72,6 @@ export default function Dashboard() {
       }
     }
   };
-
-  const [deleteTarget, setDeleteTarget] = useState<ServerType | null>(null);
-  const [deleteFiles, setDeleteFiles] = useState(true);
-  const [deleting, setDeleting] = useState(false);
 
   // Latest releases from GitHub → "Latest News & Updates" cards (HTN-style).
   const [news, setNews] = useState<{ tag: string; name: string; date: string; body: string; url: string }[]>([]);
@@ -160,69 +150,8 @@ export default function Dashboard() {
   const totalResources = servers.reduce((sum, s) => sum + s.resourceCount, 0);
   const runningServers = servers.filter(s => s.status === 'running').length;
 
-  const handleDeleteServer = (e: React.MouseEvent, server: ServerType) => {
-    e.stopPropagation();
-    setDeleteTarget(server);
-    setDeleteFiles(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      if (window.electronAPI) {
-        await window.electronAPI.server.delete(deleteTarget.id);
-        if (deleteFiles && deleteTarget.installPath) {
-          try { await window.electronAPI.file.delete(deleteTarget.installPath); } catch {}
-        }
-      }
-      removeServer(deleteTarget.id);
-      logAction('Server Deleted', `${deleteTarget.name} ${deleteFiles ? 'permanently deleted' : 'removed from builder'}`, 'warning');
-      toast.success(`${deleteTarget.name} deleted`);
-    } catch (err: any) {
-      toast.error(`Failed to delete: ${err.message}`);
-    } finally { setDeleting(false); setDeleteTarget(null); }
-  };
-
-  const handleToggleServer = async (e: React.MouseEvent, server: ServerType) => {
-    e.stopPropagation();
-    if (!window.electronAPI) return;
-
-    if (server.status === 'running') {
-      try {
-        const stopped = await window.electronAPI.server.stop(server.id);
-        if (stopped) {
-          updateServer(server.id, { status: 'stopped' });
-          logAction('Server Stopped', server.name, 'info');
-          toast.success(`${server.name} stopped`);
-        } else {
-          toast.error('Failed to stop server');
-        }
-      } catch (err: any) {
-        toast.error(`Error stopping server: ${err.message}`);
-      }
-    } else {
-      // Optimistically show starting state
-      updateServer(server.id, { status: 'running' });
-      try {
-        const result = await window.electronAPI.server.start(server.id);
-        if (result.success) {
-          logAction('Server Started', server.name, 'success');
-          toast.success(`${server.name} started!`);
-        } else {
-          updateServer(server.id, { status: 'error' });
-          logAction('Server Start Failed', result.error || 'Unknown error', 'error');
-          toast.error(result.error || 'Failed to start server');
-        }
-      } catch (err: any) {
-        updateServer(server.id, { status: 'error' });
-        toast.error(`Error starting server: ${err.message}`);
-      }
-    }
-  };
-
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="show" className="p-6 space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="p-6 space-y-6 max-w-6xl mx-auto">
       {/* ═══ Hero (HTN-style) ═══ */}
       <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl border border-overlay-6 bg-gradient-to-br from-[#0a1428] via-surface-950 to-surface-950">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary-600/15 via-transparent to-transparent" />
@@ -306,82 +235,6 @@ export default function Dashboard() {
                   <p className="text-[11px] text-surface-500 line-clamp-2">{n.body}…</p>
                 </div>
               </button>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* ═══ Server List ═══ */}
-      <motion.div variants={itemVariants} className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-surface-100">Your Servers</h2>
-          {servers.length > 0 && (
-            <span className="text-xs text-surface-500">{servers.length} server{servers.length !== 1 ? 's' : ''}</span>
-          )}
-        </div>
-
-        {servers.length === 0 ? (
-          <div className="relative overflow-hidden rounded-2xl border border-overlay-6 bg-surface-900/30">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 via-transparent to-purple-500/5" />
-            <div className="relative z-10 flex flex-col items-center justify-center py-20">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500/10 to-primary-500/5 border border-primary-500/20 flex items-center justify-center mb-5">
-                <Server size={32} className="text-primary-400/60" />
-              </div>
-              <p className="text-lg font-semibold text-surface-200 mb-1">No servers yet</p>
-              <p className="text-sm text-surface-500 mb-6">Create a new server or import one you already have</p>
-              <div className="flex items-center gap-3">
-                <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2">
-                  <Plus size={16} />
-                  Create New Server
-                </button>
-                <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-overlay-6 text-surface-300 hover:bg-overlay-10 hover:text-surface-100 border border-overlay-8 hover:border-overlay-15 transition-all">
-                  <Download size={16} />
-                  Import Existing
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {servers.map((server, index) => (
-              <motion.div
-                key={server.id}
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <ServerCard
-                  server={server}
-                  onSelect={() => { setActiveServer(server.id); navigate(`/server/${server.id}`); }}
-                  onDelete={(e) => handleDeleteServer(e, server)}
-                  onToggle={(e) => handleToggleServer(e, server)}
-                />
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </motion.div>
-
-      {/* ═══ Recent Activity ═══ */}
-      {actionLog.length > 0 && (
-        <motion.div variants={itemVariants} className="space-y-3">
-          <h2 className="text-xs font-semibold text-surface-500 uppercase tracking-[0.08em]">Recent Activity</h2>
-          <div className="card-flat space-y-0.5 p-2">
-            {actionLog.slice(0, 5).map((log) => (
-              <div key={log.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-overlay-3 transition-colors">
-                <div className={`w-1.5 h-1.5 rounded-full ${
-                  log.severity === 'success' ? 'bg-emerald-400' :
-                  log.severity === 'warning' ? 'bg-amber-400' :
-                  log.severity === 'error' ? 'bg-red-400' : 'bg-surface-500'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm text-surface-200 font-medium">{log.action}</span>
-                  <span className="text-xs text-surface-500 ml-2">{log.detail}</span>
-                </div>
-                <span className="text-[10px] text-surface-600 shrink-0 font-mono">
-                  {new Date(log.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
             ))}
           </div>
         </motion.div>
@@ -543,106 +396,6 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* ═══ Delete Confirmation Modal ═══ */}
-      <AnimatePresence>
-        {deleteTarget && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
-            onClick={() => !deleting && setDeleteTarget(null)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              onClick={(e) => e.stopPropagation()}
-              className="glass-panel p-6 max-w-md w-full mx-4"
-            >
-              <div className="flex items-start gap-4 mb-5">
-                <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
-                  <AlertTriangle size={22} className="text-red-400" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-surface-100">Delete Server</h3>
-                  <p className="text-sm text-surface-400 mt-0.5">
-                    Are you sure you want to delete <span className="text-surface-100 font-semibold">"{deleteTarget.name}"</span>?
-                  </p>
-                </div>
-                <button onClick={() => !deleting && setDeleteTarget(null)} className="p-1.5 rounded-lg text-surface-500 hover:text-surface-100 hover:bg-overlay-6 transition-all">
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="bg-overlay-3 border border-overlay-6 rounded-xl p-4 mb-5 space-y-3">
-                <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(true)}>
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
-                    deleteFiles ? 'border-red-400 bg-red-500' : 'border-surface-600'
-                  }`}>
-                    {deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-surface-100">Delete everything</p>
-                    <p className="text-xs text-surface-400 mt-0.5">Remove from builder <span className="text-red-400 font-medium">AND delete all files</span></p>
-                    {deleteTarget.installPath && <p className="text-[10px] text-surface-600 font-mono mt-1 truncate">{deleteTarget.installPath}</p>}
-                  </div>
-                </label>
-                <div className="border-t border-overlay-4" />
-                <label className="flex items-start gap-3 cursor-pointer" onClick={() => setDeleteFiles(false)}>
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-all ${
-                    !deleteFiles ? 'border-primary-400 bg-primary-500' : 'border-surface-600'
-                  }`}>
-                    {!deleteFiles && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-surface-100">Remove from builder only</p>
-                    <p className="text-xs text-surface-400 mt-0.5">Keep server files on your computer</p>
-                  </div>
-                </label>
-              </div>
-
-              {deleteFiles && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="bg-red-500/8 border border-red-500/15 rounded-xl p-3 mb-5">
-                  <p className="text-xs text-red-300 flex items-center gap-2">
-                    <AlertTriangle size={13} className="shrink-0" />
-                    This permanently deletes all server files, resources, and configs. Cannot be undone.
-                  </p>
-                </motion.div>
-              )}
-
-              <div className="flex gap-3">
-                <button onClick={() => !deleting && setDeleteTarget(null)} disabled={deleting} className="flex-1 btn-secondary">Cancel</button>
-                <button onClick={confirmDelete} disabled={deleting} className="flex-1 btn-danger flex items-center justify-center gap-2">
-                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  {deleting ? 'Deleting...' : deleteFiles ? 'Delete Everything' : 'Remove'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
-/* ═══ Stat Card ═══ */
-function StatCard({ icon: Icon, label, value, gradient, iconColor }: {
-  icon: any; label: string; value: number; gradient: string; iconColor: string;
-}) {
-  return (
-    <motion.div whileHover={{ scale: 1.02, y: -2 }} transition={{ duration: 0.2 }} className="relative overflow-hidden card group">
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-60 group-hover:opacity-100 transition-opacity`} />
-      <div className="relative z-10 flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-overlay-6 border border-overlay-6 flex items-center justify-center group-hover:scale-105 transition-transform">
-          <Icon size={20} className={iconColor} />
-        </div>
-        <div>
-          <p className="text-2xl font-extrabold text-surface-100 tracking-tight">{value}</p>
-          <p className="text-[11px] text-surface-400 font-medium">{label}</p>
-        </div>
-      </div>
     </motion.div>
   );
 }
@@ -657,79 +410,6 @@ function DetectionItem({ icon: Icon, label, value, color }: {
       <div className="min-w-0">
         <p className="text-[10px] text-surface-500 uppercase tracking-wider">{label}</p>
         <p className={`text-xs font-semibold ${color} truncate`}>{value}</p>
-      </div>
-    </div>
-  );
-}
-
-/* ═══ Server Card ═══ */
-function ServerCard({ server, onSelect, onDelete, onToggle }: {
-  server: ServerType; onSelect: () => void; onDelete: (e: React.MouseEvent) => void; onToggle: (e: React.MouseEvent) => void;
-}) {
-  const status = statusConfig[server.status as keyof typeof statusConfig] || statusConfig.stopped;
-  const frameworkLabels: Record<string, string> = { esx: 'ESX Legacy', qbcore: 'QBCore', custom: 'Custom', blank: 'Blank' };
-
-  return (
-    <div className="card cursor-pointer group hover:border-primary-500/20" onClick={onSelect}>
-      {/* Server status glow */}
-      {server.status === 'running' && (
-        <div className="absolute -top-px left-4 right-4 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
-      )}
-
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500/15 to-primary-600/5 border border-primary-500/15 flex items-center justify-center group-hover:scale-105 transition-transform">
-            <Server size={18} className="text-primary-400" />
-          </div>
-          <div>
-            <h3 className="font-bold text-surface-100 group-hover:text-primary-300 transition-colors">{server.name}</h3>
-            <p className="text-xs text-surface-500">{frameworkLabels[server.framework] || server.framework} &middot; {server.os}</p>
-          </div>
-        </div>
-        <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-medium ${status.bg} ${status.color} border ${status.border}`}>
-          <div className={status.dot} />
-          {status.label}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        {[
-          { label: 'Resources', value: server.resourceCount },
-          { label: 'Artifacts', value: server.artifactVersion || 'N/A' },
-          { label: 'Backup', value: server.lastBackup ? new Date(server.lastBackup).toLocaleDateString() : 'Never' },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-overlay-3 border border-overlay-4 rounded-lg py-2.5 text-center">
-            <p className="text-sm font-bold text-surface-100 truncate px-1">{stat.value}</p>
-            <p className="text-[10px] text-surface-500">{stat.label}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2 pt-3 border-t border-overlay-4">
-        <button onClick={onToggle} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
-          server.status === 'running'
-            ? 'bg-red-500/8 text-red-400 hover:bg-red-500/15 border border-red-500/15'
-            : 'bg-emerald-500/8 text-emerald-400 hover:bg-emerald-500/15 border border-emerald-500/15'
-        }`}>
-          {server.status === 'running' ? <Square size={11} /> : <Play size={11} />}
-          {server.status === 'running' ? 'Stop' : 'Start'}
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); window.electronAPI.openPath(server.installPath); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-overlay-4 text-surface-300 hover:bg-overlay-8 border border-overlay-4 transition-all">
-          <FolderOpen size={11} />
-          Open
-        </button>
-        <button onClick={(e) => {
-          e.stopPropagation();
-          window.electronAPI.txAdmin.open(server.installPath)
-            .then(r => { toast.success(`Opening txAdmin at ${r.url}`); })
-            .catch(() => { toast.error('Failed to open txAdmin'); });
-        }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium bg-primary-500/8 text-primary-400 hover:bg-primary-500/15 border border-primary-500/15 transition-all">
-          <Globe size={11} />
-          txAdmin
-        </button>
-        <button onClick={onDelete} className="p-2 rounded-xl text-surface-600 hover:text-red-400 hover:bg-red-500/8 border border-transparent hover:border-red-500/15 transition-all">
-          <Trash2 size={13} />
-        </button>
       </div>
     </div>
   );
