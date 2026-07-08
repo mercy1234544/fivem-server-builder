@@ -83,6 +83,24 @@ export default function Dashboard() {
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
+  // Latest releases from GitHub → "Latest News & Updates" cards (HTN-style).
+  const [news, setNews] = useState<{ tag: string; name: string; date: string; body: string; url: string }[]>([]);
+  useEffect(() => {
+    fetch('https://api.github.com/repos/mercy1234544/fivem-server-builder/releases?per_page=4')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rels: any[]) => {
+        if (!Array.isArray(rels)) return;
+        setNews(rels.map((r) => ({
+          tag: r.tag_name || '',
+          name: r.name || r.tag_name || 'Update',
+          date: r.published_at ? new Date(r.published_at).toLocaleDateString() : '',
+          body: (r.body || '').replace(/[#*`>-]/g, '').replace(/\r?\n+/g, ' ').slice(0, 110),
+          url: r.html_url || '',
+        })));
+      })
+      .catch(() => {});
+  }, []);
+
   // Import existing server state
   const [showImportModal, setShowImportModal] = useState(false);
   const [importPath, setImportPath] = useState('');
@@ -205,66 +223,87 @@ export default function Dashboard() {
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="p-6 space-y-6">
-      {/* ═══ Hero Header ═══ */}
-      <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl">
-        {/* Gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary-600/20 via-surface-900/80 to-purple-600/10 rounded-2xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-500/10 via-transparent to-transparent" />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-400/5 rounded-full blur-[80px]" />
-
-        <div className="relative z-10 flex items-center justify-between p-6 border border-overlay-6 rounded-2xl">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Sparkles size={16} className="text-primary-400" />
-              <span className="text-xs font-medium text-primary-400 uppercase tracking-wide">Command Center</span>
+      {/* ═══ Hero (HTN-style) ═══ */}
+      <motion.div variants={itemVariants} className="relative overflow-hidden rounded-2xl border border-overlay-6 bg-gradient-to-br from-[#0a1428] via-surface-950 to-surface-950">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary-600/15 via-transparent to-transparent" />
+        <div className="relative z-10 p-7">
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-14 h-14 rounded-2xl bg-primary-600/25 border border-primary-500/30 flex items-center justify-center">
+              <Server size={26} className="text-primary-300" />
             </div>
-            <h1 className="text-3xl font-extrabold text-surface-100 tracking-tight">Dashboard</h1>
-            <p className="text-sm text-surface-400 mt-1">Manage and monitor your FiveM servers</p>
+            <div>
+              <h1 className="text-2xl font-extrabold text-surface-100 tracking-tight">FiveM Server Builder</h1>
+              <p className="text-sm text-primary-300/80 font-medium">Local Game Server Management</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-overlay-6 text-surface-300 hover:bg-overlay-10 hover:text-surface-100 border border-overlay-8 hover:border-overlay-15 transition-all">
-              <Download size={16} />
-              Import Server
+            <button onClick={() => navigate('/servers')} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all">
+              <Server size={15} /> Manage Servers
             </button>
-            <button onClick={() => navigate('/create')} className="btn-primary flex items-center gap-2.5">
-              <Plus size={16} />
-              New Server
+            <button onClick={() => navigate('/marketplace')} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-transparent text-surface-200 hover:bg-overlay-6 border border-overlay-10 transition-all">
+              Browse Store <ArrowRight size={14} />
+            </button>
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-transparent text-surface-300 hover:bg-overlay-6 border border-overlay-10 transition-all">
+              <Download size={14} /> Import Server
             </button>
           </div>
         </div>
       </motion.div>
 
-      {/* ═══ Stats ═══ */}
-      <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Server} label="Total Servers" value={servers.length} gradient="from-primary-500/20 to-indigo-500/5" iconColor="text-primary-400" />
-        <StatCard icon={Zap} label="Running" value={runningServers} gradient="from-emerald-500/20 to-green-500/5" iconColor="text-emerald-400" />
-        <StatCard icon={Package} label="Resources" value={totalResources} gradient="from-purple-500/20 to-violet-500/5" iconColor="text-purple-400" />
-        <StatCard icon={HeartPulse} label="Health Issues" value={0} gradient="from-amber-500/20 to-yellow-500/5" iconColor="text-amber-400" />
+      {/* ═══ Big stat trio (HTN-style) ═══ */}
+      <motion.div variants={itemVariants} className="grid grid-cols-3 gap-4">
+        {[
+          { icon: Server, value: String(servers.length), label: 'Total Servers', tint: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20' },
+          { icon: Zap, value: String(runningServers), label: 'Running Now', tint: 'bg-purple-600/20 text-purple-400 border-purple-500/20' },
+          { icon: Package, value: totalResources.toLocaleString(), label: 'Total Resources', tint: 'bg-amber-600/20 text-amber-400 border-amber-500/20' },
+        ].map((s) => (
+          <div key={s.label} className="rounded-2xl border border-overlay-6 bg-surface-900/40 p-5">
+            <div className={`w-11 h-11 rounded-xl border flex items-center justify-center mb-4 ${s.tint}`}>
+              <s.icon size={19} />
+            </div>
+            <p className="text-3xl font-extrabold text-surface-100 tracking-tight">{s.value}</p>
+            <p className="text-xs text-surface-500 mt-0.5">{s.label}</p>
+          </div>
+        ))}
       </motion.div>
 
-      {/* ═══ Quick Actions ═══ */}
-      {servers.length > 0 && (
-        <motion.div variants={itemVariants}>
-          <h2 className="text-xs font-semibold text-surface-500 uppercase tracking-[0.08em] mb-3">Quick Actions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'Scan Resources', icon: Package, path: '/resources', gradient: 'from-purple-500/10 to-transparent', iconColor: 'text-purple-400' },
-              { label: 'Health Check', icon: HeartPulse, path: '/health', gradient: 'from-emerald-500/10 to-transparent', iconColor: 'text-emerald-400' },
-              { label: 'Create Backup', icon: Archive, path: '/backups', gradient: 'from-amber-500/10 to-transparent', iconColor: 'text-amber-400' },
-              { label: 'Browse Files', icon: FolderOpen, path: '/files', gradient: 'from-sky-500/10 to-transparent', iconColor: 'text-sky-400' },
-            ].map((action) => (
-              <button
-                key={action.path}
-                onClick={() => navigate(action.path)}
-                className="group relative overflow-hidden flex items-center gap-3 p-3 rounded-xl border border-overlay-4 hover:border-overlay-10 bg-overlay-2 hover:bg-overlay-4 transition-all duration-300"
-              >
-                <div className={`absolute inset-0 bg-gradient-to-r ${action.gradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
-                <div className="relative z-10 flex items-center gap-3 w-full">
-                  <div className="w-8 h-8 rounded-lg bg-overlay-4 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <action.icon size={15} className={action.iconColor} />
+      {/* ═══ Shortcut cards (HTN-style) ═══ */}
+      <motion.div variants={itemVariants} className="grid grid-cols-3 gap-4">
+        {[
+          { icon: Package, title: 'Store', sub: 'Browse scripts, resources & exclusives', path: '/marketplace', tint: 'bg-blue-600/20 text-blue-400 border-blue-500/20' },
+          { icon: Server, title: 'My Servers', sub: `${servers.length} server${servers.length !== 1 ? 's' : ''} ready`, path: '/servers', tint: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/20' },
+          { icon: Sparkles, title: 'Get Started', sub: 'Create a new FiveM server', path: '/create', tint: 'bg-purple-600/20 text-purple-400 border-purple-500/20' },
+        ].map((c) => (
+          <button key={c.title} onClick={() => navigate(c.path)}
+            className="group flex items-center gap-4 rounded-2xl border border-overlay-6 bg-surface-900/40 hover:bg-overlay-4 hover:border-overlay-10 p-5 text-left transition-all">
+            <div className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 ${c.tint}`}>
+              <c.icon size={19} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-surface-100">{c.title}</p>
+              <p className="text-xs text-surface-500 truncate">{c.sub}</p>
+            </div>
+            <ArrowRight size={15} className="text-surface-600 group-hover:text-surface-300 group-hover:translate-x-0.5 transition-all shrink-0" />
+          </button>
+        ))}
+      </motion.div>
+
+      {/* ═══ Latest News & Updates (GitHub releases) ═══ */}
+      {news.length > 0 && (
+        <motion.div variants={itemVariants} className="space-y-3">
+          <h2 className="text-lg font-bold text-surface-100">Latest News &amp; Updates</h2>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            {news.map((n) => (
+              <button key={n.tag} onClick={() => window.electronAPI?.openExternal(n.url)}
+                className="group relative overflow-hidden rounded-2xl border border-overlay-6 bg-gradient-to-br from-[#1a0b10] to-surface-950 hover:border-overlay-10 p-4 text-left transition-all">
+                <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full bg-red-600/10 blur-2xl group-hover:bg-red-600/20 transition-all" />
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 font-bold">changelog</span>
+                    <span className="text-[10px] text-surface-500">{n.date}</span>
                   </div>
-                  <span className="text-sm text-surface-300 group-hover:text-surface-100 transition-colors font-medium">{action.label}</span>
-                  <ArrowRight size={12} className="text-surface-600 ml-auto group-hover:text-surface-400 group-hover:translate-x-0.5 transition-all" />
+                  <p className="text-sm font-bold text-surface-100 leading-snug mb-1.5 line-clamp-2">{n.name}</p>
+                  <p className="text-[11px] text-surface-500 line-clamp-2">{n.body}…</p>
                 </div>
               </button>
             ))}

@@ -409,6 +409,47 @@ function registerIpcHandlers() {
     scanDir(resourcesDir, 0);
     return installed;
   });
+
+  // ── System info (Settings page: CPU / RAM / disk / specs) ──────────────────
+  ipcMain.handle('system:info', async () => {
+    const os = await import('os');
+    // CPU usage: sample cpu times twice and diff the busy fraction.
+    const snap = () => os.cpus().map((c) => ({
+      idle: c.times.idle,
+      total: c.times.user + c.times.nice + c.times.sys + c.times.irq + c.times.idle,
+    }));
+    const a = snap();
+    await new Promise((r) => setTimeout(r, 350));
+    const b = snap();
+    let idle = 0, total = 0;
+    for (let i = 0; i < a.length && i < b.length; i++) {
+      idle += b[i].idle - a[i].idle;
+      total += b[i].total - a[i].total;
+    }
+    const cpuUsage = total > 0 ? Math.max(0, Math.min(100, (1 - idle / total) * 100)) : 0;
+
+    // Disk usage for the drive the app's userData lives on (usually C:).
+    let disk: { total: number; free: number } | null = null;
+    try {
+      const root = path.parse(app.getPath('userData')).root; // e.g. "C:\\"
+      const sf = (fs as any).statfsSync?.(root);
+      if (sf) disk = { total: sf.bsize * sf.blocks, free: sf.bsize * sf.bfree };
+    } catch {}
+
+    const cpus = os.cpus();
+    return {
+      cpuModel: cpus[0]?.model?.trim() || 'Unknown CPU',
+      cpuCores: cpus.length,
+      cpuUsage,
+      totalMem: os.totalmem(),
+      freeMem: os.freemem(),
+      platform: `${os.platform()} ${os.release()}`,
+      hostname: os.hostname(),
+      disk,
+      appVersion: app.getVersion(),
+      electron: process.versions.electron,
+    };
+  });
 }
 
 // ─── Resource conflict map ───────────────────────────────────────────────────

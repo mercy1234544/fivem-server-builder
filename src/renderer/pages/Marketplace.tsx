@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -887,6 +888,7 @@ const categoryColors: Record<string, string> = {
 };
 
 export default function Marketplace() {
+  const navigate = useNavigate();
   const { activeServerId, servers, logAction } = useAppStore();
   const [items, setItems] = useState(MARKETPLACE_ITEMS);
   const [search, setSearch] = useState('');
@@ -1013,9 +1015,9 @@ export default function Marketplace() {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-surface-100">Marketplace</h1>
+          <h1 className="text-2xl font-bold text-surface-100">Game Store</h1>
           <p className="text-sm text-surface-400 mt-1">
-            {filtered.length} resources available Â· {installedCount} installed Â· {sortedCategories.length} categories
+            Browse game servers and {filtered.length} scripts &amp; resources Â· {installedCount} installed
           </p>
         </div>
         {!activeServer && (
@@ -1023,6 +1025,38 @@ export default function Marketplace() {
             Select a server to install resources
           </span>
         )}
+      </div>
+
+      {/* ═══ Game Servers (HTN-style tiles) — FiveM is free, more games coming ═══ */}
+      <div>
+        <h2 className="text-sm font-bold text-surface-200 mb-3">Game Servers</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { name: 'FiveM Server', tag: 'FREE', ready: true, grad: 'from-orange-600/30 via-[#1a0f08] to-surface-950', accent: 'text-orange-300', desc: 'GTA V roleplay & racing' },
+            { name: 'RedM Server', tag: 'COMING SOON', ready: false, grad: 'from-red-800/25 via-[#160a08] to-surface-950', accent: 'text-red-300', desc: 'Red Dead Redemption 2' },
+            { name: 'Minecraft Server', tag: 'COMING SOON', ready: false, grad: 'from-emerald-700/25 via-[#08140c] to-surface-950', accent: 'text-emerald-300', desc: 'Java & Bedrock editions' },
+            { name: 'BeamMP Server', tag: 'COMING SOON', ready: false, grad: 'from-sky-700/25 via-[#08101a] to-surface-950', accent: 'text-sky-300', desc: 'BeamNG.drive multiplayer' },
+          ].map((g) => (
+            <button
+              key={g.name}
+              onClick={() => { if (g.ready) navigate('/create'); else toast(`${g.name} support is coming soon`, { icon: '🚧' }); }}
+              className={`group relative overflow-hidden rounded-2xl border text-left p-5 h-36 flex flex-col justify-between transition-all ${
+                g.ready ? 'border-overlay-8 hover:border-primary-500/40 cursor-pointer' : 'border-overlay-6 opacity-75 cursor-default'
+              } bg-gradient-to-br ${g.grad}`}
+            >
+              <div className="flex items-start justify-between">
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                  g.ready ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-overlay-6 text-surface-400 border-overlay-10'
+                }`}>{g.tag}</span>
+                {g.ready && <span className="text-[10px] text-surface-500 group-hover:text-primary-300 transition-colors">Create →</span>}
+              </div>
+              <div>
+                <p className={`text-base font-extrabold ${g.accent}`}>{g.name}</p>
+                <p className="text-[11px] text-surface-500">{g.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Search */}

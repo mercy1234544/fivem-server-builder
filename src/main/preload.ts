@@ -129,6 +129,11 @@ const electronAPI = {
     inflate: (b64: string): Promise<string | null> => ipcRenderer.invoke('livery:inflate', b64),
   },
 
+  // System info (Settings page: CPU / RAM / disk / specs)
+  system: {
+    getInfo: () => ipcRenderer.invoke('system:info'),
+  },
+
   // Server console output
   onServerConsole: (callback: (data: { serverId: string; line: string }) => void) => {
     const handler = (_: any, data: any) => callback(data);

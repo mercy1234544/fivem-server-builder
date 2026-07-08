@@ -154,6 +154,21 @@ interface ElectronAPI {
     inflate: (b64: string) => Promise<string | null>;
   };
 
+  system: {
+    getInfo: () => Promise<{
+      cpuModel: string;
+      cpuCores: number;
+      cpuUsage: number;
+      totalMem: number;
+      freeMem: number;
+      platform: string;
+      hostname: string;
+      disk: { total: number; free: number } | null;
+      appVersion: string;
+      electron: string;
+    }>;
+  };
+
   appUpdater: {
     check: () => Promise<any>;
     download: () => Promise<{ success: boolean; error?: string }>;

@@ -139,16 +139,57 @@ export default function ServerPanel() {
       await window.electronAPI.server.delete(server.id);
       removeServer(server.id);
       toast.success(`${server.name} removed`);
-      navigate('/');
+      navigate('/servers');
     } catch (e: any) { toast.error(e.message); }
   };
 
+  // "My Servers" with nothing selected (or a stale id): show the rail + an
+  // HTN-style empty state instead of dumping the user back to the dashboard.
   if (!server) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <Server size={44} className="text-surface-600 mb-3" />
-        <p className="text-surface-400 text-sm mb-4">Server not found</p>
-        <button onClick={() => navigate('/')} className="btn-primary text-sm">Back to Dashboard</button>
+      <div className="h-full flex overflow-hidden">
+        <div className="w-56 shrink-0 border-r border-overlay-6 bg-surface-950/40 flex flex-col">
+          <p className="px-4 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-surface-500">Your Servers</p>
+          <p className="px-4 pb-2 text-[10px] text-surface-600">{servers.filter((s) => s.status === 'running').length} active server{servers.filter((s) => s.status === 'running').length !== 1 ? 's' : ''}</p>
+          <div className="flex-1 overflow-y-auto px-2 space-y-1">
+            {servers.map((s) => (
+              <button key={s.id} onClick={() => navigate(`/server/${s.id}`)}
+                className="w-full flex items-center gap-2.5 p-2 rounded-xl border border-transparent hover:bg-overlay-4 hover:border-overlay-6 text-left transition-all">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-500/20 to-primary-600/5 border border-primary-500/15 flex items-center justify-center shrink-0">
+                  <Server size={15} className="text-primary-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-surface-100 truncate">{s.name}</p>
+                  <p className="text-[10px] text-surface-500 truncate">FiveM Server</p>
+                </div>
+                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                  s.status === 'running' ? 'bg-emerald-500/15 text-emerald-400' :
+                  s.status === 'error' ? 'bg-red-500/15 text-red-400' : 'bg-overlay-6 text-surface-500'
+                }`}>{s.status}</span>
+              </button>
+            ))}
+          </div>
+          <div className="p-3 border-t border-overlay-6">
+            <button onClick={() => navigate('/create')} className="w-full btn-primary text-xs py-2">+ New Server</button>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <div className="w-20 h-20 rounded-full bg-overlay-4 border border-overlay-6 flex items-center justify-center mb-5">
+            <Terminal size={30} className="text-surface-500" />
+          </div>
+          {servers.length === 0 ? (
+            <>
+              <h2 className="text-lg font-bold text-surface-100 mb-1">No Servers Yet</h2>
+              <p className="text-sm text-surface-500 mb-5">Create your first server to get started</p>
+              <button onClick={() => navigate('/create')} className="btn-primary text-sm">Create Server</button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-bold text-surface-100 mb-1">Select a Server</h2>
+              <p className="text-sm text-surface-500">Pick one of your {servers.length} server{servers.length !== 1 ? 's' : ''} on the left to manage it</p>
+            </>
+          )}
+        </div>
       </div>
     );
   }

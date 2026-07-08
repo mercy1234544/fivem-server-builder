@@ -32,21 +32,22 @@ interface NavSection {
   items: { path: string; label: string; icon: any; accent?: string }[];
 }
 
+// Console, Resources, Startup Order and Server.cfg now live inside the
+// per-server panel (My Servers → tabs), so they're gone from the global nav.
 const navSections: NavSection[] = [
   {
     label: 'General',
     items: [
-      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/', label: 'Home', icon: LayoutDashboard },
+      { path: '/servers', label: 'My Servers', icon: Server, accent: 'text-primary-400' },
       { path: '/create', label: 'Create Server', icon: Plus, accent: 'text-primary-400' },
     ],
   },
   {
     label: 'Resources',
     items: [
-      { path: '/resources', label: 'Resources', icon: Package },
       { path: '/organizer', label: 'Organizer', icon: FolderTree },
-      { path: '/startup', label: 'Startup Order', icon: ListOrdered },
-      { path: '/marketplace', label: 'Marketplace', icon: Store, accent: 'text-purple-400' },
+      { path: '/marketplace', label: 'Store', icon: Store, accent: 'text-purple-400' },
       { path: '/import', label: 'Import', icon: Import, accent: 'text-cyan-400' },
       { path: '/updater', label: 'Updater', icon: RefreshCw, accent: 'text-emerald-400' },
       { path: '/vehicles', label: 'Vehicle Packs', icon: Car, accent: 'text-amber-400' },
@@ -56,11 +57,9 @@ const navSections: NavSection[] = [
   {
     label: 'Server',
     items: [
-      { path: '/console', label: 'Console', icon: Terminal, accent: 'text-green-400' },
       { path: '/health', label: 'Health Scanner', icon: HeartPulse, accent: 'text-emerald-400' },
       { path: '/backups', label: 'Backups', icon: Archive },
       { path: '/files', label: 'File Explorer', icon: FolderOpen },
-      { path: '/editor', label: 'Server.cfg', icon: FileCode },
     ],
   },
   {

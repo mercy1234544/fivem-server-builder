@@ -51,6 +51,7 @@ export default function App() {
           <AnimatePresence mode="wait">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/servers" element={<ServerPanel />} />
               <Route path="/server/:id" element={<ServerPanel />} />
               <Route path="/create" element={<ServerWizard />} />
               <Route path="/resources" element={<ResourceManager />} />

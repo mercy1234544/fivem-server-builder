@@ -51,7 +51,9 @@ export default function ServerWizard() {
     framework: '',
     os: 'windows' as 'windows' | 'linux',
     database: 'mariadb' as 'mariadb' | 'mysql',
-    artifactVersion: 'recommended',
+    // Default to the LATEST build: CFX's "recommended" channel lags months
+    // behind and ships an outdated txAdmin. Latest = current txAdmin.
+    artifactVersion: 'experimental',
     licenseKey: '',
     installPath: '',
   });
@@ -180,7 +182,7 @@ export default function ServerWizard() {
             <ArrowRight size={16} />
           </button>
           <button
-            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'recommended', licenseKey: '', installPath: '' }); }}
+            onClick={() => { setBuildComplete(false); setStep(0); setConfig({ name: '', framework: '', os: 'windows', database: 'mariadb', artifactVersion: 'experimental', licenseKey: '', installPath: '' }); }}
             className="btn-secondary"
           >
             Create Another
@@ -304,8 +306,8 @@ export default function ServerWizard() {
                 <p className="text-sm text-surface-400">Select the FiveM server artifact build</p>
                 <div className="space-y-3 mt-4">
                   {[
-                    { id: 'recommended', name: 'Latest Recommended', desc: 'Stable version recommended for production servers', icon: Shield, color: 'text-green-400' },
-                    { id: 'experimental', name: 'Latest Experimental', desc: 'Newest features, may be unstable â€” for testing only', icon: Zap, color: 'text-amber-400' },
+                    { id: 'experimental', name: 'Latest Build (newest txAdmin)', desc: 'Current FXServer build with the up-to-date txAdmin — best for local servers', icon: Zap, color: 'text-green-400' },
+                    { id: 'recommended', name: 'Stable (CFX recommended)', desc: 'Older battle-tested build — txAdmin will be several versions behind', icon: Shield, color: 'text-amber-400' },
                     { id: 'custom', name: 'Custom Version', desc: 'Specify a custom artifact build number', icon: Download, color: 'text-blue-400' },
                   ].map((v) => (
                     <motion.button
@@ -386,7 +388,7 @@ export default function ServerWizard() {
                   <SummaryRow label="Server Name" value={config.name || 'Unnamed'} />
                   <SummaryRow label="Framework" value={FRAMEWORKS.find(f => f.id === config.framework)?.name || config.framework} />
                   <SummaryRow label="Database" value={config.database === 'mariadb' ? 'MariaDB' : 'MySQL'} />
-                  <SummaryRow label="Artifacts" value={config.artifactVersion === 'recommended' ? 'Latest Recommended' : config.artifactVersion === 'experimental' ? 'Latest Experimental' : 'Custom'} />
+                  <SummaryRow label="Artifacts" value={config.artifactVersion === 'experimental' ? 'Latest Build (newest txAdmin)' : config.artifactVersion === 'recommended' ? 'Stable (CFX recommended)' : 'Custom'} />
                   <SummaryRow label="License Key" value={config.licenseKey ? `${config.licenseKey.substring(0, 12)}...` : 'Not set'} mono />
                   <SummaryRow label="Install Path" value={config.installPath || 'Not set'} mono />
                 </div>
