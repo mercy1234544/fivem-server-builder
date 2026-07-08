@@ -23,6 +23,7 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke('server:delete', id),
     start: (id: string) => ipcRenderer.invoke('server:start', id),
     stop: (id: string) => ipcRenderer.invoke('server:stop', id),
+    sendCommand: (id: string, command: string): Promise<boolean> => ipcRenderer.invoke('server:command', id, command),
     import: (serverPath: string, name?: string) => ipcRenderer.invoke('server:import', serverPath, name),
     scan: (serverPath: string) => ipcRenderer.invoke('server:scan', serverPath),
   },

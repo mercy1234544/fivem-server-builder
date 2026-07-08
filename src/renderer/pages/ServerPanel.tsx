@@ -13,6 +13,7 @@ import {
   Package, Archive, Loader2, Search, Save, Upload, RefreshCw, ArrowDown,
   ToggleLeft, ToggleRight, AlertTriangle, Globe, X, Download, HardDrive,
   Wrench, HeartPulse, FileCode, Import as ImportIcon, Car, Palette, FolderTree, ListOrdered,
+  CornerDownLeft, Lightbulb,
 } from 'lucide-react';
 import { useAppStore, Server as ServerType } from '../stores/useAppStore';
 
@@ -401,6 +402,31 @@ export default function ServerPanel() {
 
 /* ═══════════════════ Overview & Console ═══════════════════ */
 
+// Pattern-matched explanations for common scary-but-known console output, so the
+// live console tells you what's actually wrong instead of just scrolling errors.
+const CONSOLE_HINTS: { id: string; test: RegExp; level: 'warn' | 'info'; text: string }[] = [
+  {
+    id: 'argmismatch', test: /Argument count mismatch \(passed 1, wanted 2\)/, level: 'warn',
+    text: 'A set/sets line in server.cfg (or an exec\'d cfg like ox.cfg) has an empty "" value — FXServer drops the empty argument. Comment the line out or give it a real value (common: qbx:discordLink, inventory:webhook).',
+  },
+  {
+    id: 'firstboot', test: /Running build tasks on resource|yarn is currently busy|Could not start dependency webpack/, level: 'info',
+    text: 'First-boot build: yarn/webpack are compiling resources (chat, qbx_properties, …). They start automatically when the build finishes — restart the server once to clear the startup errors.',
+  },
+  {
+    id: 'chattheme', test: /No such export registerMessageHook in resource chat/, level: 'warn',
+    text: 'qbx_chat_theme loaded before chat finished its first-boot build — this clears itself after a restart.',
+  },
+  {
+    id: 'projectname', test: /You don't have sv_projectName/, level: 'warn',
+    text: 'sv_projectName / sv_projectDesc are not set — add them in server.cfg so your server name isn\'t cut off in the server list.',
+  },
+  {
+    id: 'hitch', test: /thread hitch warning/, level: 'info',
+    text: 'Thread hitch warnings are normal while resources compile on first boot — only worry if they continue with players on.',
+  },
+];
+
 function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, consoleRef, onClear }: {
   server: ServerType; lines: string[]; autoScroll: boolean; setAutoScroll: (v: boolean) => void;
   bottomRef: React.RefObject<HTMLDivElement>; consoleRef: React.RefObject<HTMLDivElement>; onClear: () => void;
@@ -411,16 +437,56 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
     setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 60);
   };
 
+  const running = server.status === 'running';
+
+  // ── Command input (writes to the FXServer console) ──────────────────────────
+  const [cmd, setCmd] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState(-1);
+
+  const sendCmd = async () => {
+    const c = cmd.trim();
+    if (!c) return;
+    const ok = await window.electronAPI.server.sendCommand(server.id, c);
+    if (!ok) toast.error('Server console not available — is the server running?');
+    else setHistory((h) => [c, ...h.filter((x) => x !== c)].slice(0, 50));
+    setCmd('');
+    setHistIdx(-1);
+  };
+
+  const onCmdKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendCmd(); }
+    else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const ni = Math.min(histIdx + 1, history.length - 1);
+      if (ni >= 0 && history[ni] !== undefined) { setHistIdx(ni); setCmd(history[ni]); }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const ni = histIdx - 1;
+      if (ni < 0) { setHistIdx(-1); setCmd(''); }
+      else { setHistIdx(ni); setCmd(history[ni]); }
+    }
+  };
+
+  // ── Console insights — dedupe hint matches across the buffer ───────────────
+  const hints = React.useMemo(() => {
+    const found: typeof CONSOLE_HINTS = [];
+    for (const h of CONSOLE_HINTS) {
+      if (lines.some((l) => h.test.test(l))) found.push(h);
+    }
+    return found.slice(0, 4);
+  }, [lines]);
+
   const stats = [
-    { label: 'Status', value: server.status === 'running' ? 'Running' : server.status === 'error' ? 'Error' : 'Stopped',
-      color: server.status === 'running' ? 'text-emerald-400' : server.status === 'error' ? 'text-red-400' : 'text-surface-300' },
+    { label: 'Status', value: running ? 'Running' : server.status === 'error' ? 'Error' : 'Stopped',
+      color: running ? 'text-emerald-400' : server.status === 'error' ? 'text-red-400' : 'text-surface-300' },
     { label: 'Framework', value: server.framework || 'custom', color: 'text-surface-100' },
     { label: 'Artifacts', value: server.artifactVersion || 'unknown', color: 'text-surface-100' },
     { label: 'Resources', value: String(server.resourceCount ?? 0), color: 'text-surface-100' },
   ];
 
   return (
-    <div className="h-full flex flex-col p-5 gap-4 overflow-hidden">
+    <div className="h-full flex flex-col p-5 gap-3 overflow-hidden">
       <div className="grid grid-cols-4 gap-3 shrink-0">
         {stats.map((s) => (
           <div key={s.label} className="rounded-xl border border-overlay-6 bg-overlay-2 px-4 py-3">
@@ -429,6 +495,21 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
           </div>
         ))}
       </div>
+
+      {/* Console insights */}
+      {hints.length > 0 && (
+        <div className="shrink-0 rounded-xl border border-overlay-6 bg-overlay-2 px-3 py-2 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-surface-500 flex items-center gap-1.5">
+            <Lightbulb size={11} className="text-amber-400" /> Console insights
+          </p>
+          {hints.map((h) => (
+            <p key={h.id} className={`text-[11px] leading-snug flex items-start gap-2 ${h.level === 'warn' ? 'text-amber-300' : 'text-sky-300/90'}`}>
+              <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${h.level === 'warn' ? 'bg-amber-400' : 'bg-sky-400'}`} />
+              {h.text}
+            </p>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-between shrink-0">
         <p className="text-xs font-semibold text-surface-400 flex items-center gap-2"><Terminal size={13} /> Live Console</p>
@@ -447,12 +528,34 @@ function OverviewTab({ server, lines, autoScroll, setAutoScroll, bottomRef, cons
         className="flex-1 min-h-0 bg-[#0d1117] rounded-xl border border-overlay-6 p-4 overflow-y-auto font-mono text-[11px] leading-[1.65]">
         {lines.length === 0 ? (
           <div className="text-surface-600 text-center py-12">
-            {server.status === 'running' ? 'Waiting for output…' : 'Start the server to see console output'}
+            {running ? 'Waiting for output…' : 'Start the server to see console output'}
           </div>
         ) : lines.map((l, i) => (
           <div key={i} className={`${lineClass(l)} break-words hover:bg-white/[0.02] -mx-2 px-2 rounded`}>{l}</div>
         ))}
         <div ref={bottomRef} />
+      </div>
+
+      {/* Command input — like txAdmin's live console */}
+      <div className={`shrink-0 flex items-center gap-2 rounded-xl border px-3 py-2 bg-[#0d1117] ${
+        running ? 'border-overlay-8 focus-within:border-primary-500/40' : 'border-overlay-6 opacity-60'
+      }`}>
+        <ChevronRight size={14} className={running ? 'text-primary-400' : 'text-surface-600'} />
+        <input
+          value={cmd}
+          onChange={(e) => { setCmd(e.target.value); setHistIdx(-1); }}
+          onKeyDown={onCmdKey}
+          disabled={!running}
+          placeholder={running ? 'Type a server command… (restart <resource>, refresh, txadmin…)  ↑ for history' : 'Start the server to send commands'}
+          className="flex-1 bg-transparent text-[12px] font-mono text-surface-100 placeholder-surface-600 focus:outline-none"
+          spellCheck={false}
+        />
+        <button onClick={sendCmd} disabled={!running || !cmd.trim()}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+            running && cmd.trim() ? 'bg-primary-600 text-white hover:bg-primary-500' : 'bg-overlay-4 text-surface-600 cursor-not-allowed'
+          }`}>
+          <CornerDownLeft size={11} /> Send
+        </button>
       </div>
     </div>
   );
@@ -751,6 +854,9 @@ function ResourcesTab({ server }: { server: ServerType }) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [acting, setActing] = useState<string | null>(null); // "name:cmd" while a live command sends
+
+  const live = server.status === 'running';
 
   const scan = async () => {
     setLoading(true);
@@ -761,14 +867,38 @@ function ResourcesTab({ server }: { server: ServerType }) {
 
   useEffect(() => { scan(); }, [server.id]);
 
+  // Autostart toggle — adds/removes the `ensure` line in server.cfg.
   const toggle = async (r: Resource) => {
     try { await window.electronAPI.resource.toggle(server.installPath, r.name, !r.enabled); } catch {}
     setResources((rs) => rs.map((x) => x.name === r.name ? { ...x, enabled: !x.enabled } : x));
-    toast.success(`${r.name} ${r.enabled ? 'disabled' : 'enabled'}`);
+    toast.success(`${r.name} ${r.enabled ? 'removed from' : 'added to'} autostart`);
+  };
+
+  // Live control — sends start/stop/restart to the RUNNING server's console.
+  const liveCmd = async (cmd: 'start' | 'stop' | 'restart', r: Resource) => {
+    const key = `${r.name}:${cmd}`;
+    setActing(key);
+    const ok = await window.electronAPI.server.sendCommand(server.id, `${cmd} ${r.name}`);
+    if (ok) toast.success(`${cmd} ${r.name} — sent to console`);
+    else toast.error('Server console not available — is the server running?');
+    setTimeout(() => setActing((a) => (a === key ? null : a)), 700);
   };
 
   const filtered = resources.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
   const enabled = resources.filter((r) => r.enabled).length;
+
+  const LiveBtn = ({ icon: Icon, cmd, r, tint, title }: { icon: any; cmd: 'start' | 'stop' | 'restart'; r: Resource; tint: string; title: string }) => (
+    <button
+      onClick={() => liveCmd(cmd, r)}
+      disabled={!live || acting === `${r.name}:${cmd}`}
+      title={live ? title : 'Start the server to use live controls'}
+      className={`p-1.5 rounded-lg border border-transparent transition-all ${
+        live ? `${tint} hover:bg-overlay-8 hover:border-overlay-10` : 'text-surface-700 cursor-not-allowed'
+      }`}
+    >
+      {acting === `${r.name}:${cmd}` ? <Loader2 size={13} className="animate-spin" /> : <Icon size={13} />}
+    </button>
+  );
 
   return (
     <div className="h-full flex flex-col p-5 gap-3 overflow-hidden">
@@ -778,7 +908,13 @@ function ResourcesTab({ server }: { server: ServerType }) {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search resources…"
             className="w-full bg-overlay-3 border border-overlay-6 rounded-xl pl-9 pr-3 py-2 text-sm text-surface-200 placeholder-surface-600 focus:outline-none focus:border-primary-500/40" />
         </div>
-        <span className="text-xs text-surface-500 shrink-0">{enabled}/{resources.length} enabled</span>
+        <span className={`text-[11px] px-2 py-1 rounded-lg border shrink-0 flex items-center gap-1.5 ${
+          live ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25' : 'bg-overlay-4 text-surface-500 border-overlay-6'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-400' : 'bg-surface-600'}`} />
+          {live ? 'Live controls active' : 'Start server for live controls'}
+        </span>
+        <span className="text-xs text-surface-500 shrink-0">{enabled}/{resources.length} autostart</span>
         <button onClick={scan} disabled={loading} className="btn-secondary flex items-center gap-2 text-xs py-2">
           {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Rescan
         </button>
@@ -791,15 +927,24 @@ function ResourcesTab({ server }: { server: ServerType }) {
           <p className="text-center text-sm text-surface-500 py-12">{search ? 'No matches' : 'No resources found'}</p>
         ) : filtered.map((r) => (
           <div key={r.name} className={`flex items-center gap-3 px-3 py-2 rounded-xl border border-overlay-4 bg-overlay-2 ${!r.enabled ? 'opacity-55' : ''}`}>
-            <button onClick={() => toggle(r)} className="shrink-0 hover:scale-110 transition-transform">
-              {r.enabled ? <ToggleRight size={22} className="text-emerald-400" /> : <ToggleLeft size={22} className="text-surface-500" />}
-            </button>
+            {/* Live controls — restart / stop / start on the running server */}
+            <div className="flex items-center gap-0.5 shrink-0 pr-2 border-r border-overlay-6">
+              <LiveBtn icon={RotateCw} cmd="restart" r={r} tint="text-primary-300" title={`restart ${r.name}`} />
+              <LiveBtn icon={Square} cmd="stop" r={r} tint="text-red-400" title={`stop ${r.name}`} />
+              <LiveBtn icon={Play} cmd="start" r={r} tint="text-emerald-400" title={`start ${r.name}`} />
+            </div>
             <span className="text-sm text-surface-100 font-medium truncate">{r.name}</span>
             {r.version && <span className="text-[10px] px-1.5 py-0.5 bg-overlay-6 rounded text-surface-400 shrink-0">v{r.version}</span>}
             <span className="text-[10px] px-1.5 py-0.5 bg-overlay-4 rounded text-surface-500 shrink-0">{r.category}</span>
             {r.issues?.length > 0 && <AlertTriangle size={13} className="text-amber-400 shrink-0" />}
             <span className="flex-1" />
             {r.author && <span className="text-[10px] text-surface-600 shrink-0 truncate max-w-[140px]">{r.author}</span>}
+            {/* Autostart toggle — the on/off in server.cfg */}
+            <button onClick={() => toggle(r)} className="shrink-0 flex items-center gap-1.5 hover:scale-105 transition-transform"
+              title={r.enabled ? 'Autostarts with the server (ensure in server.cfg) — click to disable' : 'Not autostarted — click to enable'}>
+              <span className="text-[9px] uppercase tracking-wider text-surface-600">auto</span>
+              {r.enabled ? <ToggleRight size={22} className="text-emerald-400" /> : <ToggleLeft size={22} className="text-surface-500" />}
+            </button>
           </div>
         ))}
       </div>

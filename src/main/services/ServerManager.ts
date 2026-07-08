@@ -912,7 +912,10 @@ export class ServerManager {
         `setr qbx:enableBridge "true"`,
         `set qbx:enableQueue "true"`,
         `set qbx:bucketLockdownMode "inactive"`,
-        `set qbx:discordLink ""`,
+        // NOTE: an empty "" value makes FXServer's cfg parser drop the argument
+        // → "[cmd] Argument count mismatch (passed 1, wanted 2)" at boot.
+        // Keep empty-valued convars commented out until the user fills them in.
+        `# set qbx:discordLink "https://discord.gg/yourserver"`,
         `set qbx:max_jobs_per_player 1`,
         `set qbx:max_gangs_per_player 1`,
         `set qbx:setjob_replaces "true"`,
@@ -1488,9 +1491,18 @@ export class ServerManager {
 
   sendCommand(id: string, command: string): boolean {
     const proc = this.processes.get(id);
-    if (!proc || !proc.stdin) return false;
+    if (!proc || !proc.stdin || proc.stdin.destroyed) return false;
     try {
-      proc.stdin.write(command + '\n');
+      const cmd = command.trim();
+      if (!cmd) return false;
+      proc.stdin.write(cmd + '\n');
+      // Echo the command into the console stream so the UI shows what ran.
+      const echo = `> ${cmd}\n`;
+      this.bufferConsoleLine(id, echo);
+      const mainWin = BrowserWindow.getAllWindows()[0];
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('server:console', { serverId: id, line: echo });
+      }
       return true;
     } catch {
       return false;

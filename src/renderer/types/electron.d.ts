@@ -15,6 +15,7 @@ interface ElectronAPI {
     delete: (id: string) => Promise<boolean>;
     start: (id: string) => Promise<{ success: boolean; error?: string }>;
     stop: (id: string) => Promise<boolean>;
+    sendCommand: (id: string, command: string) => Promise<boolean>;
     import: (serverPath: string, name?: string) => Promise<{
       success: boolean;
       server?: any;

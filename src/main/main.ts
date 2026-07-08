@@ -132,6 +132,8 @@ function registerIpcHandlers() {
     return result;
   });
   ipcMain.handle('server:stop', (_, id) => serverManager.stopServer(id));
+  // Write a command to the running FXServer console (restart <res>, stop <res>, …)
+  ipcMain.handle('server:command', (_, id: string, command: string) => serverManager.sendCommand(id, command));
   ipcMain.handle('server:import', (_, serverPath: string, name?: string) =>
     serverManager.importExistingServer(serverPath, name));
   ipcMain.handle('server:scan', (_, serverPath: string) =>
