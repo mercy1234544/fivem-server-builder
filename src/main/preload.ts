@@ -136,6 +136,13 @@ const electronAPI = {
     getInfo: () => ipcRenderer.invoke('system:info'),
   },
 
+  // Exclusive access — Discord OAuth verification
+  access: {
+    login: () => ipcRenderer.invoke('access:login'),
+    status: (force?: boolean) => ipcRenderer.invoke('access:status', force),
+    logout: () => ipcRenderer.invoke('access:logout'),
+  },
+
   // Server console output
   onServerConsole: (callback: (data: { serverId: string; line: string }) => void) => {
     const handler = (_: any, data: any) => callback(data);

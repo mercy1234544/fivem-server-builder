@@ -156,6 +156,18 @@ interface ElectronAPI {
     inflate: (b64: string) => Promise<string | null>;
   };
 
+  access: {
+    login: () => Promise<{
+      configured: boolean; loggedIn: boolean; inGuild: boolean; hasAccess: boolean;
+      username?: string; discordId?: string; reason?: string;
+    }>;
+    status: (force?: boolean) => Promise<{
+      configured: boolean; loggedIn: boolean; inGuild: boolean; hasAccess: boolean;
+      username?: string; discordId?: string; reason?: string;
+    }>;
+    logout: () => Promise<void>;
+  };
+
   system: {
     getInfo: () => Promise<{
       cpuModel: string;

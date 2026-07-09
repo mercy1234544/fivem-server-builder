@@ -10,6 +10,7 @@ import { GitManager } from './services/GitManager';
 import { FileManager } from './services/FileManager';
 import { ArtifactDownloader } from './services/ArtifactDownloader';
 import { DatabaseManager } from './services/DatabaseManager';
+import { AccessManager } from './services/AccessManager';
 import { VehicleResourceScanner } from './services/VehicleResourceScanner';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
@@ -23,6 +24,7 @@ let gitManager: GitManager;
 let fileManager: FileManager;
 let artifactDownloader: ArtifactDownloader;
 let databaseManager: DatabaseManager;
+let accessManager: AccessManager;
 const vehicleResourceScanner = new VehicleResourceScanner();
 
 function createWindow() {
@@ -79,6 +81,7 @@ function initializeServices() {
   fileManager = new FileManager();
   artifactDownloader = new ArtifactDownloader();
   databaseManager = new DatabaseManager();
+  accessManager = new AccessManager(userDataPath);
   serverManager.setDatabaseManager(databaseManager);
   healthScanner.setDatabaseManager(databaseManager);
 }
@@ -136,6 +139,11 @@ function registerIpcHandlers() {
   ipcMain.handle('server:command', (_, id: string, command: string) => serverManager.sendCommand(id, command));
   // Apply known config fixes shipped with app updates to an existing server
   ipcMain.handle('server:maintenance', (_, id: string) => serverManager.applyMaintenanceFixes(id));
+
+  // Exclusive access — Discord OAuth verification (auto-grant for members)
+  ipcMain.handle('access:login', () => accessManager.login());
+  ipcMain.handle('access:status', (_, force?: boolean) => accessManager.status(!!force));
+  ipcMain.handle('access:logout', () => accessManager.logout());
   ipcMain.handle('server:import', (_, serverPath: string, name?: string) =>
     serverManager.importExistingServer(serverPath, name));
   ipcMain.handle('server:scan', (_, serverPath: string) =>
