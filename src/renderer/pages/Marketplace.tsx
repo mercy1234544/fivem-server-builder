@@ -37,7 +37,7 @@ interface MarketplaceItem {
 }
 
 // Discord server for Exclusive access requests.
-const DISCORD_INVITE = 'https://discord.gg/tt6Mv6J6RB';
+const DISCORD_INVITE = 'https://discord.gg/FkwnmdZx6m';
 
 // â”€â”€â”€ MASSIVE RESOURCE CATALOG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MARKETPLACE_ITEMS: MarketplaceItem[] = [
@@ -897,6 +897,22 @@ export default function Marketplace() {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [installing, setInstalling] = useState<string | null>(null);
+  // Exclusive item the user is requesting access to (ticket-style modal).
+  const [accessItem, setAccessItem] = useState<MarketplaceItem | null>(null);
+
+  const requestMessage = (item: MarketplaceItem) =>
+    [
+      `🎫 Access Request — ${item.name}`,
+      `Script: ${item.name}${item.version ? ` v${item.version}` : ''}`,
+      `From: FiveM Server Builder store`,
+      ``,
+      `Hi! I'd like access to this exclusive script. Please let me know the next steps.`,
+    ].join('\n');
+
+  const copyRequest = (item: MarketplaceItem) => {
+    navigator.clipboard.writeText(requestMessage(item));
+    toast.success('Request message copied — paste it in your ticket');
+  };
 
   const activeServer = servers.find(s => s.id === activeServerId);
   const sortedCategories = [...new Set(items.map(i => i.category))].sort();
@@ -1159,9 +1175,9 @@ export default function Marketplace() {
               </div>
               {item.locked ? (
                 <button
-                  onClick={() => window.electronAPI?.openExternal(item.accessUrl || DISCORD_INVITE)}
+                  onClick={() => setAccessItem(item)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded-lg text-xs font-medium text-amber-300 transition-all cursor-pointer"
-                  title="Join the Discord to request access"
+                  title="Open an access request"
                 >
                   <Lock size={12} />
                   Request Access
@@ -1207,6 +1223,78 @@ export default function Marketplace() {
           <p className="text-surface-400">No resources match your search</p>
         </div>
       )}
+
+      {/* ═══ Request Access modal — ticket-style flow via Discord ═══ */}
+      <AnimatePresence>
+        {accessItem && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
+            onClick={() => setAccessItem(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-panel p-6 max-w-md w-full mx-4"
+            >
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Crown size={19} className="text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-surface-100 truncate">Request Access — {accessItem.name}</h3>
+                  <p className="text-xs text-surface-400 mt-0.5">Exclusive script · access is granted through a Discord ticket</p>
+                </div>
+                <button onClick={() => setAccessItem(null)} className="p-1.5 rounded-lg text-surface-500 hover:text-surface-100 hover:bg-overlay-6 transition-all">
+                  ✕
+                </button>
+              </div>
+
+              {/* Steps */}
+              <div className="space-y-2.5 mb-4">
+                {[
+                  { n: 1, text: 'Join the Discord server' },
+                  { n: 2, text: 'Open a ticket in the request-access channel' },
+                  { n: 3, text: 'Paste your request message (copied below) into the ticket' },
+                ].map((s) => (
+                  <div key={s.n} className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 text-primary-300 text-[11px] font-bold flex items-center justify-center shrink-0">{s.n}</span>
+                    <p className="text-sm text-surface-300">{s.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pre-filled request message */}
+              <div className="rounded-xl border border-overlay-6 bg-[#0d1117] p-3 mb-4">
+                <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-1.5">Your request message</p>
+                <pre className="text-[11px] text-surface-300 whitespace-pre-wrap font-mono leading-relaxed">{requestMessage(accessItem)}</pre>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => copyRequest(accessItem)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold bg-overlay-6 text-surface-200 hover:bg-overlay-10 border border-overlay-8 transition-all"
+                >
+                  Copy message
+                </button>
+                <button
+                  onClick={() => {
+                    copyRequest(accessItem);
+                    window.electronAPI?.openExternal(accessItem.accessUrl || DISCORD_INVITE);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all"
+                >
+                  <ExternalLink size={13} /> Join Discord &amp; Request
+                </button>
+              </div>
+              <p className="text-[10px] text-surface-600 mt-3 text-center">
+                The message is copied automatically — open a ticket and paste it (Ctrl+V).
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
