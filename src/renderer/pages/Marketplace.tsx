@@ -900,34 +900,6 @@ export default function Marketplace() {
   // Exclusive item the user is requesting access to (ticket-style modal).
   const [accessItem, setAccessItem] = useState<MarketplaceItem | null>(null);
 
-  // Discord verification — membership auto-grants Exclusive access.
-  interface AccessState {
-    configured: boolean; loggedIn: boolean; inGuild: boolean; hasAccess: boolean;
-    username?: string; reason?: string;
-  }
-  const [access, setAccess] = useState<AccessState | null>(null);
-  const [verifying, setVerifying] = useState(false);
-
-  React.useEffect(() => {
-    window.electronAPI?.access?.status().then(setAccess).catch(() => {});
-  }, []);
-
-  const verifyWithDiscord = async () => {
-    if (!window.electronAPI?.access) return;
-    setVerifying(true);
-    try {
-      const r = await window.electronAPI.access.login();
-      setAccess(r);
-      if (!r.configured) toast.error(r.reason || 'Verification is not set up yet');
-      else if (r.hasAccess) { toast.success(`Welcome ${r.username || ''} — Exclusive access unlocked!`); setAccessItem(null); }
-      else if (r.loggedIn) toast(r.reason || 'Signed in — access not granted yet', { icon: '🔒', duration: 7000 });
-      else toast.error(r.reason || 'Verification failed');
-    } catch (e: any) { toast.error(e?.message || 'Verification failed'); }
-    setVerifying(false);
-  };
-
-  const unlocked = access?.hasAccess === true;
-
   const requestMessage = (item: MarketplaceItem) =>
     [
       `🎫 Access Request — ${item.name}`,
@@ -1068,22 +1040,6 @@ export default function Marketplace() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Discord verification chip — the key to Exclusive items */}
-          {unlocked ? (
-            <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded-lg" title="Click Verify again anytime to refresh">
-              <Crown size={12} /> Exclusive access — {access?.username || 'verified'}
-            </span>
-          ) : (
-            <button
-              onClick={verifyWithDiscord}
-              disabled={verifying}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-[#5865F2]/15 text-[#98a3ff] border border-[#5865F2]/40 rounded-lg hover:bg-[#5865F2]/25 transition-all disabled:opacity-60"
-              title={access?.reason || 'Verify your Discord to unlock Exclusive scripts automatically'}
-            >
-              {verifying ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
-              {access?.loggedIn ? `Signed in — no access yet` : 'Verify with Discord'}
-            </button>
-          )}
           {!activeServer && (
             <span className="text-xs px-3 py-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/30 rounded-lg">
               Select a server to install resources
@@ -1219,23 +1175,7 @@ export default function Marketplace() {
                   {item.premium ? 'Premium' : item.stars.toLocaleString()}
                 </span>
               </div>
-              {item.locked && unlocked ? (
-                item.repo ? (
-                  <button
-                    onClick={() => installItem(item)}
-                    disabled={installing === item.id || !activeServer}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-medium text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {installing === item.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                    Install
-                  </button>
-                ) : (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-xs font-medium text-emerald-300"
-                    title="Access granted — delivery is handled in the Discord server">
-                    <CheckCircle2 size={12} /> Access granted
-                  </span>
-                )
-              ) : item.locked ? (
+              {item.locked ? (
                 <button
                   onClick={() => setAccessItem(item)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 rounded-lg text-xs font-medium text-amber-300 transition-all cursor-pointer"
@@ -1313,39 +1253,19 @@ export default function Marketplace() {
                 </button>
               </div>
 
-              {/* Fast path: join + verify = automatic access */}
-              <div className="rounded-xl border border-[#5865F2]/30 bg-[#5865F2]/10 p-3 mb-3">
-                <p className="text-xs font-bold text-[#b3bbff] mb-2">⚡ Instant access</p>
-                <div className="space-y-2 mb-3">
-                  {[
-                    { n: 1, text: 'Join the Discord server' },
-                    { n: 2, text: 'Click Verify — access is granted automatically' },
-                  ].map((s) => (
-                    <div key={s.n} className="flex items-center gap-2.5">
-                      <span className="w-5 h-5 rounded-full bg-[#5865F2]/30 text-[#b3bbff] text-[10px] font-bold flex items-center justify-center shrink-0">{s.n}</span>
-                      <p className="text-xs text-surface-300">{s.text}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => window.electronAPI?.openExternal(accessItem.accessUrl || DISCORD_INVITE)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold bg-overlay-6 text-surface-200 hover:bg-overlay-10 border border-overlay-8 transition-all"
-                  >
-                    <ExternalLink size={12} /> Join Discord
-                  </button>
-                  <button
-                    onClick={verifyWithDiscord}
-                    disabled={verifying}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold bg-[#5865F2] text-white hover:bg-[#6875f5] transition-all disabled:opacity-60"
-                  >
-                    {verifying ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Verify
-                  </button>
-                </div>
+              {/* How to request access — join Discord, open a ticket */}
+              <div className="space-y-2.5 mb-4">
+                {[
+                  { n: 1, text: <>Join the Discord server</> },
+                  { n: 2, text: <>Make a ticket in <span className="text-amber-300 font-semibold">FiveM Server Builder Exclusive Scripts</span></> },
+                  { n: 3, text: <>Paste your request message (below) into the ticket</> },
+                ].map((s) => (
+                  <div key={s.n} className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 text-primary-300 text-[11px] font-bold flex items-center justify-center shrink-0">{s.n}</span>
+                    <p className="text-sm text-surface-300">{s.text}</p>
+                  </div>
+                ))}
               </div>
-
-              {/* Fallback: staff-approved ticket */}
-              <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">If verify says you still need approval — open a ticket:</p>
 
               {/* Pre-filled request message */}
               <div className="rounded-xl border border-overlay-6 bg-[#0d1117] p-3 mb-4">

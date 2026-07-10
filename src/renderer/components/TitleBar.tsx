@@ -39,17 +39,16 @@ export default function TitleBar() {
         </div>
       </div>
 
-      {/* Center nav */}
-      <nav
-        className="flex-1 flex items-center justify-center gap-1"
-        style={{ WebkitAppRegion: 'no-drag' } as any}
-      >
+      {/* Center nav — container stays draggable; only the buttons are no-drag,
+          so the whole bar (gaps included) can grab the window. */}
+      <nav className="flex-1 flex items-center justify-center gap-1">
         {NAV.map((item) => {
           const active = item.match(location.pathname);
           return (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
+              style={{ WebkitAppRegion: 'no-drag' } as any}
               className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-all ${
                 active
                   ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30'
@@ -63,15 +62,16 @@ export default function TitleBar() {
         })}
       </nav>
 
-      {/* Window controls */}
-      <div className="flex w-56 shrink-0 justify-end" style={{ WebkitAppRegion: 'no-drag' } as any}>
-        <button onClick={handleMinimize} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150">
+      {/* Window controls — only the three buttons are no-drag; the surrounding
+          strip stays draggable. */}
+      <div className="flex w-56 shrink-0 justify-end">
+        <button onClick={handleMinimize} style={{ WebkitAppRegion: 'no-drag' } as any} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150">
           <Minus size={14} />
         </button>
-        <button onClick={handleMaximize} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150">
+        <button onClick={handleMaximize} style={{ WebkitAppRegion: 'no-drag' } as any} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 transition-all duration-150">
           <Square size={11} />
         </button>
-        <button onClick={handleClose} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-100 hover:bg-red-600/90 transition-all duration-150">
+        <button onClick={handleClose} style={{ WebkitAppRegion: 'no-drag' } as any} className="w-12 h-12 flex items-center justify-center text-surface-500 hover:text-surface-100 hover:bg-red-600/90 transition-all duration-150">
           <X size={14} />
         </button>
       </div>
