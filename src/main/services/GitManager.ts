@@ -28,15 +28,48 @@ export class GitManager {
       }
       const [, owner, repo] = match;
       const repoName = repo.replace(/\.git$/, '');
+      const UA = { 'User-Agent': 'FiveM-Server-Builder' };
 
-      // Try main branch first, fall back to master
-      let zipUrl = `https://github.com/${owner}/${repoName}/archive/refs/heads/main.zip`;
-      let response;
+      // Resolve the repo's REAL default branch (fixes main-vs-master-vs-other)
+      // and detect dead links up front so we can report them clearly.
+      const branches: string[] = [];
       try {
-        response = await axios.get(zipUrl, { responseType: 'arraybuffer', timeout: 60000 });
-      } catch {
-        zipUrl = `https://github.com/${owner}/${repoName}/archive/refs/heads/master.zip`;
-        response = await axios.get(zipUrl, { responseType: 'arraybuffer', timeout: 60000 });
+        const info = await axios.get(`https://api.github.com/repos/${owner}/${repoName}`, {
+          timeout: 15000, headers: { ...UA, Accept: 'application/vnd.github+json' },
+        });
+        if (info.data?.default_branch) branches.push(info.data.default_branch);
+      } catch (e: any) {
+        if (e?.response?.status === 404) {
+          return { success: false, error: `Repository not found: ${owner}/${repoName}. The download link is out of date, or the script isn't publicly available.` };
+        }
+        // Rate-limited / offline — fall through to guessing common branches.
+      }
+      for (const b of ['main', 'master', 'develop']) if (!branches.includes(b)) branches.push(b);
+
+      // Try each candidate branch's archive until one downloads.
+      let response: any = null;
+      let lastErr = '';
+      for (const b of branches) {
+        try {
+          response = await axios.get(`https://github.com/${owner}/${repoName}/archive/refs/heads/${b}.zip`,
+            { responseType: 'arraybuffer', timeout: 60000, headers: UA });
+          break;
+        } catch (e: any) { lastErr = e?.message || 'download failed'; }
+      }
+
+      // Last resort: the latest published release (some repos ship code only there).
+      if (!response) {
+        try {
+          const rel = await axios.get(`https://api.github.com/repos/${owner}/${repoName}/releases/latest`,
+            { timeout: 15000, headers: UA });
+          if (rel.data?.zipball_url) {
+            response = await axios.get(rel.data.zipball_url, { responseType: 'arraybuffer', timeout: 60000, headers: UA });
+          }
+        } catch { /* no release either */ }
+      }
+
+      if (!response) {
+        return { success: false, error: `Could not download ${owner}/${repoName} — ${lastErr || 'no installable branch or release found'}.` };
       }
 
       // Write ZIP to temp file

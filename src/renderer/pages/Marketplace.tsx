@@ -874,6 +874,95 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
 export const EXCLUSIVE_ITEMS: { id: string; name: string }[] =
   MARKETPLACE_ITEMS.filter((i) => i.locked).map((i) => ({ id: i.id, name: i.name }));
 
+// Repos verified missing/private/moved on GitHub (they 404 on install). Audited
+// 2026-07 — hidden from the store so users never hit a failed "not found"
+// install. Fix a URL here (remove it from the set) to bring an item back.
+const DEAD_REPOS = new Set<string>([
+  'https://github.com/AvarianKnight/pma-nui',
+  'https://github.com/BCS-Scripts/bcs_housing',
+  'https://github.com/DOJ-scripts/doj-hunting',
+  'https://github.com/Flaviocalixto/EasyAdmin',
+  'https://github.com/GHMatti/FiveM-GCPhone',
+  'https://github.com/GabzV/fivem-gabz-mapfree',
+  'https://github.com/InZidiux/LegacyFuel',
+  'https://github.com/JoeSzymkowiczFiveworx/jg-advancedgarages',
+  'https://github.com/MonkeyWhisper/interact-sound',
+  'https://github.com/N0Mercy/realistic-vehicle-damage',
+  'https://github.com/PickleModifications/pickle_fishing',
+  'https://github.com/PickleModifications/pickle_hunting',
+  'https://github.com/PickleModifications/pickle_mining',
+  'https://github.com/Project-Sloth/ps-bowling',
+  'https://github.com/Project-Sloth/ps-golf',
+  'https://github.com/Project-Sloth/ps-multicharacter',
+  'https://github.com/Renewed-Scripts/Renewed-Vehiclekeys',
+  'https://github.com/Scully049/scully_emotemenu',
+  'https://github.com/Starter-FiveM/hipster-barber-mlo',
+  'https://github.com/TayMcKenzieNZ/rpemotes',
+  'https://github.com/VenomXNL/vSync',
+  'https://github.com/bryzz-fivem/brz-vehiclehandling',
+  'https://github.com/codesign-dev/cd_easytime',
+  'https://github.com/core-framework/core_inventory',
+  'https://github.com/cw-scripts/cw-racingapp',
+  'https://github.com/esx-framework/esx_ambulancejob',
+  'https://github.com/esx-framework/esx_basicneeds',
+  'https://github.com/esx-framework/esx_billing',
+  'https://github.com/esx-framework/esx_dmvschool',
+  'https://github.com/esx-framework/esx_drugs',
+  'https://github.com/esx-framework/esx_firemanager',
+  'https://github.com/esx-framework/esx_godirtyjob',
+  'https://github.com/esx-framework/esx_hud',
+  'https://github.com/esx-framework/esx_identity',
+  'https://github.com/esx-framework/esx_jobs',
+  'https://github.com/esx-framework/esx_mechanicjob',
+  'https://github.com/esx-framework/esx_multicharacter',
+  'https://github.com/esx-framework/esx_policejob',
+  'https://github.com/esx-framework/esx_property',
+  'https://github.com/esx-framework/esx_skin',
+  'https://github.com/esx-framework/esx_vehicleshop',
+  'https://github.com/loljoshie/lb-phone',
+  'https://github.com/okok-scripts/okokBanking',
+  'https://github.com/okok-scripts/okokMarketplace',
+  'https://github.com/okok-scripts/okokNotify',
+  'https://github.com/okok-scripts/okokTextUI',
+  'https://github.com/overextended/ox_hud',
+  'https://github.com/pongo1231/fivem-freecam',
+  'https://github.com/qbcore-framework/loadingscreen',
+  'https://github.com/qbcore-framework/qb-atm',
+  'https://github.com/qbcore-framework/qb-barber',
+  'https://github.com/qbcore-framework/qb-blackmarket',
+  'https://github.com/qbcore-framework/qb-boosting',
+  'https://github.com/qbcore-framework/qb-carwash',
+  'https://github.com/qbcore-framework/qb-casino',
+  'https://github.com/qbcore-framework/qb-chopshop',
+  'https://github.com/qbcore-framework/qb-cocaine',
+  'https://github.com/qbcore-framework/qb-commandbinding',
+  'https://github.com/qbcore-framework/qb-cooking',
+  'https://github.com/qbcore-framework/qb-deathscreen',
+  'https://github.com/qbcore-framework/qb-drawtext',
+  'https://github.com/qbcore-framework/qb-fitbit',
+  'https://github.com/qbcore-framework/qb-gangmenu',
+  'https://github.com/qbcore-framework/qb-gangs',
+  'https://github.com/qbcore-framework/qb-handcuffs',
+  'https://github.com/qbcore-framework/qb-lock',
+  'https://github.com/qbcore-framework/qb-methlab',
+  'https://github.com/qbcore-framework/qb-minimap',
+  'https://github.com/qbcore-framework/qb-paintball',
+  'https://github.com/qbcore-framework/qb-spraypaint',
+  'https://github.com/qbcore-framework/qb-streetdealer',
+  'https://github.com/qbcore-framework/qb-streetlights',
+  'https://github.com/qbcore-framework/qb-tattoos',
+  'https://github.com/qbcore-framework/qb-weedplanting',
+  'https://github.com/quasar-store/qs-inventory',
+  'https://github.com/starter-scripts/Starter_Admin',
+  'https://github.com/wasaborern/wasabi_bridge',
+  'https://github.com/wasaborern/wasabi_carlock',
+  'https://github.com/wasaborern/wasabi_gangs',
+  'https://github.com/xander1998/fivem-cinema',
+]);
+
+// Store shows only installable items (exclusives keep their empty repo).
+const AVAILABLE_ITEMS = MARKETPLACE_ITEMS.filter((i) => !i.repo || !DEAD_REPOS.has(i.repo));
+
 const categoryColors: Record<string, string> = {
   Core: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   Framework: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
@@ -903,7 +992,7 @@ const categoryColors: Record<string, string> = {
 export default function Marketplace() {
   const navigate = useNavigate();
   const { activeServerId, servers, logAction } = useAppStore();
-  const [items, setItems] = useState(MARKETPLACE_ITEMS);
+  const [items, setItems] = useState(AVAILABLE_ITEMS);
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [installing, setInstalling] = useState<string | null>(null);
