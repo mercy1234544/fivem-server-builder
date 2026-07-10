@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
+import { useLocalAccess } from '../stores/useLocalAccess';
 import { isSupabaseConfigured } from '../lib/supabase';
 
 // HTN-style top bar: brand left, primary nav in the middle, window controls
@@ -19,10 +20,12 @@ export default function TitleBar() {
   const location = useLocation();
   const role = useAuth((s) => s.profile?.role);
   const isAdmin = role === 'admin' || role === 'owner';
+  const localUnlocked = useLocalAccess((s) => s.unlocked);
 
-  // Show Admin in the top nav for admins/owners, and in local (no-database) mode
-  // where it's gated by a 4-digit code instead.
-  const showAdmin = isAdmin || !isSupabaseConfigured();
+  // Admin tab is hidden from regular users. It shows for Supabase admins/owners,
+  // and in local mode only once someone has entered the admin code on this
+  // machine (via Settings → Admin access).
+  const showAdmin = isSupabaseConfigured() ? isAdmin : localUnlocked;
   const nav = showAdmin
     ? [...NAV, { path: '/admin', label: 'Admin', icon: Shield, match: (p: string) => p.startsWith('/admin') }]
     : NAV;

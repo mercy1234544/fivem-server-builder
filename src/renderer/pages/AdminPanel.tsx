@@ -3,9 +3,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Shield, Search, Loader2, Check, Crown, User as UserIcon, ShieldCheck, Lock, KeyRound, LogOut } from 'lucide-react';
+import { Shield, Search, Loader2, Check, Crown, User as UserIcon, ShieldCheck, Lock, KeyRound, LogOut, Copy } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
-import { useLocalAccess } from '../stores/useLocalAccess';
+import { useLocalAccess, codeForItem } from '../stores/useLocalAccess';
 import { isSupabaseConfigured, Profile, Role } from '../lib/supabase';
 import { EXCLUSIVE_ITEMS } from './Marketplace';
 
@@ -270,28 +270,41 @@ function LocalAdmin() {
       {changing && <ChangeCode onDone={() => setChanging(false)} changePin={changePin} />}
 
       <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 leading-relaxed">
-        No database is set up yet, so this unlocks Exclusive scripts only on <span className="font-semibold">this computer</span>.
-        When the account system is connected, this switches to real per-user access you grant by username.
+        Give a customer the code for their script and they redeem it in the Store (locked item → “Have a code?”).
+        Codes change weekly, so an old shared code stops working — anyone who already redeemed keeps access.
+        When the account system is connected, this becomes real one-time codes per person.
       </div>
 
       <div className="card">
-        <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Exclusive scripts</p>
-        <div className="space-y-1.5">
+        <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Exclusive scripts &amp; redemption codes</p>
+        <div className="space-y-2">
           {EXCLUSIVE_ITEMS.length === 0 ? (
             <p className="text-sm text-surface-500 py-6 text-center">No exclusive scripts in the store.</p>
           ) : EXCLUSIVE_ITEMS.map((s) => {
             const has = granted.includes(s.id);
+            const code = codeForItem(s.id);
             return (
-              <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-overlay-4 bg-overlay-2">
-                <Crown size={13} className="text-amber-400 shrink-0" />
-                <span className="text-sm text-surface-100 flex-1 truncate">{s.name}</span>
-                <button onClick={() => { has ? revoke(s.id) : grant(s.id); toast.success(`${has ? 'Locked' : 'Unlocked'} ${s.name}`); }}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
-                    has ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-red-500/15 hover:text-red-300 hover:border-red-500/30'
-                        : 'bg-overlay-4 text-surface-300 border-overlay-6 hover:bg-primary-600 hover:text-white'
-                  }`}>
-                  {has ? <span className="flex items-center gap-1"><Check size={12} /> Unlocked</span> : 'Unlock'}
-                </button>
+              <div key={s.id} className="px-3 py-2.5 rounded-xl border border-overlay-4 bg-overlay-2">
+                <div className="flex items-center gap-3">
+                  <Crown size={13} className="text-amber-400 shrink-0" />
+                  <span className="text-sm font-semibold text-surface-100 flex-1 truncate">{s.name}</span>
+                  <button onClick={() => { has ? revoke(s.id) : grant(s.id); toast.success(`${has ? 'Locked' : 'Unlocked'} ${s.name} here`); }}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
+                      has ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-red-500/15 hover:text-red-300 hover:border-red-500/30'
+                          : 'bg-overlay-4 text-surface-300 border-overlay-6 hover:bg-primary-600 hover:text-white'
+                    }`} title="Unlock on this machine (for testing)">
+                    {has ? <span className="flex items-center gap-1"><Check size={11} /> Unlocked here</span> : 'Unlock here'}
+                  </button>
+                </div>
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] uppercase tracking-wider text-surface-500">Code</span>
+                  <code className="text-base font-mono font-bold tracking-[0.3em] text-primary-300 bg-[#0d1117] px-3 py-1 rounded-lg border border-overlay-6">{code}</code>
+                  <button onClick={() => { navigator.clipboard.writeText(code); toast.success('Code copied'); }}
+                    className="flex items-center gap-1 text-[11px] text-surface-400 hover:text-surface-100 px-2 py-1 rounded-lg hover:bg-overlay-6 transition-all">
+                    <Copy size={12} /> Copy
+                  </button>
+                  <span className="text-[10px] text-surface-600">changes weekly</span>
+                </div>
               </div>
             );
           })}

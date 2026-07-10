@@ -1004,8 +1004,10 @@ export default function Marketplace() {
   // once accounts are configured; pre-setup the store behaves as before.
   const { profile, entitlements, signOut } = useAuth();
   const localGranted = useLocalAccess((s) => s.granted);
+  const redeem = useLocalAccess((s) => s.redeem);
   const accountsOn = isSupabaseConfigured();
   const [authOpen, setAuthOpen] = useState(false);
+  const [redeemCode, setRedeemCode] = useState('');
   const isAdmin = profile?.role === 'admin' || profile?.role === 'owner';
 
   // Unlocked via a real account entitlement OR a local (no-database) admin unlock.
@@ -1417,6 +1419,35 @@ export default function Marketplace() {
                   ✕
                 </button>
               </div>
+
+              {/* Have a code? — redeem an unlock code an admin gave you. */}
+              {!accountsOn && (
+                <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 p-3 mb-4">
+                  <p className="text-xs font-bold text-primary-200 mb-2">Have a code?</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={redeemCode}
+                      onChange={(e) => setRedeemCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        if (redeem(accessItem.id, redeemCode)) { toast.success(`${accessItem.name} unlocked!`); setRedeemCode(''); setAccessItem(null); }
+                        else toast.error('That code isn’t valid for this script.');
+                      }}
+                      placeholder="e.g. HB4704" spellCheck={false}
+                      className="flex-1 bg-[#0d1117] border border-overlay-6 rounded-lg px-3 py-2 text-sm font-mono tracking-widest text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40"
+                    />
+                    <button
+                      onClick={() => {
+                        if (redeem(accessItem.id, redeemCode)) { toast.success(`${accessItem.name} unlocked!`); setRedeemCode(''); setAccessItem(null); }
+                        else toast.error('That code isn’t valid for this script.');
+                      }}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all"
+                    >
+                      Redeem
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Fast path: if Discord login is set up and they already have the
                   role, one click unlocks — no ticket needed. */}

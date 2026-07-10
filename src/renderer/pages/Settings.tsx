@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   Moon, Sun, Monitor, HardDrive, Cpu, MemoryStick, Activity, Info, Database, Server,
+  Shield, KeyRound, LogOut,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
+import { useLocalAccess } from '../stores/useLocalAccess';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 interface SysInfo {
   cpuModel: string; cpuCores: number; cpuUsage: number;
@@ -27,6 +31,10 @@ export default function Settings() {
   const { theme, toggleTheme, servers } = useAppStore();
   const [sys, setSys] = useState<SysInfo | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const navigate = useNavigate();
+  const adminUnlocked = useLocalAccess((s) => s.unlocked);
+  const adminHasPin = useLocalAccess((s) => s.hasPin);
+  const adminLock = useLocalAccess((s) => s.lock);
 
   useEffect(() => {
     const poll = () => window.electronAPI?.system?.getInfo().then(setSys).catch(() => {});
@@ -163,6 +171,37 @@ export default function Settings() {
           </button>
         </div>
       </section>
+
+      {/* ═══ Admin Access (local, no-database mode only) ═══ */}
+      {!isSupabaseConfigured() && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-bold text-surface-200">Admin Access</h2>
+          <div className="rounded-2xl border border-overlay-6 bg-surface-900/40 p-5 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-primary-600/20 border border-primary-500/25 flex items-center justify-center shrink-0">
+              <Shield size={17} className="text-primary-300" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-surface-100">
+                {adminUnlocked ? 'You have admin access on this computer' : adminHasPin ? 'Enter your admin code to manage access' : 'Set up admin access'}
+              </p>
+              <p className="text-xs text-surface-500 mt-0.5">
+                {adminUnlocked
+                  ? 'The Admin tab is available in the top bar. You can hand out script unlock codes there.'
+                  : 'Protected by a 4-digit code. Only people with the code can see the Admin tab.'}
+              </p>
+            </div>
+            {adminUnlocked ? (
+              <button onClick={() => { adminLock(); }} className="flex items-center gap-1.5 btn-secondary text-xs py-2 shrink-0">
+                <LogOut size={13} /> Sign out
+              </button>
+            ) : (
+              <button onClick={() => navigate('/admin')} className="flex items-center gap-1.5 btn-primary text-xs py-2 shrink-0">
+                <KeyRound size={13} /> {adminHasPin ? 'Enter code' : 'Set up'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ═══ About ═══ */}
       <section className="space-y-3 pb-6">
