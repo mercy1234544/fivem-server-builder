@@ -13,6 +13,7 @@
     "electron:dev": "npx concurrently -k \"npx vite\" \"npx tsc -p tsconfig.main.json -w\" \"npx wait-on http://localhost:5173 && npx electron .\""
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.2",
     "@tanstack/react-query": "^5.17.0",
     "archiver": "^6.0.1",
     "axios": "^1.6.5",

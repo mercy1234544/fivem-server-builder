@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AnimatePresence } from 'framer-motion';
@@ -21,9 +21,15 @@ import ServerConsole from './pages/ServerConsole';
 import ServerPanel from './pages/ServerPanel';
 import LiveryEditor from './pages/LiveryEditor';
 import Settings from './pages/Settings';
+import AdminPanel from './pages/AdminPanel';
+import { useAuth } from './stores/useAuth';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const initAuth = useAuth((s) => s.init);
+
+  // Restore the account session (no-op until Supabase is configured).
+  useEffect(() => { initAuth(); }, [initAuth]);
 
   const handleSplashComplete = useCallback(() => {
     setShowSplash(false);
@@ -68,6 +74,7 @@ export default function App() {
               <Route path="/console" element={<ServerConsole />} />
               <Route path="/livery" element={<LiveryEditor />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/admin" element={<AdminPanel />} />
             </Routes>
           </AnimatePresence>
         </Layout>

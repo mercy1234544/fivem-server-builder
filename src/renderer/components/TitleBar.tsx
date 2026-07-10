@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Minus, Square, X, Hexagon, Home, Store, Server, Settings } from 'lucide-react';
+import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield } from 'lucide-react';
+import { useAuth } from '../stores/useAuth';
 
 // HTN-style top bar: brand left, primary nav in the middle, window controls
 // right. This replaces the old left sidebar — all per-server tools live inside
@@ -15,6 +16,13 @@ const NAV = [
 export default function TitleBar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const role = useAuth((s) => s.profile?.role);
+  const isAdmin = role === 'admin' || role === 'owner';
+
+  // Admins/owners get an extra Admin Panel entry in the top nav.
+  const nav = isAdmin
+    ? [...NAV, { path: '/admin', label: 'Admin', icon: Shield, match: (p: string) => p.startsWith('/admin') }]
+    : NAV;
 
   const handleMinimize = () => window.electronAPI?.minimize();
   const handleMaximize = () => window.electronAPI?.maximize();
@@ -42,7 +50,7 @@ export default function TitleBar() {
       {/* Center nav — container stays draggable; only the buttons are no-drag,
           so the whole bar (gaps included) can grab the window. */}
       <nav className="flex-1 flex items-center justify-center gap-1">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active = item.match(location.pathname);
           return (
             <button

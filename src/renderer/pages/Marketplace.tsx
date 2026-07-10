@@ -14,8 +14,14 @@ import {
   ExternalLink,
   Lock,
   Crown,
+  LogOut,
+  Shield,
+  User as UserIcon,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
+import { useAuth } from '../stores/useAuth';
+import { isSupabaseConfigured } from '../lib/supabase';
+import AccountAuthModal from '../components/AccountAuthModal';
 
 interface MarketplaceItem {
   id: string;
@@ -864,6 +870,10 @@ const MARKETPLACE_ITEMS: MarketplaceItem[] = [
   },
 ];
 
+// Exclusive (locked) scripts — the ones the Admin Panel grants access to.
+export const EXCLUSIVE_ITEMS: { id: string; name: string }[] =
+  MARKETPLACE_ITEMS.filter((i) => i.locked).map((i) => ({ id: i.id, name: i.name }));
+
 const categoryColors: Record<string, string> = {
   Core: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   Framework: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
@@ -900,50 +910,23 @@ export default function Marketplace() {
   // Exclusive item the user is requesting access to (ticket-style modal).
   const [accessItem, setAccessItem] = useState<MarketplaceItem | null>(null);
 
-  // Discord login — membership + Exclusive role auto-unlock. The whole UI stays
-  // hidden until the owner has configured the Discord app (access.configured),
-  // so pre-setup the store behaves exactly like the plain ticket flow.
-  interface AccessState {
-    configured: boolean; loggedIn: boolean; inGuild: boolean; hasAccess: boolean;
-    username?: string; reason?: string;
-  }
-  const [access, setAccess] = useState<AccessState | null>(null);
-  const [authBusy, setAuthBusy] = useState(false);
+  // Account system — per-script access via Supabase. The login UI only appears
+  // once accounts are configured; pre-setup the store behaves as before.
+  const { profile, entitlements, signOut } = useAuth();
+  const accountsOn = isSupabaseConfigured();
+  const [authOpen, setAuthOpen] = useState(false);
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'owner';
 
-  const refreshAccess = (force?: boolean) =>
-    window.electronAPI?.access?.status(force).then(setAccess).catch(() => {});
-
-  React.useEffect(() => { refreshAccess(); }, []);
-
-  const loginWithDiscord = async () => {
-    if (!window.electronAPI?.access) return;
-    setAuthBusy(true);
-    try {
-      const r = await window.electronAPI.access.login();
-      setAccess(r);
-      if (!r.configured) toast.error(r.reason || 'Discord login is not set up yet');
-      else if (r.hasAccess) { toast.success(`Signed in as ${r.username || 'you'} — Exclusive access unlocked!`); setAccessItem(null); }
-      else if (r.loggedIn) toast(r.reason || 'Signed in — no access role yet', { icon: '🔒', duration: 7000 });
-      else toast.error(r.reason || 'Login failed');
-    } catch (e: any) { toast.error(e?.message || 'Login failed'); }
-    setAuthBusy(false);
-  };
-
-  const logoutDiscord = async () => {
-    await window.electronAPI?.access?.logout();
-    refreshAccess();
-    toast('Signed out of Discord');
-  };
-
-  const unlocked = access?.hasAccess === true;
+  const hasAccessTo = (item: MarketplaceItem) => entitlements.includes(item.id);
 
   const requestMessage = (item: MarketplaceItem) =>
     [
       `🎫 Access Request — ${item.name}`,
       `Script: ${item.name}${item.version ? ` v${item.version}` : ''}`,
+      profile ? `App username: ${profile.username}` : `App username: (not logged in — please make an account)`,
       `From: FiveM Server Builder store`,
       ``,
-      `Hi! I'd like access to this exclusive script. Please let me know the next steps.`,
+      `Hi! I'd like access to this exclusive script. Please grant it to my username above.`,
     ].join('\n');
 
   const copyRequest = (item: MarketplaceItem) => {
@@ -1077,25 +1060,37 @@ export default function Marketplace() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Discord login — only shown once the owner has set it up */}
-          {access?.configured && (
-            unlocked ? (
-              <button
-                onClick={logoutDiscord}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/20 transition-all"
-                title={`Signed in as ${access?.username || 'you'} — click to sign out`}
-              >
-                <Crown size={12} /> {access?.username || 'Verified'} · Exclusive
-              </button>
+          {/* Account controls — only shown once accounts are configured */}
+          {accountsOn && (
+            profile ? (
+              <>
+                {isAdmin && (
+                  <button
+                    onClick={() => navigate('/admin')}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary-500/15 text-primary-300 border border-primary-500/30 rounded-lg hover:bg-primary-500/25 transition-all"
+                    title="Open the Admin Panel"
+                  >
+                    <Shield size={12} /> Admin Panel
+                  </button>
+                )}
+                <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-overlay-4 text-surface-200 border border-overlay-6 rounded-lg">
+                  {profile.role === 'owner' ? <Crown size={12} className="text-amber-400" /> : <UserIcon size={12} />} {profile.username}
+                </span>
+                <button
+                  onClick={() => { signOut(); toast('Logged out'); }}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-overlay-4 text-surface-400 border border-overlay-6 rounded-lg hover:text-surface-100 hover:bg-overlay-6 transition-all"
+                  title="Log out"
+                >
+                  <LogOut size={12} />
+                </button>
+              </>
             ) : (
               <button
-                onClick={loginWithDiscord}
-                disabled={authBusy}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-[#5865F2]/15 text-[#98a3ff] border border-[#5865F2]/40 rounded-lg hover:bg-[#5865F2]/25 transition-all disabled:opacity-60"
-                title={access?.reason || 'Log in with Discord to unlock Exclusive scripts'}
+                onClick={() => setAuthOpen(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary-600 text-white border border-primary-500/40 rounded-lg hover:bg-primary-500 transition-all"
+                title="Log in or create an account to access Exclusive scripts"
               >
-                {authBusy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
-                {access?.loggedIn ? 'Signed in — no access yet' : 'Login with Discord'}
+                <Lock size={12} /> Log in / Sign up
               </button>
             )
           )}
@@ -1106,6 +1101,8 @@ export default function Marketplace() {
           )}
         </div>
       </div>
+
+      <AccountAuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
 
       {/* ═══ Game Servers (HTN-style tiles) — FiveM is free, more games coming ═══ */}
       <div>
@@ -1234,20 +1231,20 @@ export default function Marketplace() {
                   {item.premium ? 'Premium' : item.stars.toLocaleString()}
                 </span>
               </div>
-              {item.locked && unlocked ? (
+              {item.locked && hasAccessTo(item) ? (
                 item.repo ? (
                   <button
                     onClick={() => installItem(item)}
                     disabled={installing === item.id || !activeServer}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-medium text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={!activeServer ? 'Select a server first' : 'Install — your Discord grants access'}
+                    title={!activeServer ? 'Select a server first' : 'Access granted to your account — install'}
                   >
                     {installing === item.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
                     Install
                   </button>
                 ) : (
                   <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-xs font-medium text-emerald-300"
-                    title="Access granted via Discord — download source not wired up for this item yet">
+                    title="Access granted to your account — download source not wired up for this item yet">
                     <CheckCircle2 size={12} /> Access granted
                   </span>
                 )
@@ -1331,19 +1328,25 @@ export default function Marketplace() {
 
               {/* Fast path: if Discord login is set up and they already have the
                   role, one click unlocks — no ticket needed. */}
-              {access?.configured && (
-                <div className="rounded-xl border border-[#5865F2]/30 bg-[#5865F2]/10 p-3 mb-4 flex items-center justify-between gap-3">
-                  <p className="text-xs text-[#b3bbff] leading-snug">
-                    Already have access in Discord? Log in and it unlocks instantly.
-                  </p>
-                  <button
-                    onClick={loginWithDiscord}
-                    disabled={authBusy}
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#5865F2] text-white hover:bg-[#6875f5] transition-all disabled:opacity-60"
-                  >
-                    {authBusy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Login
-                  </button>
-                </div>
+              {accountsOn && (
+                profile ? (
+                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 mb-4">
+                    <p className="text-xs text-emerald-200 leading-snug">
+                      You're logged in as <span className="font-bold">{profile.username}</span>. Open a ticket with your
+                      username and an admin will grant access — it unlocks here automatically.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 p-3 mb-4 flex items-center justify-between gap-3">
+                    <p className="text-xs text-primary-200 leading-snug">Make an account first so we can grant access to your username.</p>
+                    <button
+                      onClick={() => { setAccessItem(null); setAuthOpen(true); }}
+                      className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all"
+                    >
+                      <Lock size={12} /> Log in / Sign up
+                    </button>
+                  </div>
+                )
               )}
 
               {/* How to request access — join Discord, open a ticket */}
