@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAuth } from '../stores/useAuth';
+import { useLocalAccess } from '../stores/useLocalAccess';
 import { isSupabaseConfigured } from '../lib/supabase';
 import AccountAuthModal from '../components/AccountAuthModal';
 
@@ -1002,11 +1003,13 @@ export default function Marketplace() {
   // Account system — per-script access via Supabase. The login UI only appears
   // once accounts are configured; pre-setup the store behaves as before.
   const { profile, entitlements, signOut } = useAuth();
+  const localGranted = useLocalAccess((s) => s.granted);
   const accountsOn = isSupabaseConfigured();
   const [authOpen, setAuthOpen] = useState(false);
   const isAdmin = profile?.role === 'admin' || profile?.role === 'owner';
 
-  const hasAccessTo = (item: MarketplaceItem) => entitlements.includes(item.id);
+  // Unlocked via a real account entitlement OR a local (no-database) admin unlock.
+  const hasAccessTo = (item: MarketplaceItem) => entitlements.includes(item.id) || localGranted.includes(item.id);
 
   const requestMessage = (item: MarketplaceItem) =>
     [

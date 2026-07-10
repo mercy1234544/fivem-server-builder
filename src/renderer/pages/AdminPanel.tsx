@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Shield, Search, Loader2, Check, Crown, User as UserIcon, ShieldCheck, Lock } from 'lucide-react';
+import { Shield, Search, Loader2, Check, Crown, User as UserIcon, ShieldCheck, Lock, KeyRound, LogOut } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
+import { useLocalAccess } from '../stores/useLocalAccess';
 import { isSupabaseConfigured, Profile, Role } from '../lib/supabase';
 import { EXCLUSIVE_ITEMS } from './Marketplace';
 
@@ -64,10 +65,8 @@ export default function AdminPanel() {
   };
 
   // ── Gates ──────────────────────────────────────────────────────────────────
-  if (!isSupabaseConfigured()) {
-    return <Gate icon={<Lock size={40} className="text-surface-600" />} title="Accounts not set up yet"
-      text="The account system needs to be configured before the Admin Panel works." />;
-  }
+  // No database yet → local, code-gated admin mode.
+  if (!isSupabaseConfigured()) return <LocalAdmin />;
   if (!profile) {
     return <Gate icon={<Lock size={40} className="text-surface-600" />} title="Log in required"
       text="Log in from the Store to use the Admin Panel." />;
@@ -198,6 +197,136 @@ function Gate({ icon, title, text }: { icon: React.ReactNode; title: string; tex
         <h2 className="text-lg font-bold text-surface-100">{title}</h2>
         <p className="text-sm text-surface-400 mt-1 max-w-sm">{text}</p>
       </div>
+    </div>
+  );
+}
+
+// ── Local (no-database) admin: 4-digit code gate + local Exclusive unlocks ────
+function LocalAdmin() {
+  const { hasPin, unlocked, granted, setPin, tryPin, grant, revoke, lock, changePin } = useLocalAccess();
+  const [code, setCode] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
+
+  const onlyDigits = (v: string) => v.replace(/\D/g, '').slice(0, 4);
+
+  const submit = () => {
+    setErr(null);
+    if (code.length !== 4) return setErr('Enter a 4-digit code.');
+    if (!hasPin) {
+      if (confirm !== code) return setErr('The two codes don’t match.');
+      setPin(code);
+      toast.success('Admin code set');
+    } else {
+      if (!tryPin(code)) { setErr('Wrong code.'); setCode(''); return; }
+    }
+    setCode(''); setConfirm('');
+  };
+
+  // ── Code screen ─────────────────────────────────────────────────────────────
+  if (!unlocked) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card max-w-sm mx-auto mt-10 flex flex-col items-center text-center py-10 px-6">
+          <div className="w-14 h-14 rounded-2xl bg-primary-500/15 border border-primary-500/25 flex items-center justify-center mb-4"><KeyRound size={24} className="text-primary-300" /></div>
+          <h2 className="text-lg font-bold text-surface-100">{hasPin ? 'Enter admin code' : 'Set an admin code'}</h2>
+          <p className="text-xs text-surface-400 mt-1 mb-5 max-w-xs">
+            {hasPin ? 'Enter your 4-digit code to open the Admin Panel.' : 'Pick a 4-digit code to protect the Admin Panel on this machine.'}
+          </p>
+          <input
+            value={code} onChange={(e) => { setCode(onlyDigits(e.target.value)); setErr(null); }} onKeyDown={(e) => e.key === 'Enter' && (hasPin || confirm) && submit()}
+            inputMode="numeric" autoFocus placeholder="••••"
+            className="w-40 text-center tracking-[0.5em] text-2xl font-bold bg-overlay-3 border border-overlay-6 rounded-xl py-3 text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40"
+          />
+          {!hasPin && (
+            <input
+              value={confirm} onChange={(e) => { setConfirm(onlyDigits(e.target.value)); setErr(null); }} onKeyDown={(e) => e.key === 'Enter' && submit()}
+              inputMode="numeric" placeholder="confirm"
+              className="w-40 mt-2 text-center tracking-[0.4em] text-lg font-bold bg-overlay-3 border border-overlay-6 rounded-xl py-2 text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40"
+            />
+          )}
+          {err && <p className="text-xs text-red-400 mt-3">{err}</p>}
+          <button onClick={submit} className="btn-primary w-full mt-5 text-sm">{hasPin ? 'Unlock' : 'Set code'}</button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ── Unlocked: local exclusive grants ────────────────────────────────────────
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-6 space-y-5 max-w-3xl mx-auto">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-surface-100 flex items-center gap-2"><Shield size={22} className="text-primary-400" /> Admin Panel</h1>
+          <p className="text-sm text-surface-400 mt-1">Local mode — unlock Exclusive scripts on this machine.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setChanging((v) => !v)} className="btn-secondary text-xs py-2">Change code</button>
+          <button onClick={lock} className="flex items-center gap-1.5 btn-secondary text-xs py-2"><LogOut size={13} /> Lock</button>
+        </div>
+      </div>
+
+      {changing && <ChangeCode onDone={() => setChanging(false)} changePin={changePin} />}
+
+      <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 leading-relaxed">
+        No database is set up yet, so this unlocks Exclusive scripts only on <span className="font-semibold">this computer</span>.
+        When the account system is connected, this switches to real per-user access you grant by username.
+      </div>
+
+      <div className="card">
+        <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Exclusive scripts</p>
+        <div className="space-y-1.5">
+          {EXCLUSIVE_ITEMS.length === 0 ? (
+            <p className="text-sm text-surface-500 py-6 text-center">No exclusive scripts in the store.</p>
+          ) : EXCLUSIVE_ITEMS.map((s) => {
+            const has = granted.includes(s.id);
+            return (
+              <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-overlay-4 bg-overlay-2">
+                <Crown size={13} className="text-amber-400 shrink-0" />
+                <span className="text-sm text-surface-100 flex-1 truncate">{s.name}</span>
+                <button onClick={() => { has ? revoke(s.id) : grant(s.id); toast.success(`${has ? 'Locked' : 'Unlocked'} ${s.name}`); }}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
+                    has ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-red-500/15 hover:text-red-300 hover:border-red-500/30'
+                        : 'bg-overlay-4 text-surface-300 border-overlay-6 hover:bg-primary-600 hover:text-white'
+                  }`}>
+                  {has ? <span className="flex items-center gap-1"><Check size={12} /> Unlocked</span> : 'Unlock'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ChangeCode({ onDone, changePin }: { onDone: () => void; changePin: (o: string, n: string) => boolean }) {
+  const [oldC, setOldC] = useState('');
+  const [newC, setNewC] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const d = (v: string) => v.replace(/\D/g, '').slice(0, 4);
+  const save = () => {
+    if (newC.length !== 4) return setErr('New code must be 4 digits.');
+    if (!changePin(oldC, newC)) return setErr('Current code is wrong.');
+    toast.success('Code changed');
+    onDone();
+  };
+  return (
+    <div className="card flex flex-wrap items-end gap-2">
+      <div>
+        <label className="text-[10px] uppercase tracking-wider text-surface-500">Current</label>
+        <input value={oldC} onChange={(e) => { setOldC(d(e.target.value)); setErr(null); }} inputMode="numeric" placeholder="••••"
+          className="block w-24 text-center tracking-widest bg-overlay-3 border border-overlay-6 rounded-lg py-1.5 text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40" />
+      </div>
+      <div>
+        <label className="text-[10px] uppercase tracking-wider text-surface-500">New</label>
+        <input value={newC} onChange={(e) => { setNewC(d(e.target.value)); setErr(null); }} inputMode="numeric" placeholder="••••"
+          className="block w-24 text-center tracking-widest bg-overlay-3 border border-overlay-6 rounded-lg py-1.5 text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40" />
+      </div>
+      <button onClick={save} className="btn-primary text-xs py-2">Save</button>
+      <button onClick={onDone} className="btn-secondary text-xs py-2">Cancel</button>
+      {err && <p className="text-xs text-red-400 w-full">{err}</p>}
     </div>
   );
 }

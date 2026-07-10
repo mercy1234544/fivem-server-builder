@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 // HTN-style top bar: brand left, primary nav in the middle, window controls
 // right. This replaces the old left sidebar — all per-server tools live inside
@@ -19,8 +20,10 @@ export default function TitleBar() {
   const role = useAuth((s) => s.profile?.role);
   const isAdmin = role === 'admin' || role === 'owner';
 
-  // Admins/owners get an extra Admin Panel entry in the top nav.
-  const nav = isAdmin
+  // Show Admin in the top nav for admins/owners, and in local (no-database) mode
+  // where it's gated by a 4-digit code instead.
+  const showAdmin = isAdmin || !isSupabaseConfigured();
+  const nav = showAdmin
     ? [...NAV, { path: '/admin', label: 'Admin', icon: Shield, match: (p: string) => p.startsWith('/admin') }]
     : NAV;
 
