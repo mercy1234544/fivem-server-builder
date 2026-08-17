@@ -1,5 +1,5 @@
 # FiveM Server Builder
-
+discord  for help https://discord.gg/FkwnmdZx6m
 A professional desktop application for creating, managing, organizing, maintaining, updating, and troubleshooting FiveM servers.
 
 ## Features
