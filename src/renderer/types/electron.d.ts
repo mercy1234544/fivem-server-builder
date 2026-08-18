@@ -196,6 +196,13 @@ interface ElectronAPI {
     undoMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string) => Promise<{ ok: boolean; error?: string }>;
   };
 
+  vsAuth: {
+    status: () => Promise<{ enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean; expiresAt?: number }>;
+    startLogin: () => Promise<{ ok: boolean; error?: string }>;
+    redeem: (code: string) => Promise<{ ok: boolean; username?: string; error?: string; message?: string }>;
+    logout: () => Promise<void>;
+  };
+
   system: {
     getInfo: () => Promise<{
       cpuModel: string;

@@ -160,6 +160,14 @@ const electronAPI = {
     undoMeta: (root: string, kind: string, key: string) => ipcRenderer.invoke('vehicleStudio:undoMeta', root, kind, key),
   },
 
+  // Vehicle Studio access gate (backend-authorized; no secrets in the client)
+  vsAuth: {
+    status: () => ipcRenderer.invoke('vsAuth:status'),
+    startLogin: () => ipcRenderer.invoke('vsAuth:startLogin'),
+    redeem: (code: string) => ipcRenderer.invoke('vsAuth:redeem', code),
+    logout: () => ipcRenderer.invoke('vsAuth:logout'),
+  },
+
   // System info (Settings page: CPU / RAM / disk / specs)
   system: {
     getInfo: () => ipcRenderer.invoke('system:info'),

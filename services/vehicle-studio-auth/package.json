@@ -1,0 +1,26 @@
+{
+  "name": "vehicle-studio-auth",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-authorized Discord verification backend for FiveM Server Builder — Vehicle Studio access control",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "migrate": "tsc && node dist/db/migrate.js",
+    "test": "tsc && node --test dist/test/security.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -13,6 +13,7 @@ import { DatabaseManager } from './services/DatabaseManager';
 import { AccessManager } from './services/AccessManager';
 import { VehicleResourceScanner } from './services/VehicleResourceScanner';
 import { VehicleStudio } from './services/VehicleStudio';
+import { VehicleStudioAuth } from './services/VehicleStudioAuth';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 
@@ -27,6 +28,7 @@ let artifactDownloader: ArtifactDownloader;
 let databaseManager: DatabaseManager;
 let accessManager: AccessManager;
 let vehicleStudio: VehicleStudio;
+let vehicleStudioAuth: VehicleStudioAuth;
 const vehicleResourceScanner = new VehicleResourceScanner();
 
 function createWindow() {
@@ -85,6 +87,7 @@ function initializeServices() {
   databaseManager = new DatabaseManager();
   accessManager = new AccessManager(userDataPath);
   vehicleStudio = new VehicleStudio(userDataPath);
+  vehicleStudioAuth = new VehicleStudioAuth(userDataPath);
   serverManager.setDatabaseManager(databaseManager);
   healthScanner.setDatabaseManager(databaseManager);
 }
@@ -258,6 +261,12 @@ function registerIpcHandlers() {
   ipcMain.handle('vehicleStudio:readMeta', (_, root: string, kind: any, key: string) => vehicleStudio.readMeta(root, kind, key));
   ipcMain.handle('vehicleStudio:writeMeta', (_, root: string, kind: any, key: string, changes: any[]) => vehicleStudio.writeMeta(root, kind, key, changes));
   ipcMain.handle('vehicleStudio:undoMeta', (_, root: string, kind: any, key: string) => vehicleStudio.undoMeta(root, kind, key));
+
+  // Vehicle Studio access gate — talks to the auth backend (no secrets here).
+  ipcMain.handle('vsAuth:status', () => vehicleStudioAuth.status());
+  ipcMain.handle('vsAuth:startLogin', () => vehicleStudioAuth.startLogin());
+  ipcMain.handle('vsAuth:redeem', (_, code: string) => vehicleStudioAuth.redeem(code));
+  ipcMain.handle('vsAuth:logout', () => vehicleStudioAuth.logout());
 
   // Livery Editor — folder-first vehicle detection + binary file reads
   ipcMain.handle('livery:pickFolder', async () => {
