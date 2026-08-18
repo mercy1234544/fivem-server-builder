@@ -17,6 +17,9 @@ import {
   LogOut,
   Shield,
   User as UserIcon,
+  Wrench,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAuth } from '../stores/useAuth';
@@ -1197,6 +1200,38 @@ export default function Marketplace() {
       </div>
 
       <AccountAuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+
+      {/* ═══ UY Framework — Coming Soon banner ═══ */}
+      <div className="relative overflow-hidden rounded-2xl border border-primary-500/30 bg-gradient-to-br from-primary-600/20 via-[#0c0f1c] to-surface-950 p-6">
+        <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-primary-500/20 blur-3xl pointer-events-none" />
+        <div className="relative flex flex-col md:flex-row md:items-center gap-5">
+          <div className="w-14 h-14 rounded-2xl bg-primary-500/20 border border-primary-500/30 flex items-center justify-center shrink-0">
+            <Wrench size={26} className="text-primary-300" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">🚧 IN DEVELOPMENT</span>
+              <span className="text-[10px] font-bold text-surface-500 uppercase tracking-wider">Coming Soon</span>
+            </div>
+            <h2 className="text-xl font-extrabold text-surface-100 flex items-center gap-2">UY Framework <Sparkles size={16} className="text-primary-300" /></h2>
+            <p className="text-sm text-surface-300 mt-1 leading-relaxed max-w-2xl">
+              A completely original FiveM framework, built from the ground up for performance, clean code, and a premium experience.
+              Every major system researched, designed, and built from scratch — with previews shared as they're finished.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {['Character Creator', 'Inventory', 'Third Eye', 'HUD', 'Player Systems', 'Jobs'].map((t) => (
+                <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-overlay-4 text-surface-300 border border-overlay-6">{t}</span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => window.electronAPI?.openExternal(DISCORD_INVITE)}
+            className="shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all"
+          >
+            Previews in Discord <ArrowRight size={15} />
+          </button>
+        </div>
+      </div>
 
       {/* ═══ Game Servers (HTN-style tiles) — FiveM is free, more games coming ═══ */}
       <div>
