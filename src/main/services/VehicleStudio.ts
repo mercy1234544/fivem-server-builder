@@ -240,6 +240,51 @@ const CAT_PRESETS: Record<string, FieldPreset[]> = {
   ],
 };
 
+// Structured metadata field definitions — only fields that are single, uniquely
+// addressable scalar tags/attrs (safe to edit surgically). Anything not listed
+// (arrays, nested structures) is preserved untouched and shown read-only.
+export interface MetaFieldDef { tag: string; friendly: string; }
+const VEHICLE_META_FIELDS: MetaFieldDef[] = [
+  { tag: 'modelName', friendly: 'Model name' },
+  { tag: 'txdName', friendly: 'Texture dictionary (TXD)' },
+  { tag: 'handlingId', friendly: 'Handling ID' },
+  { tag: 'gameName', friendly: 'Game name' },
+  { tag: 'vehicleMakeName', friendly: 'Manufacturer' },
+  { tag: 'vehicleClass', friendly: 'Vehicle class' },
+  { tag: 'type', friendly: 'Vehicle type' },
+  { tag: 'layout', friendly: 'Seat layout' },
+  { tag: 'audioNameHash', friendly: 'Engine audio' },
+  { tag: 'flags', friendly: 'Flags' },
+  { tag: 'plateType', friendly: 'Plate type' },
+  { tag: 'dashboardType', friendly: 'Dashboard type' },
+  { tag: 'wheelType', friendly: 'Wheel type' },
+  { tag: 'swankness', friendly: 'Swankness (rank)' },
+  { tag: 'vfxInfoName', friendly: 'VFX info' },
+  { tag: 'explosionInfo', friendly: 'Explosion info' },
+  { tag: 'coverBoundOffsets', friendly: 'Cover bound offsets' },
+  { tag: 'wheelScale', friendly: 'Wheel scale (front)' },
+  { tag: 'wheelScaleRear', friendly: 'Wheel scale (rear)' },
+  { tag: 'defaultBodyHealth', friendly: 'Body health' },
+];
+const CARVAR_FIELDS: MetaFieldDef[] = [
+  { tag: 'lightSettings', friendly: 'Light settings ID' },
+  { tag: 'sirenSettings', friendly: 'Siren settings ID (→ carcols)' },
+];
+const CARCOLS_FIELDS: MetaFieldDef[] = [
+  { tag: 'name', friendly: 'Siren name' },
+  { tag: 'id', friendly: 'Siren ID' },
+  { tag: 'timeMultiplier', friendly: 'Time multiplier' },
+  { tag: 'sequencerBpm', friendly: 'Sequencer BPM' },
+  { tag: 'textureName', friendly: 'Light texture' },
+  { tag: 'lightFalloffMax', friendly: 'Light falloff max' },
+  { tag: 'lightFalloffExponent', friendly: 'Light falloff exponent' },
+  { tag: 'lightInnerConeAngle', friendly: 'Inner cone angle' },
+  { tag: 'lightOuterConeAngle', friendly: 'Outer cone angle' },
+];
+
+export type MetaKind = 'vehicles' | 'carvariations' | 'carcols';
+export interface MetaField { tag: string; friendly: string; kind: 'tag' | 'attr'; value: string; editable: boolean; }
+
 export class VehicleStudio {
   private scanner = new VehicleResourceScanner();
 
@@ -484,18 +529,15 @@ export class VehicleStudio {
 
   // ══════════════════ handling.meta editing (surgical, backed up) ════════════════
 
-  /** Locate the balanced <Item ...>…</Item> block of a handling entry by name. */
-  private locateHandlingBlock(content: string, handlingId: string): { start: number; end: number } | null {
-    const nameRe = new RegExp(`<handlingName>\\s*${handlingId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</handlingName>`, 'i');
+  /** Locate the balanced <Item ...>…</Item> block whose direct child
+   *  <matchTag>matchValue</matchTag> matches. Self-closing items (e.g.
+   *  <Item type="NULL" />) never change depth — same fix as handling. */
+  private locateItemBlock(content: string, matchTag: string, matchValue: string): { start: number; end: number } | null {
+    const nameRe = new RegExp(`<${matchTag}>\\s*${matchValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</${matchTag}>`, 'i');
     const nameMatch = nameRe.exec(content);
     if (!nameMatch) return null;
-    // nearest <Item before the name
     const start = content.lastIndexOf('<Item', nameMatch.index);
     if (start < 0) return null;
-    // Balanced scan for the matching </Item>. Crucially, self-closing items —
-    // e.g. <Item type="NULL" /> inside <SubHandlingData> — must NOT change depth,
-    // otherwise the outer handling <Item> never balances (this was the cause of
-    // "handling not found" on real vehicles).
     const tagRe = /<Item\b[^>]*>|<\/Item>/gi;
     tagRe.lastIndex = start;
     let depth = 0, m: RegExpExecArray | null;
@@ -506,6 +548,10 @@ export class VehicleStudio {
       else depth++;
     }
     return null;
+  }
+  /** Handling block by <handlingName> (thin wrapper over locateItemBlock). */
+  private locateHandlingBlock(content: string, handlingId: string): { start: number; end: number } | null {
+    return this.locateItemBlock(content, 'handlingName', handlingId);
   }
 
   private firstHandlingFile(root: string, handlingId: string): string | null {
@@ -848,5 +894,111 @@ export class VehicleStudio {
     this.backup(file);
     fs.writeFileSync(file, c.slice(0, loc.end) + '\n' + block + c.slice(loc.end), 'utf-8');
     return { ok: true };
+  }
+
+  // ══════════════════ structured metadata (vehicles/carvariations/carcols) ══════
+
+  private metaConfig(root: string, kind: MetaKind): { files: string[]; matchTag: string; defs: MetaFieldDef[] } {
+    const scan = this.scanner.scan(root);
+    if (kind === 'vehicles') return { files: scan.meta.vehicles, matchTag: 'modelName', defs: VEHICLE_META_FIELDS };
+    if (kind === 'carvariations') return { files: scan.meta.carvariations, matchTag: 'modelName', defs: CARVAR_FIELDS };
+    // carcols isn't tracked by the scanner — find it directly.
+    return { files: this.findFiles(root, 'carcols.meta'), matchTag: 'name', defs: CARCOLS_FIELDS };
+  }
+
+  private findFiles(root: string, base: string, out: string[] = [], depth = 0): string[] {
+    if (depth > 8) return out;
+    try {
+      for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+        if (e.isDirectory()) { if (!SKIP_COPY.has(e.name.toLowerCase())) this.findFiles(path.join(root, e.name), base, out, depth + 1); }
+        else if (e.name.toLowerCase() === base) out.push(path.join(root, e.name));
+      }
+    } catch {}
+    return out;
+  }
+
+  /** Detect a single scalar field (tag-content or value-attr) inside a block. */
+  private detectField(block: string, def: MetaFieldDef): MetaField | null {
+    const count = (block.match(new RegExp(`<${def.tag}\\b`, 'g')) || []).length;
+    const tagM = block.match(new RegExp(`<${def.tag}>\\s*([^<]*?)\\s*</${def.tag}>`, 'i'));
+    if (tagM) return { tag: def.tag, friendly: def.friendly, kind: 'tag', value: tagM[1], editable: count === 1 };
+    const attrM = block.match(new RegExp(`<${def.tag}[^>]*\\bvalue="([^"]*)"`, 'i'));
+    if (attrM) return { tag: def.tag, friendly: def.friendly, kind: 'attr', value: attrM[1], editable: count === 1 };
+    return null;
+  }
+
+  /** Read the editable metadata fields for one vehicle (scoped to its <Item>). */
+  readMeta(root: string, kind: MetaKind, key: string): { ok: boolean; error?: string; file?: string; fields?: MetaField[]; summary?: Record<string, any> } {
+    const { files, matchTag, defs } = this.metaConfig(root, kind);
+    for (const file of files) {
+      let content = ''; try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
+      const loc = this.locateItemBlock(content, matchTag, key);
+      if (!loc) continue;
+      const block = content.slice(loc.start, loc.end);
+      const fields = defs.map((d) => this.detectField(block, d)).filter((f): f is MetaField => !!f);
+      const summary = kind === 'carvariations' ? this.carvarSummary(block) : undefined;
+      return { ok: true, file: path.relative(root, file).replace(/\\/g, '/'), fields, summary };
+    }
+    return { ok: false, error: `"${key}" not found in ${kind}.meta` };
+  }
+
+  /** Read-only summary of the complex carvariations arrays (colors/liveries/kits). */
+  private carvarSummary(block: string): Record<string, any> {
+    const colors = (block.match(/<indices\b/gi) || []).length;
+    const kitsBlock = block.match(/<kits>([\s\S]*?)<\/kits>/i)?.[1] || '';
+    const kits = Array.from(kitsBlock.matchAll(/<Item>\s*([^<]+?)\s*<\/Item>/gi)).map((m) => m[1]);
+    const liveriesBlock = block.match(/<liveries>([\s\S]*?)<\/liveries>/i)?.[1] || '';
+    const liveries = (liveriesBlock.match(/<Item\b/gi) || []).length;
+    return { colorCombos: colors, kits, liveries };
+  }
+
+  /** Surgically write metadata field changes for one vehicle. Structure-validated. */
+  writeMeta(root: string, kind: MetaKind, key: string, changes: { tag: string; value: string }[]): { ok: boolean; error?: string; backup?: string; applied?: number } {
+    const { files, matchTag } = this.metaConfig(root, kind);
+    for (const file of files) {
+      let content = ''; try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
+      const loc = this.locateItemBlock(content, matchTag, key);
+      if (!loc) continue;
+      let block = content.slice(loc.start, loc.end);
+      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rep = (s: string) => s.replace(/\$/g, '$$$$');
+      let applied = 0;
+      for (const c of changes) {
+        const tag = esc(c.tag);
+        if ((block.match(new RegExp(`<${tag}\\b`, 'g')) || []).length !== 1) continue; // uniqueness guard
+        const tagRe = new RegExp(`(<${tag}>)[^<]*(</${tag}>)`);
+        const attrRe = new RegExp(`(<${tag}\\b[^>]*\\bvalue=")[^"]*(")`);
+        if (tagRe.test(block)) { block = block.replace(tagRe, `$1${rep(c.value)}$2`); applied++; }
+        else if (attrRe.test(block)) { block = block.replace(attrRe, `$1${rep(c.value)}$2`); applied++; }
+      }
+      if (applied === 0) return { ok: false, error: 'No matching fields to change' };
+      const newContent = content.slice(0, loc.start) + block + content.slice(loc.end);
+      // Structure validation: surgical value edits must NEVER change tag balance.
+      const cnt = (s: string, re: RegExp) => (s.match(re) || []).length;
+      if (cnt(newContent, /<Item\b/gi) !== cnt(content, /<Item\b/gi) || cnt(newContent, /<\/Item>/gi) !== cnt(content, /<\/Item>/gi)) {
+        return { ok: false, error: 'Aborted — the edit would change the file structure' };
+      }
+      const backup = this.backup(file);
+      fs.writeFileSync(file, newContent, 'utf-8');
+      return { ok: true, backup, applied };
+    }
+    return { ok: false, error: `"${key}" not found in ${kind}.meta` };
+  }
+
+  /** Undo the last metadata save (restore latest backup of the matching file). */
+  undoMeta(root: string, kind: MetaKind, key: string): { ok: boolean; error?: string } {
+    const { files, matchTag } = this.metaConfig(root, kind);
+    for (const file of files) {
+      let content = ''; try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
+      if (!this.locateItemBlock(content, matchTag, key)) continue;
+      const dir = path.join(path.dirname(file), '.vehicle-studio-backups');
+      if (!fs.existsSync(dir)) return { ok: false, error: 'No backups to restore' };
+      const backups = fs.readdirSync(dir).filter((f) => f.startsWith(path.basename(file))).sort();
+      if (backups.length === 0) return { ok: false, error: 'No backups to restore' };
+      const latest = path.join(dir, backups[backups.length - 1]);
+      fs.copyFileSync(latest, file); fs.unlinkSync(latest);
+      return { ok: true };
+    }
+    return { ok: false, error: 'File not found' };
   }
 }

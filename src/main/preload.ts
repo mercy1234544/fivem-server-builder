@@ -155,6 +155,9 @@ const electronAPI = {
     categoryPresets: (category: string) => ipcRenderer.invoke('vehicleStudio:categoryPresets', category),
     previewCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => ipcRenderer.invoke('vehicleStudio:previewCategoryPreset', root, handlingId, category, presetId),
     applyCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => ipcRenderer.invoke('vehicleStudio:applyCategoryPreset', root, handlingId, category, presetId),
+    readMeta: (root: string, kind: string, key: string) => ipcRenderer.invoke('vehicleStudio:readMeta', root, kind, key),
+    writeMeta: (root: string, kind: string, key: string, changes: { tag: string; value: string }[]) => ipcRenderer.invoke('vehicleStudio:writeMeta', root, kind, key, changes),
+    undoMeta: (root: string, kind: string, key: string) => ipcRenderer.invoke('vehicleStudio:undoMeta', root, kind, key),
   },
 
   // System info (Settings page: CPU / RAM / disk / specs)

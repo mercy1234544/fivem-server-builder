@@ -20,7 +20,7 @@ interface Recent { name: string; path: string; type: string; at: number; }
 const loadRecent = (): Recent[] => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; } };
 const saveRecent = (r: Recent[]) => localStorage.setItem(RECENT_KEY, JSON.stringify(r.slice(0, 8)));
 
-type Tab = 'overview' | 'tune' | 'performance' | 'transmission' | 'handling' | 'brakes' | 'traction' | 'suspension' | 'drivetrain' | 'damage' | 'vehicles' | 'files' | 'diagnostics';
+type Tab = 'overview' | 'tune' | 'performance' | 'transmission' | 'handling' | 'brakes' | 'traction' | 'suspension' | 'drivetrain' | 'damage' | 'vehicles' | 'variations' | 'lighting' | 'files' | 'diagnostics';
 
 export default function VehicleStudio() {
   const [scan, setScan] = useState<VSScan | null>(null);
@@ -156,10 +156,13 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
   scan: VSScan; onBack: () => void; onRescan: () => void; tab: Tab; setTab: (t: Tab) => void; rescanning: boolean;
 }) {
   // Handling tab: any vehicle with a handlingId (broken ones get a repair panel).
-  const handlingVehicles = scan.vehicles.filter((v) => v.handlingId);
-  const firstGood = handlingVehicles.find((v) => v.hasHandling) || handlingVehicles[0];
-  const [handlingId, setHandlingId] = useState<string | null>(firstGood?.handlingId || null);
-  const selVeh = handlingVehicles.find((v) => v.handlingId === handlingId) || firstGood;
+  // Selection is by modelName so BOTH physics (via handlingId) and metadata
+  // (via modelName) tabs stay scoped to one vehicle.
+  const allVehicles = scan.vehicles;
+  const firstGood = allVehicles.find((v) => v.hasHandling) || allVehicles[0];
+  const [selModel, setSelModel] = useState<string | null>(firstGood?.modelName || null);
+  const selVeh = allVehicles.find((v) => v.modelName === selModel) || firstGood;
+  const handlingId = selVeh?.handlingId || null;
   const [showBuild, setShowBuild] = useState(false);
   const groups: { label: string; tabs: { id: Tab; label: string; icon: any }[] }[] = [
     { label: 'Vehicle', tabs: [
@@ -176,15 +179,20 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
       { id: 'suspension', label: 'Suspension', icon: Cog },
       { id: 'damage', label: 'Damage', icon: Cog },
     ] },
-    { label: 'Data', tabs: [
-      { id: 'vehicles', label: `Vehicles (${scan.vehicles.length})`, icon: Car },
+    { label: 'Metadata', tabs: [
+      { id: 'vehicles', label: 'Vehicles', icon: Car },
+      { id: 'variations', label: 'Variations', icon: FileCode },
+      { id: 'lighting', label: 'Lighting', icon: Sparkles },
+    ] },
+    { label: 'Tools', tabs: [
       { id: 'files', label: 'Files', icon: FileCode },
       { id: 'diagnostics', label: `Diagnostics (${scan.summary.errors + scan.summary.warnings})`, icon: ShieldCheck },
     ] },
   ];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const ok = scan.summary.errors === 0;
-  const physicsTabs = new Set(['performance', 'transmission', 'drivetrain', 'brakes', 'traction', 'suspension', 'damage', 'handling', 'tune']);
+  // Tabs scoped to the selected vehicle (show the vehicle picker).
+  const scopedTabs = new Set(['performance', 'transmission', 'drivetrain', 'brakes', 'traction', 'suspension', 'damage', 'handling', 'tune', 'vehicles', 'variations', 'lighting']);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -207,12 +215,12 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left tabs — collapsible groups */}
         <div className="w-52 shrink-0 border-r border-overlay-6 p-2 space-y-2 overflow-y-auto">
-          {handlingVehicles.length > 1 && physicsTabs.has(tab) && (
+          {allVehicles.length > 1 && scopedTabs.has(tab) && (
             <div className="pb-2 mb-1 border-b border-overlay-6">
               <p className="text-[9px] uppercase tracking-wider text-surface-600 px-1 mb-1">Editing vehicle</p>
-              <select value={handlingId || ''} onChange={(e) => setHandlingId(e.target.value)}
+              <select value={selModel || ''} onChange={(e) => setSelModel(e.target.value)}
                 className="w-full bg-overlay-3 border border-overlay-6 rounded-lg px-2 py-1.5 text-xs text-surface-200 focus:outline-none">
-                {handlingVehicles.map((v) => <option key={v.modelName} value={v.handlingId!}>{v.modelName}{!v.hasHandling ? ' ⚠' : ''}</option>)}
+                {allVehicles.map((v) => <option key={v.modelName} value={v.modelName}>{v.modelName}{!v.hasHandling ? ' ⚠' : ''}</option>)}
               </select>
             </div>
           )}
@@ -243,7 +251,9 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
           {(['performance', 'transmission', 'drivetrain', 'brakes', 'traction', 'suspension', 'damage'] as Tab[]).includes(tab) && (
             handlingId ? <PhysicsTab root={scan.root} handlingId={handlingId} config={PHYS[tab]} onChanged={onRescan} onGoHandling={() => setTab('handling')} /> : <NoHandling />
           )}
-          {tab === 'vehicles' && <VehiclesTab scan={scan} />}
+          {tab === 'vehicles' && (selVeh ? <MetaEditor root={scan.root} kind="vehicles" modelName={selVeh.modelName} title="Vehicle metadata" onChanged={onRescan} /> : <NoHandling />)}
+          {tab === 'variations' && (selVeh ? <MetaEditor root={scan.root} kind="carvariations" modelName={selVeh.modelName} title="Variations (carvariations.meta)" onChanged={onRescan} /> : <NoHandling />)}
+          {tab === 'lighting' && (selVeh ? <MetaEditor root={scan.root} kind="carcols" modelName={selVeh.modelName} title="Lighting & sirens (carcols.meta)" onChanged={onRescan} /> : <NoHandling />)}
           {tab === 'files' && <FilesTab scan={scan} />}
           {tab === 'diagnostics' && <DiagnosticsTab scan={scan} onRescan={onRescan} />}
         </div>
@@ -964,6 +974,133 @@ function PhysicsTab({ root, handlingId, config, onChanged, onGoHandling }: { roo
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ Structured metadata editors (vehicles/carvariations/carcols) ═══════════════════ */
+const META_TIPS: Record<string, string> = {
+  handlingId: 'Which handling entry (in handling.meta) this vehicle uses.',
+  vehicleClass: 'GTA class (VC_SPORT, VC_EMERGENCY, …) — affects category & AI.',
+  type: 'VEHICLE_TYPE_CAR / _BIKE / _HELI etc.',
+  flags: 'Space-separated FLAG_* behaviour flags.',
+  layout: 'Seating/entry layout (LAYOUT_*).',
+  audioNameHash: 'Which vehicle the engine sound is copied from.',
+  wheelType: 'Default wheel category (VWT_SPORT, VWT_MUSCLE, …).',
+  sirenSettings: 'The carcols siren ID this vehicle uses (links to carcols.meta).',
+  lightSettings: 'The light configuration ID.',
+};
+function MetaEditor({ root, kind, modelName, title, onChanged }: { root: string; kind: 'vehicles' | 'carvariations' | 'carcols'; modelName: string; title: string; onChanged: () => void }) {
+  const [fields, setFields] = useState<VSMetaField[]>([]);
+  const [orig, setOrig] = useState<Record<string, string>>({});
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [summary, setSummary] = useState<Record<string, any> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [handlingNames, setHandlingNames] = useState<string[]>([]);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await window.electronAPI.vehicleStudio.readMeta(root, kind, modelName);
+    setLoading(false);
+    if (!r.ok || !r.fields) { setReadError(r.error || `${kind}.meta not found for ${modelName}`); return; }
+    setReadError(null); setFields(r.fields); setSummary(r.summary || null);
+    const o: Record<string, string> = {}; for (const f of r.fields) o[f.tag] = f.value;
+    setOrig(o); setEdits({});
+  };
+  React.useEffect(() => { load(); if (kind === 'vehicles') window.electronAPI.vehicleStudio.listHandling(root).then((l) => setHandlingNames(l.map((e) => e.name))); }, [root, kind, modelName]);
+
+  const val = (k: string) => (k in edits ? edits[k] : orig[k]) ?? '';
+  const setVal = (k: string, v: string) => setEdits((e) => ({ ...e, [k]: v }));
+  const resetField = (k: string) => setEdits((e) => { const n = { ...e }; delete n[k]; return n; });
+  const dirty = Object.keys(edits).filter((k) => edits[k] !== orig[k]);
+
+  const save = async () => {
+    const editable = new Set(fields.filter((f) => f.editable).map((f) => f.tag));
+    const changes = dirty.filter((k) => editable.has(k)).map((k) => ({ tag: k, value: edits[k] }));
+    if (!changes.length) return;
+    setSaving(true);
+    const r = await window.electronAPI.vehicleStudio.writeMeta(root, kind, modelName, changes);
+    setSaving(false);
+    if (r.ok) { toast.success(`Saved ${r.applied} field(s) to ${kind}.meta`); await load(); onChanged(); } else toast.error(r.error || 'Save failed');
+  };
+  const undo = async () => { const r = await window.electronAPI.vehicleStudio.undoMeta(root, kind, modelName); if (r.ok) { toast.success('Reverted last save'); await load(); onChanged(); } else toast.error(r.error || 'Nothing to undo'); };
+
+  if (loading) return <div className="flex items-center gap-2 text-sm text-surface-500"><Loader2 size={14} className="animate-spin" /> Reading {kind}.meta…</div>;
+  if (readError) return (
+    <div className="card flex flex-col items-center py-14 text-center max-w-xl">
+      <FileCode size={28} className="text-surface-600 mb-3" />
+      <p className="text-sm font-bold text-surface-100">No {title.toLowerCase()} for this vehicle</p>
+      <p className="text-xs text-surface-500 mt-1 max-w-sm">{readError}. This is normal if the resource doesn't include a {kind}.meta entry for {modelName}.</p>
+    </div>
+  );
+
+  const handlingVal = kind === 'vehicles' ? val('handlingId') : null;
+  const handlingValid = handlingVal == null ? null : handlingNames.some((n) => n.toUpperCase() === handlingVal.toUpperCase());
+  const match = (f: VSMetaField) => !search || f.friendly.toLowerCase().includes(search.toLowerCase()) || f.tag.toLowerCase().includes(search.toLowerCase());
+  const shown = fields.filter(match);
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex items-center gap-2">
+        <p className="text-sm font-bold text-surface-100 flex-1">{title} <span className="text-[11px] text-surface-500 font-normal font-mono">· {modelName}</span></p>
+        {dirty.length > 0 && <span className="text-[11px] text-primary-300 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" /> {dirty.length} unsaved</span>}
+        <button onClick={undo} className="btn-secondary text-xs py-1.5 flex items-center gap-1.5"><Undo2 size={13} /> Undo</button>
+        <button onClick={save} disabled={saving || !dirty.length} className="btn-primary text-xs py-1.5 flex items-center gap-1.5">{saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save{dirty.length ? ` (${dirty.length})` : ''}</button>
+      </div>
+
+      {/* cross-file handling reference validity (vehicles.meta) */}
+      {handlingVal != null && (
+        <div className={`rounded-xl border px-3 py-2 text-xs flex items-center gap-2 ${handlingValid ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-red-500/25 bg-red-500/10 text-red-300'}`}>
+          {handlingValid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+          {handlingValid ? `Valid handling reference — "${handlingVal}" exists in handling.meta` : `Broken handling reference — "${handlingVal}" is not in handling.meta`}
+        </div>
+      )}
+
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search fields… (handling, class, siren…)"
+          className="w-full bg-overlay-3 border border-overlay-6 rounded-xl pl-9 pr-3 py-2 text-sm text-surface-200 placeholder-surface-600 focus:outline-none focus:border-primary-500/40" />
+      </div>
+
+      <div className="card">
+        <div className="space-y-2.5">
+          {shown.length === 0 ? <p className="text-xs text-surface-500">No matching fields.</p> : shown.map((f) => {
+            const isDirty = (f.tag in edits) && edits[f.tag] !== orig[f.tag];
+            return (
+              <div key={f.tag}>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-surface-200 flex-1 truncate" title={META_TIPS[f.tag] || f.tag}>{f.friendly} {isDirty && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-400 ml-1" />}</label>
+                  {f.editable ? (
+                    <input value={val(f.tag)} onChange={(e) => setVal(f.tag, e.target.value)} spellCheck={false} className={`w-44 bg-overlay-3 border rounded-lg px-2 py-1 text-xs font-mono text-right focus:outline-none ${isDirty ? 'border-primary-500/50 text-primary-200' : 'border-overlay-6 text-surface-200'}`} />
+                  ) : (
+                    <span className="w-44 text-right text-xs font-mono text-surface-500 flex items-center justify-end gap-1.5">{f.value} <span className="text-[9px] px-1 py-0.5 rounded bg-overlay-4 border border-overlay-6">read-only</span></span>
+                  )}
+                  {f.editable && <button onClick={() => resetField(f.tag)} disabled={!isDirty} title="Reset to last saved" className={`text-surface-500 hover:text-surface-200 ${!isDirty ? 'opacity-30' : ''}`}><RotateCcw size={12} /></button>}
+                </div>
+                <p className="text-[10px] text-surface-600 font-mono mt-0.5">{f.kind === 'attr' ? `<${f.tag} value="…" />` : `<${f.tag}>…</${f.tag}>`}{isDirty ? ` · was ${orig[f.tag]}` : ''}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* carvariations read-only summary */}
+      {summary && (
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Variation data <span className="normal-case text-surface-600">— read-only</span></p>
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div><p className="text-[9px] uppercase tracking-wider text-surface-600">Colour combos</p><p className="text-surface-200 font-semibold">{summary.colorCombos}</p></div>
+            <div><p className="text-[9px] uppercase tracking-wider text-surface-600">Liveries</p><p className="text-surface-200 font-semibold">{summary.liveries}</p></div>
+            <div><p className="text-[9px] uppercase tracking-wider text-surface-600">Mod kits</p><p className="text-surface-200 font-semibold truncate">{(summary.kits || []).join(', ') || '—'}</p></div>
+          </div>
+          <p className="text-[10px] text-surface-600 mt-2">Colour arrays, liveries and kits are preserved exactly — structured editing for these comes in a later phase (kept read-only rather than risk corrupting the arrays).</p>
+        </div>
+      )}
+
+      <p className="text-[10px] text-surface-600">Edits are surgical — only the field you change is rewritten. Unknown elements, attributes and comments are preserved, and a backup is saved before every write.</p>
     </div>
   );
 }

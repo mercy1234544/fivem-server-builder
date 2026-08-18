@@ -255,6 +255,9 @@ function registerIpcHandlers() {
   ipcMain.handle('vehicleStudio:categoryPresets', (_, category: string) => vehicleStudio.categoryPresets(category));
   ipcMain.handle('vehicleStudio:previewCategoryPreset', (_, root: string, handlingId: string, category: string, presetId: string) => vehicleStudio.previewCategoryPreset(root, handlingId, category, presetId));
   ipcMain.handle('vehicleStudio:applyCategoryPreset', (_, root: string, handlingId: string, category: string, presetId: string) => vehicleStudio.applyCategoryPreset(root, handlingId, category, presetId));
+  ipcMain.handle('vehicleStudio:readMeta', (_, root: string, kind: any, key: string) => vehicleStudio.readMeta(root, kind, key));
+  ipcMain.handle('vehicleStudio:writeMeta', (_, root: string, kind: any, key: string, changes: any[]) => vehicleStudio.writeMeta(root, kind, key, changes));
+  ipcMain.handle('vehicleStudio:undoMeta', (_, root: string, kind: any, key: string) => vehicleStudio.undoMeta(root, kind, key));
 
   // Livery Editor — folder-first vehicle detection + binary file reads
   ipcMain.handle('livery:pickFolder', async () => {

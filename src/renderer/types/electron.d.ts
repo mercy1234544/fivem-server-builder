@@ -191,6 +191,9 @@ interface ElectronAPI {
     categoryPresets: (category: string) => Promise<{ id: string; name: string }[]>;
     previewCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => Promise<{ ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[] }>;
     applyCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
+    readMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string) => Promise<{ ok: boolean; error?: string; file?: string; fields?: VSMetaField[]; summary?: Record<string, any> }>;
+    writeMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string, changes: { tag: string; value: string }[]) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
+    undoMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string) => Promise<{ ok: boolean; error?: string }>;
   };
 
   system: {
@@ -276,6 +279,7 @@ declare global {
     editable: boolean;
   }
   interface VSHandlingChange { name: string; axis?: 'x' | 'y' | 'z'; value: string; }
+  interface VSMetaField { tag: string; friendly: string; kind: 'tag' | 'attr'; value: string; editable: boolean; }
   interface VSScan {
     root: string;
     workspacePath: string;
