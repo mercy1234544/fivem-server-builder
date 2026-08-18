@@ -69,7 +69,9 @@ const CLASS_MAP: Record<string, string> = {
   VC_OPEN_WHEEL: 'Open Wheel',
 };
 
-const SKIP_COPY = new Set(['node_modules', '.git', '.vscode']);
+// Never copy dev cruft or Vehicle Studio's own backup folders into a workspace
+// copy or an export/install (backups are internal, not part of the resource).
+const SKIP_COPY = new Set(['node_modules', '.git', '.vscode', '.vehicle-studio-backups']);
 
 // ── Smart Tuning: data-driven driving profiles ────────────────────────────────
 // Each profile computes ABSOLUTE target values (deterministic, some scaled by
@@ -400,14 +402,17 @@ export class VehicleStudio {
     let block = content.slice(loc.start, loc.end);
     let applied = 0;
 
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');   // safe in a RegExp source
+    const rep = (s: string) => s.replace(/\$/g, '$$$$');                    // safe in a String.replace replacement
     for (const c of changes) {
-      if (c.axis) {
-        const re = new RegExp(`(<${c.name}\\s+[^>]*\\b${c.axis}=")[^"]*(")`, '');
-        if (re.test(block)) { block = block.replace(re, `$1${c.value}$2`); applied++; }
-      } else {
-        const re = new RegExp(`(<${c.name}\\s+value=")[^"]*(")`, '');
-        if (re.test(block)) { block = block.replace(re, `$1${c.value}$2`); applied++; }
-      }
+      const name = esc(c.name);
+      // Only touch a field that appears exactly once in this handling block —
+      // never risk rewriting the wrong occurrence (e.g. a sub-handling field).
+      if ((block.match(new RegExp(`<${name}\\b`, 'g')) || []).length !== 1) continue;
+      const re = c.axis
+        ? new RegExp(`(<${name}\\s+[^>]*\\b${c.axis}=")[^"]*(")`)
+        : new RegExp(`(<${name}\\s+value=")[^"]*(")`);
+      if (re.test(block)) { block = block.replace(re, `$1${rep(c.value)}$2`); applied++; }
     }
     if (applied === 0) return { ok: false, error: 'No matching fields to change' };
 
