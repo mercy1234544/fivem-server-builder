@@ -168,6 +168,12 @@ interface ElectronAPI {
     logout: () => Promise<void>;
   };
 
+  vehicleStudio: {
+    pickFolder: () => Promise<string | null>;
+    pickZip: () => Promise<string | null>;
+    scan: (inputPath: string) => Promise<{ ok: boolean; error?: string; data?: VSScan }>;
+  };
+
   system: {
     getInfo: () => Promise<{
       cpuModel: string;
@@ -205,6 +211,42 @@ interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+  }
+
+  // ── Vehicle Studio types (mirror src/main/services/VehicleStudio.ts) ────────
+  interface VSVehicle {
+    modelName: string;
+    handlingId: string | null;
+    txdName: string | null;
+    vehicleClass: string | null;
+    type: string;
+    typeConfidence: 'High' | 'Medium' | 'Low';
+    gameName: string | null;
+    makeName: string | null;
+    hasModel: boolean;
+    hasHandling: boolean;
+  }
+  interface VSDiagnostic {
+    id: string;
+    severity: 'error' | 'warning' | 'info';
+    file: string;
+    vehicle?: string;
+    problem: string;
+    detail: string;
+    fix?: string;
+    autoFixable: boolean;
+  }
+  interface VSScan {
+    root: string;
+    workspacePath: string;
+    name: string;
+    isZip: boolean;
+    manifest: { exists: boolean; type: 'fxmanifest' | '__resource' | 'none'; path: string | null };
+    counts: { yft: number; ytd: number; meta: number; vehicles: number };
+    metaFiles: { handling: string[]; vehicles: string[]; carvariations: string[]; carcols: string[]; vehiclelayouts: string[] };
+    vehicles: VSVehicle[];
+    diagnostics: VSDiagnostic[];
+    summary: { errors: number; warnings: number; info: number };
   }
 }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield } from 'lucide-react';
+import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield, Car } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
 import { useLocalAccess } from '../stores/useLocalAccess';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -12,6 +12,7 @@ const NAV = [
   { path: '/', label: 'Home', icon: Home, match: (p: string) => p === '/' },
   { path: '/marketplace', label: 'Store', icon: Store, match: (p: string) => p.startsWith('/marketplace') },
   { path: '/servers', label: 'My Servers', icon: Server, match: (p: string) => p.startsWith('/server') },
+  { path: '/vehicle-studio', label: 'Vehicle Studio', icon: Car, match: (p: string) => p.startsWith('/vehicle-studio') },
   { path: '/settings', label: 'Settings', icon: Settings, match: (p: string) => p.startsWith('/settings') },
 ];
 

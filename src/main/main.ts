@@ -12,6 +12,7 @@ import { ArtifactDownloader } from './services/ArtifactDownloader';
 import { DatabaseManager } from './services/DatabaseManager';
 import { AccessManager } from './services/AccessManager';
 import { VehicleResourceScanner } from './services/VehicleResourceScanner';
+import { VehicleStudio } from './services/VehicleStudio';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 
@@ -25,6 +26,7 @@ let fileManager: FileManager;
 let artifactDownloader: ArtifactDownloader;
 let databaseManager: DatabaseManager;
 let accessManager: AccessManager;
+let vehicleStudio: VehicleStudio;
 const vehicleResourceScanner = new VehicleResourceScanner();
 
 function createWindow() {
@@ -82,6 +84,7 @@ function initializeServices() {
   artifactDownloader = new ArtifactDownloader();
   databaseManager = new DatabaseManager();
   accessManager = new AccessManager(userDataPath);
+  vehicleStudio = new VehicleStudio(userDataPath);
   serverManager.setDatabaseManager(databaseManager);
   healthScanner.setDatabaseManager(databaseManager);
 }
@@ -204,6 +207,25 @@ function registerIpcHandlers() {
       filters: [{ name: 'Vehicle Pack (folder or ZIP)', extensions: ['zip'] }],
     });
     return result.filePaths || [];
+  });
+
+  // ── Vehicle Studio (top-level, server-independent) ──────────────────────────
+  ipcMain.handle('vehicleStudio:pickFolder', async () => {
+    const r = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Select a FiveM vehicle resource folder', properties: ['openDirectory'],
+    });
+    return r.filePaths?.[0] || null;
+  });
+  ipcMain.handle('vehicleStudio:pickZip', async () => {
+    const r = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Select a vehicle ZIP', properties: ['openFile'],
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+    });
+    return r.filePaths?.[0] || null;
+  });
+  ipcMain.handle('vehicleStudio:scan', async (_, inputPath: string) => {
+    try { return { ok: true, data: await vehicleStudio.scan(inputPath) }; }
+    catch (e: any) { return { ok: false, error: e?.message || 'Scan failed' }; }
   });
 
   // Livery Editor — folder-first vehicle detection + binary file reads

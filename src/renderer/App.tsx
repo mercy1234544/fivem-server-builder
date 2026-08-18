@@ -22,6 +22,7 @@ import ServerPanel from './pages/ServerPanel';
 import LiveryEditor from './pages/LiveryEditor';
 import Settings from './pages/Settings';
 import AdminPanel from './pages/AdminPanel';
+import VehicleStudio from './pages/VehicleStudio';
 import { useAuth } from './stores/useAuth';
 
 export default function App() {
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="/vehicles" element={<VehiclePackManager />} />
               <Route path="/console" element={<ServerConsole />} />
               <Route path="/livery" element={<LiveryEditor />} />
+              <Route path="/vehicle-studio" element={<VehicleStudio />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<AdminPanel />} />
             </Routes>

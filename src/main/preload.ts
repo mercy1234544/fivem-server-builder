@@ -131,6 +131,13 @@ const electronAPI = {
     inflate: (b64: string): Promise<string | null> => ipcRenderer.invoke('livery:inflate', b64),
   },
 
+  // Vehicle Studio — top-level vehicle development workspace
+  vehicleStudio: {
+    pickFolder: () => ipcRenderer.invoke('vehicleStudio:pickFolder'),
+    pickZip: () => ipcRenderer.invoke('vehicleStudio:pickZip'),
+    scan: (inputPath: string) => ipcRenderer.invoke('vehicleStudio:scan', inputPath),
+  },
+
   // System info (Settings page: CPU / RAM / disk / specs)
   system: {
     getInfo: () => ipcRenderer.invoke('system:info'),
