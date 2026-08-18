@@ -171,7 +171,17 @@ interface ElectronAPI {
   vehicleStudio: {
     pickFolder: () => Promise<string | null>;
     pickZip: () => Promise<string | null>;
-    scan: (inputPath: string) => Promise<{ ok: boolean; error?: string; data?: VSScan }>;
+    scan: (inputPath: string, copy?: boolean) => Promise<{ ok: boolean; error?: string; data?: VSScan }>;
+    readHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string; filePath?: string; fields?: VSHandlingField[] }>;
+    writeHandling: (root: string, handlingId: string, changes: VSHandlingChange[]) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
+    undoHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string }>;
+    recommend: (type: string) => Promise<{ recommended: string; alternatives: string[]; profiles: { id: string; name: string; desc: string }[] }>;
+    previewTune: (root: string, handlingId: string, profileId: string) => Promise<{ ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[] }>;
+    applyTune: (root: string, handlingId: string, profileId: string) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
+    generateManifest: (root: string) => Promise<{ ok: boolean; error?: string; path?: string }>;
+    exportZip: (root: string, resourceName: string) => Promise<{ ok: boolean; error?: string; path?: string }>;
+    exportFolder: (root: string, resourceName: string) => Promise<{ ok: boolean; error?: string; dest?: string }>;
+    install: (root: string, serverInstallPath: string, resourceName: string, addEnsure: boolean) => Promise<{ ok: boolean; error?: string; dest?: string }>;
   };
 
   system: {
@@ -236,6 +246,14 @@ declare global {
     fix?: string;
     autoFixable: boolean;
   }
+  interface VSHandlingField {
+    name: string;
+    kind: 'scalar' | 'int' | 'vector' | 'text';
+    value?: string;
+    x?: string; y?: string; z?: string;
+    editable: boolean;
+  }
+  interface VSHandlingChange { name: string; axis?: 'x' | 'y' | 'z'; value: string; }
   interface VSScan {
     root: string;
     workspacePath: string;

@@ -135,7 +135,17 @@ const electronAPI = {
   vehicleStudio: {
     pickFolder: () => ipcRenderer.invoke('vehicleStudio:pickFolder'),
     pickZip: () => ipcRenderer.invoke('vehicleStudio:pickZip'),
-    scan: (inputPath: string) => ipcRenderer.invoke('vehicleStudio:scan', inputPath),
+    scan: (inputPath: string, copy?: boolean) => ipcRenderer.invoke('vehicleStudio:scan', inputPath, copy),
+    readHandling: (root: string, handlingId: string) => ipcRenderer.invoke('vehicleStudio:readHandling', root, handlingId),
+    writeHandling: (root: string, handlingId: string, changes: any[]) => ipcRenderer.invoke('vehicleStudio:writeHandling', root, handlingId, changes),
+    undoHandling: (root: string, handlingId: string) => ipcRenderer.invoke('vehicleStudio:undoHandling', root, handlingId),
+    recommend: (type: string) => ipcRenderer.invoke('vehicleStudio:recommend', type),
+    previewTune: (root: string, handlingId: string, profileId: string) => ipcRenderer.invoke('vehicleStudio:previewTune', root, handlingId, profileId),
+    applyTune: (root: string, handlingId: string, profileId: string) => ipcRenderer.invoke('vehicleStudio:applyTune', root, handlingId, profileId),
+    generateManifest: (root: string) => ipcRenderer.invoke('vehicleStudio:generateManifest', root),
+    exportZip: (root: string, resourceName: string) => ipcRenderer.invoke('vehicleStudio:exportZip', root, resourceName),
+    exportFolder: (root: string, resourceName: string) => ipcRenderer.invoke('vehicleStudio:exportFolder', root, resourceName),
+    install: (root: string, serverInstallPath: string, resourceName: string, addEnsure: boolean) => ipcRenderer.invoke('vehicleStudio:install', root, serverInstallPath, resourceName, addEnsure),
   },
 
   // System info (Settings page: CPU / RAM / disk / specs)

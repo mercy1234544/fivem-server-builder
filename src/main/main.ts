@@ -223,10 +223,29 @@ function registerIpcHandlers() {
     });
     return r.filePaths?.[0] || null;
   });
-  ipcMain.handle('vehicleStudio:scan', async (_, inputPath: string) => {
-    try { return { ok: true, data: await vehicleStudio.scan(inputPath) }; }
+  ipcMain.handle('vehicleStudio:scan', async (_, inputPath: string, copy?: boolean) => {
+    try { return { ok: true, data: await vehicleStudio.scan(inputPath, !!copy) }; }
     catch (e: any) { return { ok: false, error: e?.message || 'Scan failed' }; }
   });
+  ipcMain.handle('vehicleStudio:readHandling', (_, root: string, handlingId: string) => vehicleStudio.readHandling(root, handlingId));
+  ipcMain.handle('vehicleStudio:writeHandling', (_, root: string, handlingId: string, changes: any[]) => vehicleStudio.writeHandling(root, handlingId, changes));
+  ipcMain.handle('vehicleStudio:undoHandling', (_, root: string, handlingId: string) => vehicleStudio.undoHandling(root, handlingId));
+  ipcMain.handle('vehicleStudio:recommend', (_, type: string) => vehicleStudio.recommendPresets(type));
+  ipcMain.handle('vehicleStudio:previewTune', (_, root: string, handlingId: string, profileId: string) => vehicleStudio.previewTune(root, handlingId, profileId));
+  ipcMain.handle('vehicleStudio:applyTune', (_, root: string, handlingId: string, profileId: string) => vehicleStudio.applyTune(root, handlingId, profileId));
+  ipcMain.handle('vehicleStudio:generateManifest', (_, root: string) => vehicleStudio.generateManifest(root));
+  ipcMain.handle('vehicleStudio:exportZip', async (_, root: string, resourceName: string) => {
+    const r = await dialog.showSaveDialog(mainWindow!, { title: 'Export vehicle as ZIP', defaultPath: `${resourceName}.zip`, filters: [{ name: 'ZIP', extensions: ['zip'] }] });
+    if (!r.filePath) return { ok: false, error: 'cancelled' };
+    return vehicleStudio.exportZip(root, r.filePath, resourceName);
+  });
+  ipcMain.handle('vehicleStudio:exportFolder', async (_, root: string, resourceName: string) => {
+    const r = await dialog.showOpenDialog(mainWindow!, { title: 'Choose export destination', properties: ['openDirectory'] });
+    if (!r.filePaths?.[0]) return { ok: false, error: 'cancelled' };
+    return vehicleStudio.exportFolder(root, r.filePaths[0], resourceName);
+  });
+  ipcMain.handle('vehicleStudio:install', (_, root: string, serverInstallPath: string, resourceName: string, addEnsure: boolean) =>
+    vehicleStudio.installToServer(root, serverInstallPath, resourceName, addEnsure));
 
   // Livery Editor — folder-first vehicle detection + binary file reads
   ipcMain.handle('livery:pickFolder', async () => {
