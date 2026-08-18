@@ -246,6 +246,12 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('vehicleStudio:install', (_, root: string, serverInstallPath: string, resourceName: string, addEnsure: boolean) =>
     vehicleStudio.installToServer(root, serverInstallPath, resourceName, addEnsure));
+  ipcMain.handle('vehicleStudio:diagnoseHandling', (_, root: string, handlingId: string) => vehicleStudio.diagnoseHandling(root, handlingId));
+  ipcMain.handle('vehicleStudio:listHandling', (_, root: string) => vehicleStudio.listHandlingEntries(root));
+  ipcMain.handle('vehicleStudio:createHandling', (_, root: string, handlingId: string) => vehicleStudio.createHandling(root, handlingId));
+  ipcMain.handle('vehicleStudio:cloneHandling', (_, root: string, sourceId: string, newId: string) => vehicleStudio.cloneHandling(root, sourceId, newId));
+  ipcMain.handle('vehicleStudio:setVehicleHandlingId', (_, root: string, modelName: string, newHandlingId: string) => vehicleStudio.setVehicleHandlingId(root, modelName, newHandlingId));
+  ipcMain.handle('vehicleStudio:registerHandling', (_, root: string) => vehicleStudio.registerHandlingInManifest(root));
 
   // Livery Editor — folder-first vehicle detection + binary file reads
   ipcMain.handle('livery:pickFolder', async () => {

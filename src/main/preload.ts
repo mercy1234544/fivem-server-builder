@@ -146,6 +146,12 @@ const electronAPI = {
     exportZip: (root: string, resourceName: string) => ipcRenderer.invoke('vehicleStudio:exportZip', root, resourceName),
     exportFolder: (root: string, resourceName: string) => ipcRenderer.invoke('vehicleStudio:exportFolder', root, resourceName),
     install: (root: string, serverInstallPath: string, resourceName: string, addEnsure: boolean) => ipcRenderer.invoke('vehicleStudio:install', root, serverInstallPath, resourceName, addEnsure),
+    diagnoseHandling: (root: string, handlingId: string) => ipcRenderer.invoke('vehicleStudio:diagnoseHandling', root, handlingId),
+    listHandling: (root: string) => ipcRenderer.invoke('vehicleStudio:listHandling', root),
+    createHandling: (root: string, handlingId: string) => ipcRenderer.invoke('vehicleStudio:createHandling', root, handlingId),
+    cloneHandling: (root: string, sourceId: string, newId: string) => ipcRenderer.invoke('vehicleStudio:cloneHandling', root, sourceId, newId),
+    setVehicleHandlingId: (root: string, modelName: string, newHandlingId: string) => ipcRenderer.invoke('vehicleStudio:setVehicleHandlingId', root, modelName, newHandlingId),
+    registerHandling: (root: string) => ipcRenderer.invoke('vehicleStudio:registerHandling', root),
   },
 
   // System info (Settings page: CPU / RAM / disk / specs)

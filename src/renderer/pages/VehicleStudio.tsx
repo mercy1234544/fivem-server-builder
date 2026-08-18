@@ -155,8 +155,11 @@ function Scanning() {
 function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
   scan: VSScan; onBack: () => void; onRescan: () => void; tab: Tab; setTab: (t: Tab) => void; rescanning: boolean;
 }) {
-  const withHandling = scan.vehicles.filter((v) => v.handlingId && v.hasHandling);
-  const [handlingId, setHandlingId] = useState<string | null>(withHandling[0]?.handlingId || null);
+  // Handling tab: any vehicle with a handlingId (broken ones get a repair panel).
+  const handlingVehicles = scan.vehicles.filter((v) => v.handlingId);
+  const firstGood = handlingVehicles.find((v) => v.hasHandling) || handlingVehicles[0];
+  const [handlingId, setHandlingId] = useState<string | null>(firstGood?.handlingId || null);
+  const selVeh = handlingVehicles.find((v) => v.handlingId === handlingId) || firstGood;
   const [showBuild, setShowBuild] = useState(false);
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'overview', label: 'Overview', icon: Info },
@@ -197,12 +200,12 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
               <t.icon size={15} /> {t.label}
             </button>
           ))}
-          {withHandling.length > 1 && (tab === 'tune' || tab === 'handling') && (
+          {handlingVehicles.length > 1 && (tab === 'tune' || tab === 'handling') && (
             <div className="pt-3 mt-2 border-t border-overlay-6">
               <p className="text-[9px] uppercase tracking-wider text-surface-600 px-1 mb-1">Editing vehicle</p>
               <select value={handlingId || ''} onChange={(e) => setHandlingId(e.target.value)}
                 className="w-full bg-overlay-3 border border-overlay-6 rounded-lg px-2 py-1.5 text-xs text-surface-200 focus:outline-none">
-                {withHandling.map((v) => <option key={v.modelName} value={v.handlingId!}>{v.modelName}</option>)}
+                {handlingVehicles.map((v) => <option key={v.modelName} value={v.handlingId!}>{v.modelName}{!v.hasHandling ? ' ⚠' : ''}</option>)}
               </select>
             </div>
           )}
@@ -211,8 +214,9 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
         {/* Content */}
         <div className="flex-1 min-w-0 overflow-y-auto p-6">
           {tab === 'overview' && <OverviewTab scan={scan} />}
-          {tab === 'tune' && (handlingId ? <SmartTuneTab root={scan.root} handlingId={handlingId} type={withHandling.find((v) => v.handlingId === handlingId)?.type || 'Unknown'} onChanged={onRescan} /> : <NoHandling />)}
-          {tab === 'handling' && (handlingId ? <HandlingTab root={scan.root} handlingId={handlingId} onChanged={onRescan} /> : <NoHandling />)}
+          {tab === 'tune' && (handlingId && selVeh?.hasHandling ? <SmartTuneTab root={scan.root} handlingId={handlingId} type={selVeh?.type || 'Unknown'} onChanged={onRescan} />
+            : handlingId ? <TuneMissing modelName={selVeh?.modelName || ''} handlingId={handlingId} onGoHandling={() => setTab('handling')} /> : <NoHandling />)}
+          {tab === 'handling' && (handlingId ? <HandlingTab root={scan.root} handlingId={handlingId} modelName={selVeh?.modelName || ''} onChanged={onRescan} onGoDiagnostics={() => setTab('diagnostics')} /> : <NoHandling />)}
           {tab === 'vehicles' && <VehiclesTab scan={scan} />}
           {tab === 'files' && <FilesTab scan={scan} />}
           {tab === 'diagnostics' && <DiagnosticsTab scan={scan} onRescan={onRescan} />}
@@ -247,9 +251,78 @@ function Stat({ label, value, tone = 'text-surface-100' }: { label: string; valu
   );
 }
 
+function Ov({ label, value, tone = 'text-surface-100' }: { label: string; value: string; tone?: string }) {
+  return (
+    <div>
+      <p className="text-[9px] uppercase tracking-wider text-surface-600">{label}</p>
+      <p className={`font-semibold truncate ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
 function OverviewTab({ scan }: { scan: VSScan }) {
+  const primary = scan.vehicles.find((v) => v.hasHandling) || scan.vehicles[0];
+  const [h, setH] = useState<Record<string, number> | null>(null);
+
+  React.useEffect(() => {
+    setH(null);
+    if (!primary?.handlingId || !primary.hasHandling) return;
+    window.electronAPI.vehicleStudio.readHandling(scan.root, primary.handlingId).then((r) => {
+      if (!r.ok || !r.fields) return;
+      const m: Record<string, number> = {};
+      for (const f of r.fields) if (f.value !== undefined) m[f.name] = parseFloat(f.value);
+      setH(m);
+    });
+  }, [scan.root, primary?.handlingId]);
+
+  const mass = h?.fMass;
+  const gears = h?.nInitialDriveGears;
+  const bias = h?.fDriveBiasFront;
+  const drivetrain = bias === undefined ? null : bias <= 0.1 ? 'RWD' : bias >= 0.9 ? 'FWD' : `AWD (${Math.round(bias * 100)}% front)`;
+  const topMph = h?.fInitialDriveMaxFlatVel !== undefined ? Math.round(h.fInitialDriveMaxFlatVel * 0.92) : null;
+  const pw = (h?.fInitialDriveForce !== undefined && mass) ? (h.fInitialDriveForce / (mass / 1000)) : null;
+  const accel = pw === null ? null : pw > 0.28 ? 'Very strong' : pw > 0.22 ? 'Strong' : pw > 0.16 ? 'Moderate' : 'Relaxed';
+
   return (
     <div className="space-y-5 max-w-3xl">
+      <HealthBar summary={scan.summary} />
+
+      {primary && (
+        <div className="card">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-primary-500/15 border border-primary-500/25 flex items-center justify-center shrink-0"><Car size={22} className="text-primary-300" /></div>
+            <div className="min-w-0">
+              <p className="text-base font-bold text-surface-100">{primary.makeName ? `${primary.makeName} · ` : ''}{primary.modelName}</p>
+              <p className="text-xs text-surface-400">{primary.type}
+                <span className={`ml-2 ${primary.typeConfidence === 'High' ? 'text-emerald-400' : 'text-amber-400'}`}>{primary.typeConfidence} confidence</span>
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-xs">
+            <Ov label="Model" value={primary.modelName} />
+            <Ov label="Class" value={primary.vehicleClass || '—'} />
+            <Ov label="Handling" value={primary.handlingId || '—'} tone={primary.hasHandling ? '' : 'text-red-400'} />
+            <Ov label="Drivetrain" value={drivetrain || '—'} />
+            <Ov label="Gears" value={gears !== undefined ? String(gears) : '—'} />
+            <Ov label="Mass" value={mass !== undefined ? `${mass.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg` : '—'} />
+          </div>
+        </div>
+      )}
+
+      {/* Performance estimates (clearly labeled) */}
+      {h && (
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-3">Performance <span className="text-surface-600 normal-case">— estimates</span></p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Stat label="~ Top speed" value={topMph !== null ? `${topMph} mph` : '—'} />
+            <Stat label="Acceleration" value={accel || '—'} />
+            <Stat label="Power/Weight" value={pw !== null ? pw.toFixed(3) : '—'} />
+            <Stat label="Gears" value={gears !== undefined ? String(gears) : '—'} />
+          </div>
+          <p className="text-[10px] text-surface-600 mt-2">Estimated from handling values — not exact real-world figures.</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Vehicles" value={scan.vehicles.length || scan.counts.vehicles} />
         <Stat label="Model files" value={scan.counts.yft} />
@@ -257,24 +330,6 @@ function OverviewTab({ scan }: { scan: VSScan }) {
         <Stat label="Manifest" value={scan.manifest.type === 'fxmanifest' ? 'fxmanifest.lua' : scan.manifest.type === '__resource' ? '__resource.lua' : 'Missing'}
           tone={scan.manifest.exists ? (scan.manifest.type === 'fxmanifest' ? 'text-emerald-400' : 'text-amber-400') : 'text-red-400'} />
       </div>
-
-      {scan.vehicles[0] && (
-        <div className="card">
-          <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-3">Primary vehicle</p>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-primary-500/15 border border-primary-500/25 flex items-center justify-center shrink-0"><Car size={22} className="text-primary-300" /></div>
-            <div className="min-w-0">
-              <p className="text-base font-bold text-surface-100">{scan.vehicles[0].modelName}</p>
-              <p className="text-xs text-surface-400">
-                {scan.vehicles[0].type}
-                <span className={`ml-2 ${scan.vehicles[0].typeConfidence === 'High' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {scan.vehicles[0].typeConfidence} confidence
-                </span>
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${
         scan.summary.errors ? 'border-red-500/25 bg-red-500/10' : scan.summary.warnings ? 'border-amber-500/25 bg-amber-500/10' : 'border-emerald-500/25 bg-emerald-500/10'
@@ -354,56 +409,111 @@ function FilesTab({ scan }: { scan: VSScan }) {
   );
 }
 
+// Dispatch a single diagnostic's safe auto-fix; returns ok.
+async function applyFix(root: string, d: VSDiagnostic): Promise<{ ok: boolean; error?: string }> {
+  if (d.fixKind === 'generate-manifest') return window.electronAPI.vehicleStudio.generateManifest(root);
+  if (d.fixKind === 'register-handling') return window.electronAPI.vehicleStudio.registerHandling(root);
+  return { ok: false, error: 'Not auto-fixable' };
+}
+
 function DiagnosticsTab({ scan, onRescan }: { scan: VSScan; onRescan: () => void }) {
-  const [fixing, setFixing] = useState(false);
-  const fixManifest = async () => {
-    setFixing(true);
-    const r = await window.electronAPI.vehicleStudio.generateManifest(scan.root);
-    setFixing(false);
-    if (r.ok) { toast.success('Generated fxmanifest.lua'); onRescan(); }
-    else toast.error(r.error || 'Could not generate manifest');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'error' | 'warning' | 'info'>('all');
+
+  const safeFixable = scan.diagnostics.filter((d) => d.autoFixable && d.fixKind);
+  const fixOne = async (d: VSDiagnostic) => {
+    setBusy(d.id); const r = await applyFix(scan.root, d); setBusy(null);
+    if (r.ok) { toast.success(`Fixed: ${d.problem}`); onRescan(); } else toast.error(r.error || 'Fix failed');
+  };
+  const fixAll = async () => {
+    setBusy('all');
+    // De-dupe by fixKind (manifest gen + register handling each run once).
+    const kinds = Array.from(new Set(safeFixable.map((d) => d.fixKind)));
+    let n = 0;
+    for (const k of kinds) { const d = safeFixable.find((x) => x.fixKind === k)!; const r = await applyFix(scan.root, d); if (r.ok) n++; }
+    setBusy(null);
+    toast.success(`Applied ${n} safe fix${n !== 1 ? 'es' : ''}`); onRescan();
   };
 
-  if (scan.diagnostics.length === 0) return (
-    <div className="card flex flex-col items-center py-16 text-center max-w-xl">
-      <CheckCircle2 size={34} className="text-emerald-400 mb-3" />
-      <p className="text-sm font-bold text-surface-100">No problems detected</p>
-      <p className="text-xs text-surface-500 mt-1">Models, metadata, and cross-references all check out.</p>
+  const order = { error: 0, warning: 1, info: 2 } as const;
+  const shown = scan.diagnostics.filter((d) => filter === 'all' || d.severity === filter).sort((a, b) => order[a.severity] - order[b.severity]);
+  const cats: VSDiagnostic['category'][] = ['Resource', 'Manifest', 'Vehicle', 'Handling', 'Metadata', 'Files'];
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <HealthBar summary={scan.summary} />
+
+      {/* Summary chips + Fix All */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(['all', 'error', 'warning', 'info'] as const).map((f) => {
+          const n = f === 'all' ? scan.diagnostics.length : scan.diagnostics.filter((d) => d.severity === f).length;
+          const label = f === 'all' ? 'All' : f === 'error' ? 'Errors' : f === 'warning' ? 'Warnings' : 'Info';
+          return (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${filter === f ? 'bg-primary-500/15 text-primary-200 border-primary-500/30' : 'bg-overlay-3 text-surface-400 border-overlay-6 hover:bg-overlay-4'}`}>
+              {label} <span className="opacity-70">{n}</span>
+            </button>
+          );
+        })}
+        <span className="flex-1" />
+        {safeFixable.length > 0 && (
+          <button onClick={fixAll} disabled={!!busy} className="btn-primary text-xs py-1.5 flex items-center gap-1.5">
+            {busy === 'all' ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />} Fix {Array.from(new Set(safeFixable.map((d) => d.fixKind))).length} Safe Issue{Array.from(new Set(safeFixable.map((d) => d.fixKind))).length !== 1 ? 's' : ''}
+          </button>
+        )}
+      </div>
+
+      {scan.diagnostics.length === 0 ? (
+        <div className="card flex flex-col items-center py-16 text-center">
+          <CheckCircle2 size={34} className="text-emerald-400 mb-3" />
+          <p className="text-sm font-bold text-surface-100">No problems detected</p>
+          <p className="text-xs text-surface-500 mt-1">Models, metadata, and cross-references all check out.</p>
+        </div>
+      ) : (
+        cats.map((cat) => {
+          const items = shown.filter((d) => d.category === cat);
+          if (items.length === 0) return null;
+          return (
+            <div key={cat}>
+              <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-1.5">{cat}</p>
+              <div className="space-y-2">
+                {items.map((d) => <DiagnosticRow key={d.id} d={d} busy={busy === d.id} canFix={!!(d.autoFixable && d.fixKind)} onFix={() => fixOne(d)} />)}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
-  const order = { error: 0, warning: 1, info: 2 } as const;
-  const sorted = [...scan.diagnostics].sort((a, b) => order[a.severity] - order[b.severity]);
+}
+
+function DiagnosticRow({ d, busy, canFix, onFix }: { d: VSDiagnostic; busy: boolean; canFix: boolean; onFix: () => void }) {
+  const [showWhy, setShowWhy] = useState(false);
+  const tone = d.severity === 'error' ? 'border-red-500/25 bg-red-500/5' : d.severity === 'warning' ? 'border-amber-500/25 bg-amber-500/5' : 'border-sky-500/25 bg-sky-500/5';
+  const Icon = d.severity === 'error' ? XCircle : d.severity === 'warning' ? AlertTriangle : Info;
+  const ic = d.severity === 'error' ? 'text-red-400' : d.severity === 'warning' ? 'text-amber-400' : 'text-sky-400';
   return (
-    <div className="space-y-2 max-w-3xl">
-      {sorted.map((d) => {
-        const tone = d.severity === 'error' ? 'border-red-500/25 bg-red-500/5' : d.severity === 'warning' ? 'border-amber-500/25 bg-amber-500/5' : 'border-sky-500/25 bg-sky-500/5';
-        const Icon = d.severity === 'error' ? XCircle : d.severity === 'warning' ? AlertTriangle : Info;
-        const ic = d.severity === 'error' ? 'text-red-400' : d.severity === 'warning' ? 'text-amber-400' : 'text-sky-400';
-        // The only safe auto-fix wired so far is manifest generation.
-        const canFix = d.autoFixable && (d.id === 'no-manifest');
-        return (
-          <div key={d.id} className={`rounded-xl border p-3 ${tone}`}>
-            <div className="flex items-start gap-2.5">
-              <Icon size={15} className={`${ic} shrink-0 mt-0.5`} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-surface-100">{d.problem}</p>
-                <p className="text-xs text-surface-400 mt-0.5">{d.detail}</p>
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-overlay-4 text-surface-500 font-mono">{d.file}</span>
-                  {d.vehicle && <span className="text-[10px] px-1.5 py-0.5 rounded bg-overlay-4 text-surface-500">{d.vehicle}</span>}
-                  {d.autoFixable && !canFix && <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/25">auto-fixable (soon)</span>}
-                </div>
-                {d.fix && <p className="text-[11px] text-emerald-300/90 mt-1.5">Fix: {d.fix}</p>}
-              </div>
-              {canFix && (
-                <button onClick={fixManifest} disabled={fixing} className="shrink-0 btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1.5">
-                  {fixing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />} Fix
-                </button>
-              )}
-            </div>
+    <div className={`rounded-xl border p-3 ${tone}`}>
+      <div className="flex items-start gap-2.5">
+        <Icon size={15} className={`${ic} shrink-0 mt-0.5`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-surface-100">{d.problem}</p>
+          <p className="text-xs text-surface-400 mt-0.5">{d.detail}</p>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-overlay-4 text-surface-500 font-mono">{d.file}{d.line ? `:${d.line}` : ''}</span>
+            {d.vehicle && <span className="text-[10px] px-1.5 py-0.5 rounded bg-overlay-4 text-surface-500">{d.vehicle}</span>}
+            {d.why && <button onClick={() => setShowWhy((v) => !v)} className="text-[10px] text-primary-300 hover:text-primary-200">Why is this broken?</button>}
+            {d.autoFixable && !canFix && <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/25">fix in Handling tab</span>}
           </div>
-        );
-      })}
+          {showWhy && d.why && <p className="text-[11px] text-surface-300 mt-2 leading-relaxed border-l-2 border-primary-500/40 pl-2">{d.why}</p>}
+          {d.fix && <p className="text-[11px] text-emerald-300/90 mt-1.5 font-mono">Fix: {d.fix}</p>}
+        </div>
+        {canFix && (
+          <button onClick={onFix} disabled={busy} className="shrink-0 btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1.5">
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />} Fix
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -521,19 +631,21 @@ const TIPS: Record<string, string> = {
   fSuspensionForce: 'Suspension stiffness — higher rides firmer.',
 };
 
-function HandlingTab({ root, handlingId, onChanged }: { root: string; handlingId: string; onChanged: () => void }) {
+function HandlingTab({ root, handlingId, modelName, onChanged, onGoDiagnostics }: { root: string; handlingId: string; modelName: string; onChanged: () => void; onGoDiagnostics: () => void }) {
   const [fields, setFields] = useState<VSHandlingField[]>([]);
   const [orig, setOrig] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [readError, setReadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     const r = await window.electronAPI.vehicleStudio.readHandling(root, handlingId);
     setLoading(false);
-    if (!r.ok || !r.fields) { toast.error(r.error || 'Could not read handling'); return; }
+    if (!r.ok || !r.fields) { setReadError(r.error || 'Could not read handling'); return; }
+    setReadError(null);
     setFields(r.fields);
     const o: Record<string, string> = {};
     for (const f of r.fields) {
@@ -564,6 +676,7 @@ function HandlingTab({ root, handlingId, onChanged }: { root: string; handlingId
   const undo = async () => { const r = await window.electronAPI.vehicleStudio.undoHandling(root, handlingId); if (r.ok) { toast.success('Reverted last save'); await load(); onChanged(); } else toast.error(r.error || 'Nothing to undo'); };
 
   if (loading) return <div className="flex items-center gap-2 text-sm text-surface-500"><Loader2 size={14} className="animate-spin" /> Reading handling.meta…</div>;
+  if (readError) return <HandlingRepair root={root} handlingId={handlingId} modelName={modelName} onFixed={() => { load(); onChanged(); }} onGoDiagnostics={onGoDiagnostics} />;
 
   const known = new Set(HANDLING_CATEGORIES.flatMap((c) => c.fields));
   const otherScalars = fields.filter((f) => f.kind !== 'vector' && !known.has(f.name)).map((f) => f.name);
@@ -690,6 +803,155 @@ function BuildModal({ scan, onClose }: { scan: VSScan; onClose: () => void }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ Health score ═══════════════════ */
+export function healthScore(s: { errors: number; warnings: number }): number {
+  return Math.max(0, 100 - s.errors * 15 - s.warnings * 5);
+}
+function HealthBar({ summary }: { summary: { errors: number; warnings: number; info: number } }) {
+  const score = healthScore(summary);
+  const tone = score >= 90 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-red-500';
+  const txt = score >= 90 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-red-400';
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] uppercase tracking-wider text-surface-500">Resource Health</p>
+        <span className={`text-lg font-extrabold ${txt}`}>{score}%</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-overlay-4 overflow-hidden">
+        <div className={`h-full ${tone} transition-all`} style={{ width: `${score}%` }} />
+      </div>
+      <div className="flex items-center gap-4 mt-2 text-xs">
+        <span className="text-red-400">{summary.errors} Critical</span>
+        <span className="text-amber-400">{summary.warnings} Warnings</span>
+        <span className="text-sky-400">{summary.info} Info</span>
+        {score === 100 && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12} /> All references valid</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ Handling reference repair (§1-3, 25, 42-45) ═══════════════════ */
+function HandlingRepair({ root, handlingId, modelName, onFixed, onGoDiagnostics }: {
+  root: string; handlingId: string; modelName: string; onFixed: () => void; onGoDiagnostics: () => void;
+}) {
+  const [diag, setDiag] = useState<VSHandlingDiag | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [cloneFrom, setCloneFrom] = useState('');
+
+  const run = () => window.electronAPI.vehicleStudio.diagnoseHandling(root, handlingId).then((d) => { setDiag(d); setCloneFrom(d.fuzzy[0]?.name || d.allNames[0]?.name || ''); });
+  React.useEffect(() => { run(); }, [root, handlingId]);
+
+  const wrap = async (fn: () => Promise<{ ok: boolean; error?: string }>, okMsg: string) => {
+    setBusy(true); const r = await fn(); setBusy(false);
+    if (r.ok) { toast.success(okMsg); onFixed(); } else toast.error(r.error || 'Failed');
+  };
+
+  if (!diag) return <div className="flex items-center gap-2 text-sm text-surface-500"><Loader2 size={14} className="animate-spin" /> Tracing handling reference…</div>;
+
+  const chain = [
+    { ok: true, label: `vehicles.meta references "${modelName}"` },
+    { ok: true, label: `handlingId = ${handlingId}` },
+    { ok: diag.handlingFileExists, label: diag.handlingFileExists ? 'handling.meta found' : 'handling.meta NOT found' },
+    { ok: diag.registeredInManifest !== false, label: diag.registeredInManifest === false ? 'handling.meta NOT registered in manifest' : 'handling.meta registered' },
+    { ok: !!diag.exactMatch, label: diag.exactMatch ? `entry "${diag.exactMatch.name}" found` : `entry "${handlingId}" MISSING` },
+  ];
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+        <p className="text-sm font-bold text-red-300 flex items-center gap-2"><XCircle size={16} /> Handling reference error</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-3 text-xs">
+          <div><span className="text-surface-500">Vehicle:</span> <span className="text-surface-100 font-semibold">{modelName}</span></div>
+          <div><span className="text-surface-500">Referenced handling:</span> <span className="text-surface-100 font-semibold">{handlingId}</span></div>
+        </div>
+        <p className="text-xs text-surface-300 mt-2">No matching handling entry was found. Possible causes: handling.meta missing, a differently-spelled handling ID, handling.meta not registered in fxmanifest.lua, wrong location, or an unparseable entry.</p>
+      </div>
+
+      {/* Dependency trace (§25, §28) */}
+      <div className="card">
+        <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Find cause — reference trace</p>
+        <div className="space-y-1">
+          {chain.map((c, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              {c.ok ? <CheckCircle2 size={13} className="text-emerald-400" /> : <XCircle size={13} className="text-red-400" />}
+              <span className={c.ok ? 'text-surface-300' : 'text-red-300 font-semibold'}>{c.label}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-primary-300 mt-2">
+          Cause: {!diag.handlingFileExists ? 'no handling.meta in the resource.' : diag.registeredInManifest === false ? 'handling.meta is not registered in the manifest.' : `handling.meta has no entry named "${handlingId}".`}
+        </p>
+      </div>
+
+      {/* Fixes */}
+      <div className="card space-y-3">
+        <p className="text-[10px] uppercase tracking-wider text-surface-500">Repair options</p>
+
+        {diag.registeredInManifest === false && diag.handlingFileExists && (
+          <RepairRow title="Register handling.meta in the manifest" desc="Adds the data_file 'HANDLING_FILE' line so the game loads it." btn="Register"
+            onClick={() => wrap(() => window.electronAPI.vehicleStudio.registerHandling(root), 'Registered handling.meta')} busy={busy} />
+        )}
+
+        {diag.fuzzy.length > 0 && (
+          <div>
+            <p className="text-xs text-surface-400 mb-1.5">Close matches found — point this vehicle at one:</p>
+            <div className="space-y-1.5">
+              {diag.fuzzy.map((f) => (
+                <div key={f.name} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-overlay-4 bg-overlay-2">
+                  <span className="text-sm font-mono text-surface-100 flex-1">{f.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${f.similarity >= 90 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{f.similarity}%</span>
+                  <button disabled={busy} onClick={() => wrap(() => window.electronAPI.vehicleStudio.setVehicleHandlingId(root, modelName, f.name), `Pointed ${modelName} at ${f.name}`)}
+                    className="btn-secondary text-[11px] py-1">Use {f.name}</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <RepairRow title={`Create a new handling entry "${handlingId}"`} desc="Generates a complete, valid handling entry you can then tune." btn="Create"
+          onClick={() => wrap(() => window.electronAPI.vehicleStudio.createHandling(root, handlingId), `Created handling "${handlingId}"`)} busy={busy} />
+
+        {diag.allNames.length > 0 && (
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <p className="text-xs text-surface-400 mb-1">Or clone an existing entry as "{handlingId}":</p>
+              <select value={cloneFrom} onChange={(e) => setCloneFrom(e.target.value)} className="w-full bg-overlay-3 border border-overlay-6 rounded-lg px-2 py-1.5 text-xs text-surface-200 focus:outline-none">
+                {diag.allNames.map((n) => <option key={n.name} value={n.name}>{n.name}</option>)}
+              </select>
+            </div>
+            <button disabled={busy || !cloneFrom} onClick={() => wrap(() => window.electronAPI.vehicleStudio.cloneHandling(root, cloneFrom, handlingId), `Cloned ${cloneFrom} → ${handlingId}`)}
+              className="btn-secondary text-xs py-2">Clone</button>
+          </div>
+        )}
+
+        <button onClick={onGoDiagnostics} className="text-xs text-primary-300 hover:text-primary-200">Open Diagnostics →</button>
+      </div>
+    </div>
+  );
+}
+function RepairRow({ title, desc, btn, onClick, busy }: { title: string; desc: string; btn: string; onClick: () => void; busy: boolean }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-overlay-4 bg-overlay-2">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-surface-100">{title}</p>
+        <p className="text-[11px] text-surface-500">{desc}</p>
+      </div>
+      <button disabled={busy} onClick={onClick} className="btn-primary text-[11px] py-1.5 shrink-0">{busy ? <Loader2 size={12} className="animate-spin" /> : btn}</button>
+    </div>
+  );
+}
+
+function TuneMissing({ modelName, handlingId, onGoHandling }: { modelName: string; handlingId: string; onGoHandling: () => void }) {
+  return (
+    <div className="card flex flex-col items-center py-14 text-center max-w-xl">
+      <AlertTriangle size={30} className="text-amber-400 mb-3" />
+      <p className="text-sm font-bold text-surface-100">Can't tune — handling is missing</p>
+      <p className="text-xs text-surface-500 mt-1 max-w-sm">{modelName} references handling "{handlingId}", but no matching entry exists yet. Repair it first, then Smart Tune will work.</p>
+      <button onClick={onGoHandling} className="btn-primary text-xs py-2 mt-4 flex items-center gap-1.5"><Gauge size={13} /> Repair in Handling tab</button>
     </div>
   );
 }

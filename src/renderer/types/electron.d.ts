@@ -182,6 +182,12 @@ interface ElectronAPI {
     exportZip: (root: string, resourceName: string) => Promise<{ ok: boolean; error?: string; path?: string }>;
     exportFolder: (root: string, resourceName: string) => Promise<{ ok: boolean; error?: string; dest?: string }>;
     install: (root: string, serverInstallPath: string, resourceName: string, addEnsure: boolean) => Promise<{ ok: boolean; error?: string; dest?: string }>;
+    diagnoseHandling: (root: string, handlingId: string) => Promise<VSHandlingDiag>;
+    listHandling: (root: string) => Promise<{ name: string; file: string }[]>;
+    createHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string; file?: string }>;
+    cloneHandling: (root: string, sourceId: string, newId: string) => Promise<{ ok: boolean; error?: string }>;
+    setVehicleHandlingId: (root: string, modelName: string, newHandlingId: string) => Promise<{ ok: boolean; error?: string }>;
+    registerHandling: (root: string) => Promise<{ ok: boolean; error?: string }>;
   };
 
   system: {
@@ -239,12 +245,25 @@ declare global {
   interface VSDiagnostic {
     id: string;
     severity: 'error' | 'warning' | 'info';
+    category: 'Resource' | 'Manifest' | 'Vehicle' | 'Handling' | 'Metadata' | 'Files';
     file: string;
+    line?: number;
     vehicle?: string;
     problem: string;
     detail: string;
+    why?: string;
     fix?: string;
     autoFixable: boolean;
+    fixKind?: 'generate-manifest' | 'register-handling';
+    handlingRef?: string;
+  }
+  interface VSHandlingDiag {
+    handlingId: string;
+    handlingFileExists: boolean;
+    registeredInManifest: boolean | null;
+    exactMatch: { name: string; file: string } | null;
+    fuzzy: { name: string; file: string; similarity: number }[];
+    allNames: { name: string; file: string }[];
   }
   interface VSHandlingField {
     name: string;

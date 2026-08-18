@@ -36,12 +36,17 @@ export interface VSVehicle {
 export interface VSDiagnostic {
   id: string;
   severity: Severity;
+  category: 'Resource' | 'Manifest' | 'Vehicle' | 'Handling' | 'Metadata' | 'Files';
   file: string;                  // repo-relative
+  line?: number;
   vehicle?: string;
   problem: string;
   detail: string;
+  why?: string;                  // plain-English "why is this broken?"
   fix?: string;
   autoFixable: boolean;
+  fixKind?: 'generate-manifest' | 'register-handling';  // dispatch for Fix-All
+  handlingRef?: string;          // handlingId this is about (enables Find Cause / repair)
 }
 
 export interface VSScan {
@@ -78,6 +83,75 @@ const SKIP_COPY = new Set(['node_modules', '.git', '.vscode', '.vehicle-studio-b
 // the vehicle's real mass) — never random bumps. Only fields that already exist
 // in the vehicle are changed (surgical). Values are tuning targets, not physics.
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+
+// Similarity 0..100 (Levenshtein-based) — used to suggest close handling matches.
+function similarity(a: string, b: string): number {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  if (a === b) return 100;
+  const m = a.length, n = b.length;
+  if (!m || !n) return 0;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return Math.round((1 - d[m][n] / Math.max(m, n)) * 100);
+}
+
+// A complete, valid GTA-style handling entry used as a starting point when a
+// vehicle is missing its handling (§43). Real values, fully tunable afterward.
+const HANDLING_TEMPLATE = (name: string) => `    <Item type="CHandlingData">
+      <handlingName>${name}</handlingName>
+      <fMass value="1400.000000" />
+      <fInitialDragCoeff value="8.500000" />
+      <fPercentSubmerged value="85.000000" />
+      <vecCentreOfMassOffset x="0.000000" y="0.000000" z="0.000000" />
+      <vecInertiaMultiplier x="1.000000" y="1.000000" z="1.000000" />
+      <fDriveBiasFront value="0.000000" />
+      <nInitialDriveGears value="6" />
+      <fInitialDriveForce value="0.330000" />
+      <fDriveInertia value="1.000000" />
+      <fClutchChangeRateScaleUpShift value="2.000000" />
+      <fClutchChangeRateScaleDownShift value="2.000000" />
+      <fInitialDriveMaxFlatVel value="150.000000" />
+      <fBrakeForce value="1.000000" />
+      <fBrakeBiasFront value="0.500000" />
+      <fHandBrakeForce value="0.800000" />
+      <fSteeringLock value="40.000000" />
+      <fTractionCurveMax value="2.200000" />
+      <fTractionCurveMin value="1.800000" />
+      <fTractionCurveLateral value="22.500000" />
+      <fTractionSpringDeltaMax value="0.150000" />
+      <fLowSpeedTractionLossMult value="1.000000" />
+      <fCamberStiffnesss value="0.000000" />
+      <fTractionBiasFront value="0.480000" />
+      <fTractionLossMult value="1.000000" />
+      <fSuspensionForce value="2.200000" />
+      <fSuspensionCompDamp value="1.500000" />
+      <fSuspensionReboundDamp value="2.200000" />
+      <fSuspensionUpperLimit value="0.100000" />
+      <fSuspensionLowerLimit value="-0.100000" />
+      <fSuspensionRaise value="0.000000" />
+      <fSuspensionBiasFront value="0.500000" />
+      <fAntiRollBarForce value="1.000000" />
+      <fAntiRollBarBiasFront value="0.500000" />
+      <fRollCentreHeightFront value="0.300000" />
+      <fRollCentreHeightRear value="0.300000" />
+      <fCollisionDamageMult value="1.000000" />
+      <fWeaponDamageMult value="1.000000" />
+      <fDeformationDamageMult value="1.000000" />
+      <fEngineDamageMult value="1.500000" />
+      <fPetrolTankVolume value="65.000000" />
+      <fOilVolume value="5.000000" />
+      <nMonetaryValue value="100000" />
+      <strModelFlags>440010</strModelFlags>
+      <strHandlingFlags>0</strHandlingFlags>
+      <strDamageFlags>0</strDamageFlags>
+      <SubHandlingData>
+        <Item type="NULL" />
+        <Item type="NULL" />
+        <Item type="NULL" />
+      </SubHandlingData>
+    </Item>`;
 interface TuneProfile { id: string; name: string; desc: string; compute: (f: Record<string, number>) => Record<string, number>; }
 const PROFILES: TuneProfile[] = [
   { id: 'street', name: 'Street', desc: 'Balanced, grippy daily setup.', compute: (f) => ({
@@ -227,21 +301,24 @@ export class VehicleStudio {
 
         // Per-vehicle diagnostics
         if (!hasModel) diagnostics.push({
-          id: `missing-model-${ml}`, severity: 'error', file: rel(vp), vehicle: modelName,
+          id: `missing-model-${ml}`, severity: 'error', category: 'Vehicle', file: rel(vp), vehicle: modelName,
           problem: `No model file for "${modelName}"`,
           detail: `vehicles.meta lists modelName "${modelName}" but no ${modelName}.yft was found in the resource.`,
+          why: `vehicles.meta tells FiveM to load a model called "${modelName}", but there's no ${modelName}.yft file in the resource, so the vehicle can't spawn.`,
           fix: 'Add the .yft model, or correct the modelName.', autoFixable: false,
         });
         if (handlingId && !hasHandling) diagnostics.push({
-          id: `missing-handling-${ml}`, severity: 'error', file: rel(vp), vehicle: modelName,
-          problem: `handlingId "${handlingId}" has no handling entry`,
-          detail: `No <handlingName>${handlingId}</handlingName> was found in handling.meta.`,
-          fix: 'Create the handling entry or fix the handlingId.', autoFixable: false,
+          id: `missing-handling-${ml}`, severity: 'error', category: 'Handling', file: rel(vp), vehicle: modelName, handlingRef: handlingId,
+          problem: `Handling "${handlingId}" not found`,
+          detail: `vehicles.meta says "${modelName}" uses handling "${handlingId}", but no matching handling entry was found. Use "Find cause" to trace it.`,
+          why: `vehicles.meta tells FiveM this vehicle uses handling "${handlingId}". Vehicle Studio searched the resource but couldn't find a handling entry named "${handlingId}". The vehicle may load with wrong handling or fail to load.`,
+          fix: 'Find a matching handling, create one, change the handlingId, or register handling.meta.', autoFixable: false,
         });
         if (txdName && !ytdNames.has(txdName.toLowerCase()) && !modelNames.has(txdName.toLowerCase())) diagnostics.push({
-          id: `missing-txd-${ml}`, severity: 'warning', file: rel(vp), vehicle: modelName,
+          id: `missing-txd-${ml}`, severity: 'warning', category: 'Vehicle', file: rel(vp), vehicle: modelName,
           problem: `Texture dictionary "${txdName}" not found`,
           detail: `No ${txdName}.ytd found. This is only a problem if textures aren't embedded in the model.`,
+          why: `vehicles.meta references a texture dictionary "${txdName}" (${txdName}.ytd). It wasn't found — this is fine if the textures are embedded in the .yft, otherwise the vehicle may appear untextured.`,
           autoFixable: false,
         });
       }
@@ -249,32 +326,60 @@ export class VehicleStudio {
 
     // Resource-level diagnostics
     if (!manifest.exists) diagnostics.push({
-      id: 'no-manifest', severity: 'error', file: '(resource root)',
+      id: 'no-manifest', severity: 'error', category: 'Resource', file: '(resource root)',
       problem: 'No fxmanifest.lua', detail: 'The resource has no fxmanifest.lua (or __resource.lua) and will not load in FiveM.',
-      fix: 'Generate an fxmanifest.lua that registers the model and meta files.', autoFixable: true,
+      why: 'FiveM reads fxmanifest.lua to know what a resource contains. Without it, the resource is ignored entirely.',
+      fix: 'Generate an fxmanifest.lua that registers the model and meta files.', autoFixable: true, fixKind: 'generate-manifest',
     });
     else if (manifest.type === '__resource') diagnostics.push({
-      id: 'old-manifest', severity: 'warning', file: '__resource.lua',
+      id: 'old-manifest', severity: 'warning', category: 'Manifest', file: '__resource.lua',
       problem: 'Uses the deprecated __resource.lua', detail: '__resource.lua is deprecated; modern FiveM expects fxmanifest.lua.',
-      fix: 'Migrate to fxmanifest.lua.', autoFixable: true,
+      why: 'Older resources used __resource.lua. Modern FiveM servers expect fxmanifest.lua; the old name still works but is deprecated.',
+      fix: 'Generate a modern fxmanifest.lua.', autoFixable: true, fixKind: 'generate-manifest',
+    });
+    // handling.meta present but not registered in the manifest (§3)
+    const handlingRegistered = manifest.exists && manifest.path
+      ? (() => { try { return /data_file\s+['"]HANDLING_FILE['"]/i.test(fs.readFileSync(manifest.path!, 'utf-8')); } catch { return true; } })()
+      : true;
+    if (scan.meta.handling.length > 0 && !handlingRegistered) diagnostics.push({
+      id: 'handling-not-registered', severity: 'warning', category: 'Manifest',
+      file: manifest.type === 'fxmanifest' ? 'fxmanifest.lua' : '__resource.lua',
+      problem: 'handling.meta is not registered in the manifest',
+      detail: `handling.meta exists but the manifest has no data_file 'HANDLING_FILE' line, so FiveM ignores the custom handling.`,
+      why: `A handling.meta file only takes effect if the manifest registers it with data_file 'HANDLING_FILE'. Without that line, the game loads the vehicle with default handling.`,
+      fix: `Add: data_file 'HANDLING_FILE' '${path.relative(root, scan.meta.handling[0]).replace(/\\/g, '/')}'`,
+      autoFixable: true, fixKind: 'register-handling',
     });
     if (scan.meta.vehicles.length === 0 && scan.vehicles.length > 0) diagnostics.push({
-      id: 'no-vehicles-meta', severity: 'warning', file: '(resource root)',
+      id: 'no-vehicles-meta', severity: 'warning', category: 'Metadata', file: '(resource root)',
       problem: 'No vehicles.meta', detail: 'Model files were found but there is no vehicles.meta, so the game has no spawn/definition data.',
+      why: 'vehicles.meta defines the spawn name, class, handling link and more. Without it the model files exist but the game has no vehicle to spawn.',
       autoFixable: false,
     });
     for (const d of modelDupes) diagnostics.push({
-      id: `dup-model-${d}`, severity: 'error', file: 'vehicles.meta', vehicle: d,
+      id: `dup-model-${d}`, severity: 'error', category: 'Vehicle', file: 'vehicles.meta', vehicle: d,
       problem: `Duplicate model "${d}"`, detail: `"${d}" is defined more than once in vehicles.meta — this causes conflicts.`, autoFixable: false,
     });
     for (const d of handlingDupes) diagnostics.push({
-      id: `dup-handling-${d}`, severity: 'warning', file: 'handling.meta',
+      id: `dup-handling-${d}`, severity: 'warning', category: 'Handling', file: 'handling.meta',
       problem: `Duplicate handling "${d}"`, detail: `handlingName "${d}" appears more than once in handling.meta.`, autoFixable: false,
     });
+    // A few genuinely useful info items (not noise, per §39)
+    if (vehicles.length > 0) diagnostics.push({
+      id: 'info-vehicle-count', severity: 'info', category: 'Vehicle', file: 'vehicles.meta',
+      problem: `Resource contains ${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}`,
+      detail: vehicles.map((v) => v.modelName).join(', '), autoFixable: false,
+    });
+    if (handlingNames.size > 0) diagnostics.push({
+      id: 'info-handling-count', severity: 'info', category: 'Handling', file: 'handling.meta',
+      problem: `handling.meta defines ${handlingNames.size} handling entr${handlingNames.size !== 1 ? 'ies' : 'y'}`,
+      detail: Array.from(handlingNames).join(', '), autoFixable: false,
+    });
+
     // Models with no vehicles.meta entry
     for (const v of scan.vehicles) {
       if (!seenModels.has(v.name.toLowerCase()) && scan.meta.vehicles.length > 0) diagnostics.push({
-        id: `orphan-model-${v.name.toLowerCase()}`, severity: 'info', file: rel(v.yft || v.hiYft || v.dir),
+        id: `orphan-model-${v.name.toLowerCase()}`, severity: 'info', category: 'Files', file: rel(v.yft || v.hiYft || v.dir),
         problem: `Model "${v.name}" has no vehicles.meta entry`,
         detail: `${v.name}.yft exists but isn't referenced in vehicles.meta.`, autoFixable: false,
       });
@@ -338,12 +443,17 @@ export class VehicleStudio {
     // nearest <Item before the name
     const start = content.lastIndexOf('<Item', nameMatch.index);
     if (start < 0) return null;
-    // balanced scan for the matching </Item>
-    const tagRe = /<Item\b|<\/Item>/gi;
+    // Balanced scan for the matching </Item>. Crucially, self-closing items —
+    // e.g. <Item type="NULL" /> inside <SubHandlingData> — must NOT change depth,
+    // otherwise the outer handling <Item> never balances (this was the cause of
+    // "handling not found" on real vehicles).
+    const tagRe = /<Item\b[^>]*>|<\/Item>/gi;
     tagRe.lastIndex = start;
     let depth = 0, m: RegExpExecArray | null;
     while ((m = tagRe.exec(content)) !== null) {
-      if (m[0].toLowerCase().startsWith('</')) { depth--; if (depth === 0) return { start, end: m.index + m[0].length }; }
+      const t = m[0];
+      if (t.startsWith('</')) { depth--; if (depth === 0) return { start, end: m.index + t.length }; }
+      else if (t.endsWith('/>')) { /* self-closing — no depth change */ }
       else depth++;
     }
     return null;
@@ -549,5 +659,124 @@ export class VehicleStudio {
       }
       return { ok: true, dest };
     } catch (e: any) { return { ok: false, error: e?.message || 'Install failed' }; }
+  }
+
+  // ══════════════════ handling reference intelligence & repair ══════════════════
+
+  /** Every handling entry in the resource (Handling Library, §45). */
+  listHandlingEntries(root: string): { name: string; file: string }[] {
+    const out: { name: string; file: string }[] = [];
+    const rel = (p: string) => path.relative(root, p).replace(/\\/g, '/');
+    for (const f of this.scanner.scan(root).meta.handling) {
+      for (const name of this.readTags(f, 'handlingName')) out.push({ name, file: rel(f) });
+    }
+    return out;
+  }
+
+  /** Is handling.meta registered via data_file 'HANDLING_FILE' in the manifest? */
+  isHandlingRegistered(root: string): boolean | null {
+    const man = path.join(root, 'fxmanifest.lua');
+    const old = path.join(root, '__resource.lua');
+    const p = fs.existsSync(man) ? man : fs.existsSync(old) ? old : null;
+    if (!p) return null;
+    try { return /data_file\s+['"]HANDLING_FILE['"]/i.test(fs.readFileSync(p, 'utf-8')); }
+    catch { return null; }
+  }
+
+  /** Full diagnosis of a handling reference — powers "Find Cause" & repair UI. */
+  diagnoseHandling(root: string, handlingId: string): {
+    handlingId: string; handlingFileExists: boolean; registeredInManifest: boolean | null;
+    exactMatch: { name: string; file: string } | null; fuzzy: { name: string; file: string; similarity: number }[];
+    allNames: { name: string; file: string }[];
+  } {
+    const all = this.listHandlingEntries(root);
+    const exact = all.find((e) => e.name.toUpperCase() === handlingId.toUpperCase()) || null;
+    const fuzzy = all
+      .filter((e) => e.name.toUpperCase() !== handlingId.toUpperCase())
+      .map((e) => ({ ...e, similarity: similarity(handlingId, e.name) }))
+      .filter((e) => e.similarity >= 60)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5);
+    return {
+      handlingId,
+      handlingFileExists: this.scanner.scan(root).meta.handling.length > 0,
+      registeredInManifest: this.isHandlingRegistered(root),
+      exactMatch: exact, fuzzy, allNames: all,
+    };
+  }
+
+  /** Register handling.meta in the manifest (fix for "exists but not registered"). */
+  registerHandlingInManifest(root: string): { ok: boolean; error?: string } {
+    const scan = this.scanner.scan(root);
+    if (scan.meta.handling.length === 0) return { ok: false, error: 'No handling.meta to register' };
+    const relHandling = path.relative(root, scan.meta.handling[0]).replace(/\\/g, '/');
+    const man = path.join(root, 'fxmanifest.lua');
+    if (!fs.existsSync(man)) { const g = this.generateManifest(root); return g.ok ? { ok: true } : { ok: false, error: g.error }; }
+    let c = fs.readFileSync(man, 'utf-8');
+    if (/data_file\s+['"]HANDLING_FILE['"]/i.test(c)) return { ok: true };
+    this.backup(man);
+    if (!c.includes(relHandling)) c = c.trimEnd() + `\nfiles { '${relHandling}' }`;
+    c = c.trimEnd() + `\ndata_file 'HANDLING_FILE' '${relHandling}'\n`;
+    fs.writeFileSync(man, c, 'utf-8');
+    return { ok: true };
+  }
+
+  /** Change a vehicle's handlingId in vehicles.meta (repair: point at an existing entry). */
+  setVehicleHandlingId(root: string, modelName: string, newHandlingId: string): { ok: boolean; error?: string } {
+    for (const vp of this.scanner.scan(root).meta.vehicles) {
+      let content = fs.readFileSync(vp, 'utf-8');
+      // find the <Item> block for this model
+      const nameRe = new RegExp(`<modelName>\\s*${modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</modelName>`, 'i');
+      const nm = nameRe.exec(content);
+      if (!nm) continue;
+      const start = content.lastIndexOf('<Item', nm.index);
+      const endRel = content.slice(nm.index).search(/<\/Item>/i);
+      if (start < 0 || endRel < 0) continue;
+      const end = nm.index + endRel + '</Item>'.length;
+      let block = content.slice(start, end);
+      if (!/<handlingId>/i.test(block)) return { ok: false, error: 'No handlingId tag to change' };
+      block = block.replace(/(<handlingId>)\s*[^<]*\s*(<\/handlingId>)/i, `$1${newHandlingId}$2`);
+      this.backup(vp);
+      fs.writeFileSync(vp, content.slice(0, start) + block + content.slice(end), 'utf-8');
+      return { ok: true };
+    }
+    return { ok: false, error: `Vehicle "${modelName}" not found in vehicles.meta` };
+  }
+
+  /** Create a fresh valid handling entry (§43). Won't overwrite an existing one. */
+  createHandling(root: string, handlingId: string): { ok: boolean; error?: string; file?: string } {
+    const existing = this.listHandlingEntries(root).find((e) => e.name.toUpperCase() === handlingId.toUpperCase());
+    if (existing) return { ok: false, error: `A handling entry "${handlingId}" already exists` };
+    const scan = this.scanner.scan(root);
+    let file = scan.meta.handling[0];
+    if (!file) { // create data/handling.meta
+      const dir = fs.existsSync(path.join(root, 'data')) ? path.join(root, 'data') : root;
+      file = path.join(dir, 'handling.meta');
+      fs.writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?>\n<CHandlingDataMgr>\n  <HandlingData>\n  </HandlingData>\n</CHandlingDataMgr>\n`, 'utf-8');
+    } else this.backup(file);
+    let c = fs.readFileSync(file, 'utf-8');
+    const entry = '\n' + HANDLING_TEMPLATE(handlingId) + '\n';
+    if (/<\/HandlingData>/i.test(c)) c = c.replace(/<\/HandlingData>/i, `${entry}  </HandlingData>`);
+    else if (/<\/CHandlingDataMgr>/i.test(c)) c = c.replace(/<\/CHandlingDataMgr>/i, `${entry}</CHandlingDataMgr>`);
+    else c = c.trimEnd() + entry;
+    fs.writeFileSync(file, c, 'utf-8');
+    // ensure it's registered
+    if (this.isHandlingRegistered(root) === false) this.registerHandlingInManifest(root);
+    return { ok: true, file: path.relative(root, file).replace(/\\/g, '/') };
+  }
+
+  /** Clone an existing handling entry under a new name (§44). */
+  cloneHandling(root: string, sourceId: string, newId: string): { ok: boolean; error?: string } {
+    if (this.listHandlingEntries(root).some((e) => e.name.toUpperCase() === newId.toUpperCase()))
+      return { ok: false, error: `"${newId}" already exists` };
+    const file = this.firstHandlingFile(root, sourceId);
+    if (!file) return { ok: false, error: `Source handling "${sourceId}" not found` };
+    let c = fs.readFileSync(file, 'utf-8');
+    const loc = this.locateHandlingBlock(c, sourceId)!;
+    let block = c.slice(loc.start, loc.end);
+    block = block.replace(/(<handlingName>)\s*[^<]*\s*(<\/handlingName>)/i, `$1${newId}$2`);
+    this.backup(file);
+    fs.writeFileSync(file, c.slice(0, loc.end) + '\n' + block + c.slice(loc.end), 'utf-8');
+    return { ok: true };
   }
 }
