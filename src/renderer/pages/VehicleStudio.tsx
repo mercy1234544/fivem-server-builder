@@ -11,7 +11,7 @@ import {
   Car, FolderOpen, FileArchive, Upload, Wrench, Sparkles, AlertTriangle,
   CheckCircle2, XCircle, Info, Loader2, ArrowLeft, Package, FileCode, Clock,
   Gauge, ShieldCheck, RefreshCw, Boxes, Save, RotateCcw, Download, Search,
-  X, Server, ChevronRight, Undo2,
+  X, Server, ChevronRight, ChevronDown, Undo2, Cog,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 
@@ -20,7 +20,7 @@ interface Recent { name: string; path: string; type: string; at: number; }
 const loadRecent = (): Recent[] => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; } };
 const saveRecent = (r: Recent[]) => localStorage.setItem(RECENT_KEY, JSON.stringify(r.slice(0, 8)));
 
-type Tab = 'overview' | 'tune' | 'handling' | 'vehicles' | 'files' | 'diagnostics';
+type Tab = 'overview' | 'tune' | 'performance' | 'transmission' | 'handling' | 'brakes' | 'traction' | 'suspension' | 'drivetrain' | 'damage' | 'vehicles' | 'files' | 'diagnostics';
 
 export default function VehicleStudio() {
   const [scan, setScan] = useState<VSScan | null>(null);
@@ -161,15 +161,30 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
   const [handlingId, setHandlingId] = useState<string | null>(firstGood?.handlingId || null);
   const selVeh = handlingVehicles.find((v) => v.handlingId === handlingId) || firstGood;
   const [showBuild, setShowBuild] = useState(false);
-  const tabs: { id: Tab; label: string; icon: any }[] = [
-    { id: 'overview', label: 'Overview', icon: Info },
-    { id: 'tune', label: 'Smart Tune', icon: Sparkles },
-    { id: 'handling', label: 'Handling', icon: Gauge },
-    { id: 'vehicles', label: `Vehicles (${scan.vehicles.length})`, icon: Car },
-    { id: 'files', label: 'Files', icon: FileCode },
-    { id: 'diagnostics', label: `Diagnostics (${scan.summary.errors + scan.summary.warnings})`, icon: ShieldCheck },
+  const groups: { label: string; tabs: { id: Tab; label: string; icon: any }[] }[] = [
+    { label: 'Vehicle', tabs: [
+      { id: 'overview', label: 'Overview', icon: Info },
+      { id: 'tune', label: 'Smart Tune', icon: Sparkles },
+      { id: 'performance', label: 'Performance', icon: Gauge },
+    ] },
+    { label: 'Physics', tabs: [
+      { id: 'handling', label: 'Handling', icon: Cog },
+      { id: 'transmission', label: 'Transmission', icon: Cog },
+      { id: 'drivetrain', label: 'Drivetrain', icon: Cog },
+      { id: 'brakes', label: 'Brakes', icon: Cog },
+      { id: 'traction', label: 'Traction', icon: Cog },
+      { id: 'suspension', label: 'Suspension', icon: Cog },
+      { id: 'damage', label: 'Damage', icon: Cog },
+    ] },
+    { label: 'Data', tabs: [
+      { id: 'vehicles', label: `Vehicles (${scan.vehicles.length})`, icon: Car },
+      { id: 'files', label: 'Files', icon: FileCode },
+      { id: 'diagnostics', label: `Diagnostics (${scan.summary.errors + scan.summary.warnings})`, icon: ShieldCheck },
+    ] },
   ];
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const ok = scan.summary.errors === 0;
+  const physicsTabs = new Set(['performance', 'transmission', 'drivetrain', 'brakes', 'traction', 'suspension', 'damage', 'handling', 'tune']);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -190,18 +205,10 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
       </div>
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Left tabs */}
-        <div className="w-52 shrink-0 border-r border-overlay-6 p-2 space-y-1 overflow-y-auto">
-          {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all ${
-                tab === t.id ? 'bg-primary-500/10 text-primary-200 border border-primary-500/25' : 'text-surface-400 hover:bg-overlay-4 border border-transparent'
-              }`}>
-              <t.icon size={15} /> {t.label}
-            </button>
-          ))}
-          {handlingVehicles.length > 1 && (tab === 'tune' || tab === 'handling') && (
-            <div className="pt-3 mt-2 border-t border-overlay-6">
+        {/* Left tabs — collapsible groups */}
+        <div className="w-52 shrink-0 border-r border-overlay-6 p-2 space-y-2 overflow-y-auto">
+          {handlingVehicles.length > 1 && physicsTabs.has(tab) && (
+            <div className="pb-2 mb-1 border-b border-overlay-6">
               <p className="text-[9px] uppercase tracking-wider text-surface-600 px-1 mb-1">Editing vehicle</p>
               <select value={handlingId || ''} onChange={(e) => setHandlingId(e.target.value)}
                 className="w-full bg-overlay-3 border border-overlay-6 rounded-lg px-2 py-1.5 text-xs text-surface-200 focus:outline-none">
@@ -209,6 +216,22 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
               </select>
             </div>
           )}
+          {groups.map((g) => (
+            <div key={g.label}>
+              <button onClick={() => setCollapsed((c) => ({ ...c, [g.label]: !c[g.label] }))}
+                className="w-full flex items-center gap-1 px-1 py-1 text-[9px] uppercase tracking-wider text-surface-600 hover:text-surface-400">
+                {collapsed[g.label] ? <ChevronRight size={11} /> : <ChevronDown size={11} />} {g.label}
+              </button>
+              {!collapsed[g.label] && g.tabs.map((t) => (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-left text-sm transition-all ${
+                    tab === t.id ? 'bg-primary-500/10 text-primary-200 border border-primary-500/25' : 'text-surface-400 hover:bg-overlay-4 border border-transparent'
+                  }`}>
+                  <t.icon size={14} /> {t.label}
+                </button>
+              ))}
+            </div>
+          ))}
         </div>
 
         {/* Content */}
@@ -217,6 +240,9 @@ function Workspace({ scan, onBack, onRescan, tab, setTab, rescanning }: {
           {tab === 'tune' && (handlingId && selVeh?.hasHandling ? <SmartTuneTab root={scan.root} handlingId={handlingId} type={selVeh?.type || 'Unknown'} onChanged={onRescan} />
             : handlingId ? <TuneMissing modelName={selVeh?.modelName || ''} handlingId={handlingId} onGoHandling={() => setTab('handling')} /> : <NoHandling />)}
           {tab === 'handling' && (handlingId ? <HandlingTab root={scan.root} handlingId={handlingId} modelName={selVeh?.modelName || ''} onChanged={onRescan} onGoDiagnostics={() => setTab('diagnostics')} /> : <NoHandling />)}
+          {(['performance', 'transmission', 'drivetrain', 'brakes', 'traction', 'suspension', 'damage'] as Tab[]).includes(tab) && (
+            handlingId ? <PhysicsTab root={scan.root} handlingId={handlingId} config={PHYS[tab]} onChanged={onRescan} onGoHandling={() => setTab('handling')} /> : <NoHandling />
+          )}
           {tab === 'vehicles' && <VehiclesTab scan={scan} />}
           {tab === 'files' && <FilesTab scan={scan} />}
           {tab === 'diagnostics' && <DiagnosticsTab scan={scan} onRescan={onRescan} />}
@@ -622,13 +648,37 @@ const HANDLING_CATEGORIES: { title: string; fields: string[] }[] = [
 ];
 const TIPS: Record<string, string> = {
   fInitialDriveForce: 'Engine power — higher accelerates faster and raises top speed.',
+  fInitialDriveMaxFlatVel: 'Drivetrain top-speed cap (game units) — raise for a higher top speed.',
+  fInitialDragCoeff: 'Aerodynamic drag — lower raises top speed.',
+  fDriveInertia: 'Engine rev responsiveness — higher revs quicker.',
+  fClutchChangeRateScaleUpShift: 'Up-shift speed — higher shifts faster.',
+  fClutchChangeRateScaleDownShift: 'Down-shift speed — higher shifts faster.',
   fTractionCurveMax: 'Peak grip — higher corners harder; too high feels glued to the road.',
+  fTractionCurveMin: 'Grip once the tyres break away (at the limit / sliding).',
+  fTractionCurveLateral: 'Sideways grip response.',
+  fTractionSpringDeltaMax: 'How far the tyre can flex before losing grip.',
+  fLowSpeedTractionLossMult: 'Off-the-line wheelspin — higher = more low-speed slip.',
+  fTractionBiasFront: 'Grip balance front↔rear. Above 0.5 = more front grip (understeer).',
+  fTractionLossMult: 'Grip loss on poor surfaces.',
   fBrakeForce: 'Braking power — higher stops shorter.',
+  fBrakeBiasFront: 'Brake balance front↔rear. 0.5 = even; higher = more front braking.',
+  fHandBrakeForce: 'Handbrake strength.',
   fMass: 'Vehicle weight in kg — affects inertia, grip and momentum.',
   fSteeringLock: 'Max steering angle in degrees — higher turns sharper.',
   fDriveBiasFront: 'Drivetrain: 0 = RWD, 1 = FWD, 0.5 = AWD.',
   nInitialDriveGears: 'Number of gears.',
   fSuspensionForce: 'Suspension stiffness — higher rides firmer.',
+  fSuspensionCompDamp: 'Compression damping — controls how bumps are absorbed.',
+  fSuspensionReboundDamp: 'Rebound damping — controls how the suspension settles.',
+  fSuspensionUpperLimit: 'Max upward suspension travel.',
+  fSuspensionLowerLimit: 'Max downward suspension travel.',
+  fSuspensionRaise: 'Ride height — higher lifts the vehicle.',
+  fSuspensionBiasFront: 'Suspension balance front↔rear.',
+  fAntiRollBarForce: 'Body-roll resistance in corners — higher = flatter cornering.',
+  fCollisionDamageMult: 'How much collisions damage the vehicle.',
+  fWeaponDamageMult: 'Damage taken from weapons.',
+  fDeformationDamageMult: 'How much the body visually deforms.',
+  fEngineDamageMult: 'How quickly the engine takes damage.',
 };
 
 function HandlingTab({ root, handlingId, modelName, onChanged, onGoDiagnostics }: { root: string; handlingId: string; modelName: string; onChanged: () => void; onGoDiagnostics: () => void }) {
@@ -731,6 +781,189 @@ function HandlingTab({ root, handlingId, modelName, onChanged, onGoDiagnostics }
         );
       })}
       <p className="text-[10px] text-surface-600">Edits are surgical — only the fields you change are rewritten, and a backup is saved before every write. Unknown fields and comments are preserved.</p>
+    </div>
+  );
+}
+
+/* ═══════════════════ Themed physics editors (Performance/Brakes/…) ═══════════════════ */
+function friendly(name: string): string {
+  return name.replace(/^(f|n|vec|str)/, '').replace(/([A-Z])/g, ' $1').replace(/\s+/g, ' ').trim();
+}
+interface PhysicsConfig {
+  title: string;
+  presetsCategory?: string;
+  fields: string[];
+  derived?: { label: string; field: string; unit?: string; hint?: string; toDisplay: (raw: number) => string; fromDisplay: (disp: string) => string }[];
+  radio?: { label: string; field: string; hint?: string; options: { label: string; value: string }[] };
+}
+const PHYS: Record<string, PhysicsConfig> = {
+  performance: { title: 'Performance', presetsCategory: 'Performance',
+    fields: ['fInitialDriveForce', 'fInitialDriveMaxFlatVel', 'fInitialDragCoeff', 'fDriveInertia', 'nInitialDriveGears'],
+    derived: [{ label: 'Top speed', field: 'fInitialDriveMaxFlatVel', unit: 'mph', hint: 'estimate', toDisplay: (r) => String(Math.round(r * 0.92)), fromDisplay: (d) => ((parseFloat(d) || 0) / 0.92).toFixed(6) }] },
+  transmission: { title: 'Transmission', presetsCategory: 'Transmission',
+    fields: ['nInitialDriveGears', 'fInitialDriveForce', 'fDriveInertia', 'fInitialDriveMaxFlatVel', 'fClutchChangeRateScaleUpShift', 'fClutchChangeRateScaleDownShift', 'fDriveBiasFront'] },
+  brakes: { title: 'Brakes', presetsCategory: 'Brakes', fields: ['fBrakeForce', 'fBrakeBiasFront', 'fHandBrakeForce'] },
+  traction: { title: 'Traction', presetsCategory: 'Traction', fields: ['fTractionCurveMax', 'fTractionCurveMin', 'fTractionCurveLateral', 'fTractionSpringDeltaMax', 'fLowSpeedTractionLossMult', 'fTractionBiasFront', 'fTractionLossMult'] },
+  suspension: { title: 'Suspension', presetsCategory: 'Suspension', fields: ['fSuspensionForce', 'fSuspensionCompDamp', 'fSuspensionReboundDamp', 'fSuspensionUpperLimit', 'fSuspensionLowerLimit', 'fSuspensionRaise', 'fSuspensionBiasFront', 'fAntiRollBarForce', 'fAntiRollBarBiasFront'] },
+  drivetrain: { title: 'Drivetrain', fields: ['fDriveBiasFront'],
+    radio: { label: 'Drive layout', field: 'fDriveBiasFront', hint: '0 = rear-wheel drive · 1 = front-wheel drive · 0.5 = all-wheel drive.', options: [{ label: 'RWD', value: '0.000000' }, { label: 'AWD', value: '0.500000' }, { label: 'FWD', value: '1.000000' }] } },
+  damage: { title: 'Damage', presetsCategory: 'Damage', fields: ['fCollisionDamageMult', 'fEngineDamageMult', 'fDeformationDamageMult', 'fWeaponDamageMult'] },
+};
+
+function PhysicsTab({ root, handlingId, config, onChanged, onGoHandling }: { root: string; handlingId: string; config: PhysicsConfig; onChanged: () => void; onGoHandling: () => void }) {
+  const [fields, setFields] = useState<VSHandlingField[]>([]);
+  const [orig, setOrig] = useState<Record<string, string>>({});
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [presets, setPresets] = useState<{ id: string; name: string }[]>([]);
+  const [preview, setPreview] = useState<{ id: string; name?: string; changes: { name: string; from: string; to: string }[] } | null>(null);
+  const [busyPreset, setBusyPreset] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await window.electronAPI.vehicleStudio.readHandling(root, handlingId);
+    setLoading(false);
+    if (!r.ok || !r.fields) { setReadError(r.error || 'Could not read handling'); return; }
+    setReadError(null); setFields(r.fields);
+    const o: Record<string, string> = {};
+    for (const f of r.fields) if (f.value !== undefined) o[f.name] = f.value;
+    setOrig(o); setEdits({}); setPreview(null);
+  };
+  React.useEffect(() => { load(); if (config.presetsCategory) window.electronAPI.vehicleStudio.categoryPresets(config.presetsCategory).then(setPresets); else setPresets([]); }, [root, handlingId, config.title]);
+
+  const val = (k: string) => (k in edits ? edits[k] : orig[k]) ?? '';
+  const setVal = (k: string, v: string) => setEdits((e) => ({ ...e, [k]: v }));
+  const resetField = (k: string) => setEdits((e) => { const n = { ...e }; delete n[k]; return n; });
+  const dirty = Object.keys(edits).filter((k) => edits[k] !== orig[k]);
+
+  const save = async () => {
+    if (!dirty.length) return;
+    setSaving(true);
+    const r = await window.electronAPI.vehicleStudio.writeHandling(root, handlingId, dirty.map((k) => ({ name: k, value: edits[k] })));
+    setSaving(false);
+    if (r.ok) { toast.success(`Saved ${r.applied} field(s)`); await load(); onChanged(); } else toast.error(r.error || 'Save failed');
+  };
+  const undo = async () => { const r = await window.electronAPI.vehicleStudio.undoHandling(root, handlingId); if (r.ok) { toast.success('Reverted last save'); await load(); onChanged(); } else toast.error(r.error || 'Nothing to undo'); };
+  const openPreset = async (id: string) => {
+    setBusyPreset(true);
+    const p = await window.electronAPI.vehicleStudio.previewCategoryPreset(root, handlingId, config.presetsCategory!, id);
+    setBusyPreset(false);
+    if (!p.ok) { toast.error(p.error || 'Preview failed'); return; }
+    setPreview({ id, name: p.name, changes: p.changes || [] });
+  };
+  const applyPreset = async () => {
+    if (!preview) return;
+    setBusyPreset(true);
+    const r = await window.electronAPI.vehicleStudio.applyCategoryPreset(root, handlingId, config.presetsCategory!, preview.id);
+    setBusyPreset(false);
+    if (r.ok) { toast.success(`Applied ${preview.name} (${r.applied} fields)`); setPreview(null); await load(); onChanged(); } else toast.error(r.error || 'Apply failed');
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-sm text-surface-500"><Loader2 size={14} className="animate-spin" /> Reading handling…</div>;
+  if (readError) return (
+    <div className="card flex flex-col items-center py-14 text-center max-w-xl">
+      <AlertTriangle size={28} className="text-amber-400 mb-3" />
+      <p className="text-sm font-bold text-surface-100">Handling not available</p>
+      <p className="text-xs text-surface-500 mt-1 max-w-sm">This vehicle's handling entry is missing — repair it in the Handling tab, then this editor works.</p>
+      <button onClick={onGoHandling} className="btn-primary text-xs py-2 mt-4 flex items-center gap-1.5"><Gauge size={13} /> Go to Handling</button>
+    </div>
+  );
+
+  const present = (n: string) => fields.some((f) => f.name === n);
+  const shownFields = config.fields.filter(present);
+  const radio = config.radio;
+  const derived = (config.derived || []).filter((d) => present(d.field));
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex items-center gap-2">
+        <p className="text-sm font-bold text-surface-100 flex-1">{config.title}</p>
+        {dirty.length > 0 && <span className="text-[11px] text-primary-300 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" /> {dirty.length} unsaved</span>}
+        <button onClick={undo} className="btn-secondary text-xs py-1.5 flex items-center gap-1.5"><Undo2 size={13} /> Undo</button>
+        <button onClick={save} disabled={saving || !dirty.length} className="btn-primary text-xs py-1.5 flex items-center gap-1.5">{saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save{dirty.length ? ` (${dirty.length})` : ''}</button>
+      </div>
+
+      {presets.length > 0 && (
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Presets</p>
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map((p) => <button key={p.id} onClick={() => openPreset(p.id)} disabled={busyPreset}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${preview?.id === p.id ? 'bg-primary-500/15 text-primary-200 border-primary-500/30' : 'bg-overlay-3 text-surface-200 border-overlay-6 hover:bg-primary-600 hover:text-white'}`}>{p.name}</button>)}
+          </div>
+          {preview && (
+            <div className="mt-3 rounded-lg border border-primary-500/25 bg-primary-500/5 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-primary-200">{preview.name} — preview</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setPreview(null)} className="btn-secondary text-[11px] py-1">Cancel</button>
+                  <button onClick={applyPreset} disabled={busyPreset || !preview.changes.length} className="btn-primary text-[11px] py-1">Apply</button>
+                </div>
+              </div>
+              {preview.changes.length === 0 ? <p className="text-xs text-surface-500">Already matches this preset — no changes.</p> : (
+                <div className="space-y-1">{preview.changes.map((c) => (
+                  <div key={c.name} className="flex items-center gap-2 text-xs"><span className="font-mono text-surface-400 flex-1 truncate">{friendly(c.name)}</span><span className="text-surface-500">{parseFloat(c.from)}</span><ChevronRight size={11} className="text-surface-600" /><span className="text-emerald-300 font-semibold">{parseFloat(c.to)}</span></div>
+                ))}</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {radio && present(radio.field) && (
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">{radio.label}</p>
+          <div className="flex gap-2">
+            {radio.options.map((o) => {
+              const active = parseFloat(val(radio.field) || '0').toFixed(2) === parseFloat(o.value).toFixed(2);
+              return <button key={o.label} onClick={() => setVal(radio.field, o.value)} className={`flex-1 text-xs font-semibold py-2 rounded-lg border transition-all ${active ? 'bg-primary-500/15 text-primary-200 border-primary-500/30' : 'bg-overlay-3 text-surface-300 border-overlay-6 hover:bg-overlay-6'}`}>{o.label}</button>;
+            })}
+          </div>
+          {radio.hint && <p className="text-[10px] text-surface-600 mt-2">{radio.hint}</p>}
+        </div>
+      )}
+
+      {derived.length > 0 && (
+        <div className="card space-y-3">
+          <p className="text-[10px] uppercase tracking-wider text-surface-500">Quick controls</p>
+          {derived.map((d) => {
+            const raw = parseFloat(val(d.field) || '0');
+            return (
+              <div key={d.field}>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-surface-300 flex-1">{d.label}{d.hint && <span className="text-surface-600"> · {d.hint}</span>}</label>
+                  <input value={d.toDisplay(raw)} onChange={(e) => setVal(d.field, d.fromDisplay(e.target.value))} className="w-24 bg-overlay-3 border border-overlay-6 rounded-lg px-2 py-1 text-xs text-right text-surface-100 focus:outline-none focus:border-primary-500/40" />
+                  {d.unit && <span className="text-[10px] text-surface-500 w-8">{d.unit}</span>}
+                </div>
+                <p className="text-[10px] text-surface-600 font-mono mt-0.5">{d.field} = {val(d.field)}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="card">
+        <p className="text-[10px] uppercase tracking-wider text-surface-500 mb-2">Values <span className="text-surface-600 normal-case">— advanced</span></p>
+        <div className="space-y-2.5">
+          {shownFields.length === 0 ? <p className="text-xs text-surface-500">None of these fields exist in this vehicle's handling.</p> : shownFields.map((name) => {
+            const isDirty = (name in edits) && edits[name] !== orig[name];
+            return (
+              <div key={name}>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-surface-200 flex-1 truncate" title={TIPS[name] || name}>{friendly(name)} {isDirty && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-400 ml-1" />}</label>
+                  <input value={val(name)} onChange={(e) => setVal(name, e.target.value)} spellCheck={false} className={`w-28 bg-overlay-3 border rounded-lg px-2 py-1 text-xs font-mono text-right focus:outline-none ${isDirty ? 'border-primary-500/50 text-primary-200' : 'border-overlay-6 text-surface-200'}`} />
+                  <button onClick={() => resetField(name)} disabled={!isDirty} title="Reset to last saved" className={`text-surface-500 hover:text-surface-200 ${!isDirty ? 'opacity-30' : ''}`}><RotateCcw size={12} /></button>
+                </div>
+                <div className="flex items-start gap-2 mt-0.5">
+                  <p className="text-[10px] text-surface-600 font-mono shrink-0">{name}{isDirty ? ` · was ${orig[name]}` : ''}</p>
+                  {TIPS[name] && <p className="text-[10px] text-surface-500 flex-1 truncate">{TIPS[name]}</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

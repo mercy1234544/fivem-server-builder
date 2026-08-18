@@ -152,6 +152,9 @@ const electronAPI = {
     cloneHandling: (root: string, sourceId: string, newId: string) => ipcRenderer.invoke('vehicleStudio:cloneHandling', root, sourceId, newId),
     setVehicleHandlingId: (root: string, modelName: string, newHandlingId: string) => ipcRenderer.invoke('vehicleStudio:setVehicleHandlingId', root, modelName, newHandlingId),
     registerHandling: (root: string) => ipcRenderer.invoke('vehicleStudio:registerHandling', root),
+    categoryPresets: (category: string) => ipcRenderer.invoke('vehicleStudio:categoryPresets', category),
+    previewCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => ipcRenderer.invoke('vehicleStudio:previewCategoryPreset', root, handlingId, category, presetId),
+    applyCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => ipcRenderer.invoke('vehicleStudio:applyCategoryPreset', root, handlingId, category, presetId),
   },
 
   // System info (Settings page: CPU / RAM / disk / specs)

@@ -191,6 +191,55 @@ const REC: Record<string, { r: string; a: string[] }> = {
   Motorcycle: { r: 'street', a: ['sport', 'drag'] },
 };
 
+// Per-category simple-mode presets. Each sets a small group of REAL handling
+// fields (only ones that already exist get written). Deterministic + mass-aware.
+type FieldPreset = { id: string; name: string; compute: (f: Record<string, number>) => Record<string, number> };
+const CAT_PRESETS: Record<string, FieldPreset[]> = {
+  Brakes: [
+    { id: 'street', name: 'Street', compute: () => ({ fBrakeForce: 0.9, fBrakeBiasFront: 0.5, fHandBrakeForce: 0.8 }) },
+    { id: 'sport', name: 'Sport', compute: () => ({ fBrakeForce: 1.0, fBrakeBiasFront: 0.52, fHandBrakeForce: 0.9 }) },
+    { id: 'performance', name: 'Performance', compute: () => ({ fBrakeForce: 1.1, fBrakeBiasFront: 0.53, fHandBrakeForce: 1.0 }) },
+    { id: 'track', name: 'Track', compute: () => ({ fBrakeForce: 1.25, fBrakeBiasFront: 0.55, fHandBrakeForce: 1.1 }) },
+    { id: 'heavy', name: 'Heavy Duty', compute: (f) => ({ fBrakeForce: clamp(0.8 + (f.fMass ?? 2000) / 30000, 0.8, 1.2), fBrakeBiasFront: 0.5 }) },
+  ],
+  Traction: [
+    { id: 'low', name: 'Low Grip', compute: () => ({ fTractionCurveMax: 1.4, fTractionCurveMin: 1.2, fLowSpeedTractionLossMult: 1.2 }) },
+    { id: 'street', name: 'Street', compute: () => ({ fTractionCurveMax: 2.0, fTractionCurveMin: 1.7, fLowSpeedTractionLossMult: 1.0 }) },
+    { id: 'sport', name: 'Sport', compute: () => ({ fTractionCurveMax: 2.25, fTractionCurveMin: 1.9, fTractionCurveLateral: 22.5 }) },
+    { id: 'high', name: 'High Grip', compute: () => ({ fTractionCurveMax: 2.6, fTractionCurveMin: 2.2, fLowSpeedTractionLossMult: 0.85 }) },
+    { id: 'race', name: 'Race', compute: () => ({ fTractionCurveMax: 2.85, fTractionCurveMin: 2.4, fTractionCurveLateral: 24, fLowSpeedTractionLossMult: 0.8 }) },
+    { id: 'drift', name: 'Drift', compute: () => ({ fTractionCurveMax: 1.6, fTractionBiasFront: 0.55, fLowSpeedTractionLossMult: 1.4 }) },
+  ],
+  Suspension: [
+    { id: 'comfort', name: 'Comfort', compute: () => ({ fSuspensionForce: 1.6, fSuspensionCompDamp: 1.2, fSuspensionReboundDamp: 1.8, fAntiRollBarForce: 0.6 }) },
+    { id: 'balanced', name: 'Balanced', compute: () => ({ fSuspensionForce: 2.0, fSuspensionCompDamp: 1.4, fSuspensionReboundDamp: 2.0, fAntiRollBarForce: 1.0 }) },
+    { id: 'sport', name: 'Sport', compute: () => ({ fSuspensionForce: 2.5, fSuspensionCompDamp: 1.6, fSuspensionReboundDamp: 2.3, fAntiRollBarForce: 1.3 }) },
+    { id: 'track', name: 'Track', compute: () => ({ fSuspensionForce: 3.0, fSuspensionCompDamp: 1.8, fSuspensionReboundDamp: 2.6, fAntiRollBarForce: 1.6 }) },
+    { id: 'offroad', name: 'Off-Road', compute: () => ({ fSuspensionForce: 2.2, fSuspensionCompDamp: 1.3, fSuspensionReboundDamp: 2.0, fSuspensionRaise: 0.1 }) },
+  ],
+  Damage: [
+    { id: 'realistic', name: 'Realistic', compute: () => ({ fCollisionDamageMult: 1.0, fEngineDamageMult: 1.5, fDeformationDamageMult: 1.0, fWeaponDamageMult: 1.0 }) },
+    { id: 'reduced', name: 'Reduced', compute: () => ({ fCollisionDamageMult: 0.5, fEngineDamageMult: 0.5, fDeformationDamageMult: 0.5, fWeaponDamageMult: 0.5 }) },
+    { id: 'heavy', name: 'Heavy Duty', compute: () => ({ fCollisionDamageMult: 0.3, fEngineDamageMult: 0.3, fDeformationDamageMult: 0.3, fWeaponDamageMult: 0.3 }) },
+    { id: 'race', name: 'Race', compute: () => ({ fCollisionDamageMult: 0.7, fEngineDamageMult: 1.0, fDeformationDamageMult: 0.5, fWeaponDamageMult: 0.8 }) },
+    { id: 'invuln', name: 'Invulnerable', compute: () => ({ fCollisionDamageMult: 0.0, fEngineDamageMult: 0.0, fDeformationDamageMult: 0.0, fWeaponDamageMult: 0.0 }) },
+  ],
+  Transmission: [
+    { id: 'shift-slow', name: 'Slow shifts', compute: () => ({ fClutchChangeRateScaleUpShift: 1.0, fClutchChangeRateScaleDownShift: 1.0 }) },
+    { id: 'shift-normal', name: 'Normal shifts', compute: () => ({ fClutchChangeRateScaleUpShift: 2.0, fClutchChangeRateScaleDownShift: 2.0 }) },
+    { id: 'shift-fast', name: 'Fast shifts', compute: () => ({ fClutchChangeRateScaleUpShift: 3.5, fClutchChangeRateScaleDownShift: 3.5 }) },
+    { id: 'shift-race', name: 'Race shifts', compute: () => ({ fClutchChangeRateScaleUpShift: 5.0, fClutchChangeRateScaleDownShift: 5.0 }) },
+  ],
+  Performance: [
+    { id: 'street', name: 'Street', compute: (f) => ({ fInitialDriveForce: clamp((f.fInitialDriveForce ?? 0.3) + 0.02, 0.26, 0.42), fInitialDragCoeff: 8.5 }) },
+    { id: 'sport', name: 'Sport', compute: () => ({ fInitialDriveForce: 0.34, fInitialDragCoeff: 8.0, fInitialDriveMaxFlatVel: 155 }) },
+    { id: 'performance', name: 'Performance', compute: () => ({ fInitialDriveForce: 0.38, fInitialDragCoeff: 7.6, fInitialDriveMaxFlatVel: 165 }) },
+    { id: 'track', name: 'Track', compute: () => ({ fInitialDriveForce: 0.39, fInitialDragCoeff: 7.4, fInitialDriveMaxFlatVel: 170 }) },
+    { id: 'race', name: 'Race', compute: () => ({ fInitialDriveForce: 0.42, fInitialDragCoeff: 7.0, fInitialDriveMaxFlatVel: 180 }) },
+    { id: 'drag', name: 'Drag', compute: () => ({ fInitialDriveForce: 0.45, fInitialDragCoeff: 6.8, nInitialDriveGears: 4 }) },
+  ],
+};
+
 export class VehicleStudio {
   private scanner = new VehicleResourceScanner();
 
@@ -602,32 +651,53 @@ export class VehicleStudio {
     return { recommended: r.r, alternatives: r.a, profiles: PROFILES.map((p) => ({ id: p.id, name: p.name, desc: p.desc })) };
   }
 
-  /** Preview a preset: the exact before→after field changes (only existing fields). */
-  previewTune(root: string, handlingId: string, profileId: string): { ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[] } {
-    const prof = PROFILES.find((p) => p.id === profileId);
-    if (!prof) return { ok: false, error: 'Unknown preset' };
+  /** Shared: turn a compute(currentFields)→targets into an exact before→after
+   *  diff, keeping only fields that actually exist and actually change. */
+  private computeChanges(root: string, handlingId: string, compute: (f: Record<string, number>) => Record<string, number>): { ok: boolean; error?: string; changes?: { name: string; from: string; to: string }[] } {
     const read = this.readHandling(root, handlingId);
     if (!read.ok || !read.fields) return { ok: false, error: read.error };
-
     const cur: Record<string, number> = {};
-    const curStr: Record<string, string> = {};
-    for (const fld of read.fields) if (fld.value !== undefined) { cur[fld.name] = parseFloat(fld.value); curStr[fld.name] = fld.value; }
-
-    const targets = prof.compute(cur);
+    for (const fld of read.fields) if (fld.value !== undefined) cur[fld.name] = parseFloat(fld.value);
+    const targets = compute(cur);
     const changes: { name: string; from: string; to: string }[] = [];
     for (const [name, target] of Object.entries(targets)) {
       const fld = read.fields.find((f) => f.name === name && f.editable);
-      if (!fld || fld.value === undefined) continue;                    // don't add fields that don't exist
+      if (!fld || fld.value === undefined) continue;
       const to = name.startsWith('n') ? String(Math.round(target)) : target.toFixed(6);
-      if (parseFloat(fld.value).toFixed(6) === parseFloat(to).toFixed(6)) continue; // unchanged
+      if (parseFloat(fld.value).toFixed(6) === parseFloat(to).toFixed(6)) continue;
       changes.push({ name, from: fld.value, to });
     }
-    return { ok: true, name: prof.name, changes };
+    return { ok: true, changes };
   }
 
-  /** Apply a preset (preview → surgical write, with backup). */
+  /** Preview a Smart Tune preset: the exact before→after field changes. */
+  previewTune(root: string, handlingId: string, profileId: string): { ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[] } {
+    const prof = PROFILES.find((p) => p.id === profileId);
+    if (!prof) return { ok: false, error: 'Unknown preset' };
+    const r = this.computeChanges(root, handlingId, prof.compute);
+    return r.ok ? { ok: true, name: prof.name, changes: r.changes } : r;
+  }
+
+  /** Apply a Smart Tune preset (preview → surgical write, with backup). */
   applyTune(root: string, handlingId: string, profileId: string): { ok: boolean; error?: string; backup?: string; applied?: number } {
     const prev = this.previewTune(root, handlingId, profileId);
+    if (!prev.ok || !prev.changes) return { ok: false, error: prev.error };
+    if (prev.changes.length === 0) return { ok: true, applied: 0 };
+    return this.writeHandling(root, handlingId, prev.changes.map((c) => ({ name: c.name, value: c.to })));
+  }
+
+  /** Simple-mode presets for a physics category (Brakes/Traction/…). */
+  categoryPresets(category: string): { id: string; name: string }[] {
+    return (CAT_PRESETS[category] || []).map((p) => ({ id: p.id, name: p.name }));
+  }
+  previewCategoryPreset(root: string, handlingId: string, category: string, presetId: string): { ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[] } {
+    const p = (CAT_PRESETS[category] || []).find((x) => x.id === presetId);
+    if (!p) return { ok: false, error: 'Unknown preset' };
+    const r = this.computeChanges(root, handlingId, p.compute);
+    return r.ok ? { ok: true, name: p.name, changes: r.changes } : r;
+  }
+  applyCategoryPreset(root: string, handlingId: string, category: string, presetId: string): { ok: boolean; error?: string; backup?: string; applied?: number } {
+    const prev = this.previewCategoryPreset(root, handlingId, category, presetId);
     if (!prev.ok || !prev.changes) return { ok: false, error: prev.error };
     if (prev.changes.length === 0) return { ok: true, applied: 0 };
     return this.writeHandling(root, handlingId, prev.changes.map((c) => ({ name: c.name, value: c.to })));

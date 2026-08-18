@@ -188,6 +188,9 @@ interface ElectronAPI {
     cloneHandling: (root: string, sourceId: string, newId: string) => Promise<{ ok: boolean; error?: string }>;
     setVehicleHandlingId: (root: string, modelName: string, newHandlingId: string) => Promise<{ ok: boolean; error?: string }>;
     registerHandling: (root: string) => Promise<{ ok: boolean; error?: string }>;
+    categoryPresets: (category: string) => Promise<{ id: string; name: string }[]>;
+    previewCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => Promise<{ ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[] }>;
+    applyCategoryPreset: (root: string, handlingId: string, category: string, presetId: string) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
   };
 
   system: {
