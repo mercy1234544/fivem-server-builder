@@ -1,6 +1,6 @@
 {
   "name": "fivem-server-builder",
-  "version": "1.75.0",
+  "version": "1.75.1",
   "description": "Professional desktop application for creating, managing, and maintaining FiveM servers",
   "main": "dist/main/main.js",
   "scripts": {

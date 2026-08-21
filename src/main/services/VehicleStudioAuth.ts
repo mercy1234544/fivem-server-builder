@@ -21,7 +21,7 @@ const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 // avoid a network round-trip on every protected IPC call.
 const GUARD_CACHE_MS = 60 * 1000;
 
-interface Saved { token?: string; username?: string; lastAuthorizedAt?: number; }
+interface Saved { token?: string; refreshToken?: string; username?: string; lastAuthorizedAt?: number; }
 export interface VSAuthStatus { enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean; expiresAt?: number; entitlements?: string[]; }
 
 export class VehicleStudioAuth {
@@ -62,9 +62,14 @@ export class VehicleStudioAuth {
       const res = await this.api('/session', { headers: { Authorization: `Bearer ${s.token}` } });
       if (res.status === 200) {
         const j: any = await res.json();
-        this.save({ ...s, username: j.username, lastAuthorizedAt: Date.now() });
+        // Deployed backend shape: { user: { discordUsername, ... }, session: { expiresAt } }.
+        // 200 always means a valid session (the backend returns 401 otherwise).
+        // Fallbacks (?? j.username / j.expiresAt) keep the local reference backend working too.
+        const username = j.user?.discordUsername ?? j.username;
+        const expiresAt = j.session?.expiresAt ?? j.expiresAt;
+        this.save({ ...s, username, lastAuthorizedAt: Date.now() });
         // entitlements is optional/future — passed through if the backend sends it.
-        const st: VSAuthStatus = { enabled: true, authorized: true, username: j.username, expiresAt: j.expiresAt, entitlements: Array.isArray(j.entitlements) ? j.entitlements : undefined };
+        const st: VSAuthStatus = { enabled: true, authorized: true, username, expiresAt, entitlements: Array.isArray(j.entitlements) ? j.entitlements : undefined };
         this.setGuard(true);
         return st;
       }
@@ -106,10 +111,14 @@ export class VehicleStudioAuth {
     try {
       const res = await this.api('/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
       const j: any = await res.json().catch(() => ({}));
-      if (res.status === 200 && j.session) {
-        this.save({ token: j.session, username: j.username, lastAuthorizedAt: Date.now() });
+      // Deployed backend shape: { sessionToken, refreshToken, expiresAt, user: { discordUsername, ... } }.
+      // Fallbacks (?? j.session / j.username) keep the local reference backend working too.
+      const token = j.sessionToken ?? j.session;
+      if (res.status === 200 && token) {
+        const username = j.user?.discordUsername ?? j.username;
+        this.save({ token, refreshToken: j.refreshToken, username, lastAuthorizedAt: Date.now() });
         this.setGuard(true);
-        return { ok: true, username: j.username };
+        return { ok: true, username };
       }
       return { ok: false, error: j.error || 'invalid_code', message: j.message || 'Verification failed.' };
     } catch { return { ok: false, error: 'offline', message: 'Could not reach the verification server.' }; }

@@ -9,6 +9,24 @@ import { useAppAuth } from '../stores/useAppAuth';
 
 const FEATURES = ['Server management & console', 'Resource store & installs', 'Vehicle Studio', 'Backups, tools & diagnostics'];
 
+// The backend returns a bare { error: <code> } on /verify with no human text, so
+// the client owns the wording. Codes observed from the live backend: expired,
+// invalid, invalid_request; plus the client's own offline/not_configured.
+const REDEEM_ERRORS: Record<string, string> = {
+  expired: 'This code has expired — generate a new one.',
+  invalid: 'That code is invalid or has already been used.',
+  invalid_code: 'That code is invalid or has already been used.',
+  invalid_request: 'That code is invalid or has already been used.',
+  used: 'That code is invalid or has already been used.',
+  already_used: 'That code is invalid or has already been used.',
+  not_found: 'That code is invalid or has already been used.',
+  too_many_attempts: 'Too many attempts — please wait a minute and try again.',
+  rate_limited: 'Too many attempts — please wait a minute and try again.',
+  offline: "Couldn't reach the verification server — check your connection and try again.",
+  server_error: 'The verification server hit a problem — please try again in a moment.',
+  not_configured: 'Verification is not configured.',
+};
+
 export default function AppAccessGate({ children }: { children: React.ReactNode }) {
   const { status, loading, startLogin, redeem, refresh } = useAppAuth();
   const [code, setCode] = useState('');
@@ -33,12 +51,13 @@ export default function AppAccessGate({ children }: { children: React.ReactNode 
     const r = await redeem(code.trim());
     setBusy(false);
     if (r.ok) { toast.success(`Verified${r.username ? ` as ${r.username}` : ''} — welcome!`); setCode(''); }
-    else setErr(r.message || 'Verification failed.');
+    else setErr(REDEEM_ERRORS[r.error || ''] || r.message || 'Verification failed.');
   };
 
   const reasonBanner = status.reason === 'revoked' ? 'Your access has been revoked.'
     : status.reason === 'offline' ? "Couldn't reach the verification server — check your connection and try again."
-    : status.reason === 'invalid_session' || status.reason === 'expired_session' ? 'Your session has expired — verify again.'
+    : (status.reason === 'expired' || status.reason === 'expired_session') ? 'Your session has expired — verify with Discord again.'
+    : (status.reason === 'invalid' || status.reason === 'invalid_session') ? 'Your session is no longer valid — verify with Discord again.'
     : null;
 
   return (
@@ -68,7 +87,7 @@ export default function AppAccessGate({ children }: { children: React.ReactNode 
             value={code}
             onChange={(e) => { setCode(e.target.value.toUpperCase()); setErr(null); }}
             onKeyDown={(e) => e.key === 'Enter' && doRedeem()}
-            placeholder="VST-____-____" spellCheck={false}
+            placeholder="PGMQND54Y2" spellCheck={false}
             className="flex-1 bg-[#0d1117] border border-overlay-6 rounded-lg px-3 py-2 text-sm font-mono tracking-widest text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40"
           />
           <button onClick={doRedeem} disabled={busy || !code.trim()} className="btn-primary text-xs px-4">{busy ? <Loader2 size={13} className="animate-spin" /> : 'Unlock'}</button>
