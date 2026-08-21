@@ -1,9 +1,11 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield, Car } from 'lucide-react';
+import { Minus, Square, X, Hexagon, Home, Store, Server, Settings, Shield, Car, LogOut, UserCircle2 } from 'lucide-react';
 import { useAuth } from '../stores/useAuth';
+import { useAppAuth } from '../stores/useAppAuth';
 import { useLocalAccess } from '../stores/useLocalAccess';
 import { isSupabaseConfigured } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 // HTN-style top bar: brand left, primary nav in the middle, window controls
 // right. This replaces the old left sidebar — all per-server tools live inside
@@ -22,6 +24,9 @@ export default function TitleBar() {
   const role = useAuth((s) => s.profile?.role);
   const isAdmin = role === 'admin' || role === 'owner';
   const localUnlocked = useLocalAccess((s) => s.unlocked);
+  const authStatus = useAppAuth((s) => s.status);
+  const signOut = useAppAuth((s) => s.signOut);
+  const showAccount = !!authStatus?.enabled && !!authStatus?.authorized;
 
   // Admin tab is hidden from regular users. It shows for Supabase admins/owners,
   // and in local mode only once someone has entered the admin code on this
@@ -76,6 +81,20 @@ export default function TitleBar() {
           );
         })}
       </nav>
+
+      {/* Authenticated account surface — Discord username + sign out. */}
+      {showAccount && (
+        <div className="flex items-center gap-1.5 pr-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <span className="flex items-center gap-1.5 text-[11px] text-surface-300 px-2 py-1 rounded-lg bg-overlay-4 border border-overlay-6 max-w-[160px]" title={`Signed in${authStatus?.stale ? ' (offline)' : ''}`}>
+            <UserCircle2 size={13} className="text-emerald-400 shrink-0" />
+            <span className="truncate">{authStatus?.username || 'Verified'}</span>
+          </span>
+          <button onClick={async () => { await signOut(); toast('Signed out'); }} title="Sign out"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-surface-500 hover:text-surface-100 hover:bg-overlay-6 transition-all">
+            <LogOut size={13} />
+          </button>
+        </div>
+      )}
 
       {/* Window controls — only the three buttons are no-drag; the surrounding
           strip stays draggable. */}

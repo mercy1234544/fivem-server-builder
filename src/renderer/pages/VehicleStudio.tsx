@@ -22,13 +22,9 @@ const saveRecent = (r: Recent[]) => localStorage.setItem(RECENT_KEY, JSON.string
 
 type Tab = 'overview' | 'tune' | 'performance' | 'transmission' | 'handling' | 'brakes' | 'traction' | 'suspension' | 'drivetrain' | 'damage' | 'vehicles' | 'variations' | 'lighting' | 'files' | 'diagnostics';
 
-// The access gate wraps the whole studio. When the backend isn't configured
-// (enabled=false) it renders the studio directly — verification is opt-in.
+// Access control is enforced app-wide by AppAccessGate (in Layout), so Vehicle
+// Studio no longer gates itself — it renders directly.
 export default function VehicleStudio() {
-  return <VSAccessGate><VehicleStudioInner /></VSAccessGate>;
-}
-
-function VehicleStudioInner() {
   const [scan, setScan] = useState<VSScan | null>(null);
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -1328,72 +1324,6 @@ function TuneMissing({ modelName, handlingId, onGoHandling }: { modelName: strin
       <p className="text-sm font-bold text-surface-100">Can't tune — handling is missing</p>
       <p className="text-xs text-surface-500 mt-1 max-w-sm">{modelName} references handling "{handlingId}", but no matching entry exists yet. Repair it first, then Smart Tune will work.</p>
       <button onClick={onGoHandling} className="btn-primary text-xs py-2 mt-4 flex items-center gap-1.5"><Gauge size={13} /> Repair in Handling tab</button>
-    </div>
-  );
-}
-
-/* ═══════════════════ Access gate (backend-authorized) ═══════════════════ */
-interface VSAuthStatusT { enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean }
-function VSAccessGate({ children }: { children: React.ReactNode }) {
-  const [st, setSt] = useState<VSAuthStatusT | null>(null);
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const check = async () => {
-    try { const s = await window.electronAPI?.vsAuth?.status(); setSt(s || { enabled: false, authorized: true }); }
-    catch { setSt({ enabled: false, authorized: true }); }
-  };
-  React.useEffect(() => { check(); }, []);
-
-  if (!st) return <div className="p-6 max-w-6xl mx-auto"><div className="card flex items-center gap-2 py-16 justify-center text-surface-500"><Loader2 size={18} className="animate-spin" /> Checking access…</div></div>;
-  if (!st.enabled || st.authorized) return <>{children}</>; // open, or verified
-
-  const verify = () => window.electronAPI.vsAuth.startLogin();
-  const redeem = async () => {
-    if (!code.trim()) return;
-    setBusy(true); setErr(null);
-    const r = await window.electronAPI.vsAuth.redeem(code.trim());
-    setBusy(false);
-    if (r.ok) { toast.success(`Verified${r.username ? ` as ${r.username}` : ''} — Vehicle Studio unlocked`); setCode(''); check(); }
-    else setErr(r.message || 'Verification failed.');
-  };
-
-  const reasonBanner = st.reason === 'revoked' ? 'Your Vehicle Studio access has been revoked.'
-    : st.reason === 'offline' ? "Couldn't reach the verification server — check your connection and try again."
-    : st.reason === 'invalid_session' || st.reason === 'expired_session' ? 'Your session has expired — verify again.'
-    : null;
-
-  return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card max-w-md mx-auto mt-8 p-7 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-primary-500/15 border border-primary-500/25 flex items-center justify-center mx-auto mb-4"><Car size={26} className="text-primary-300" /></div>
-        <h1 className="text-xl font-extrabold text-surface-100">Vehicle Studio</h1>
-        <p className="text-sm text-surface-400 mt-1">Advanced vehicle editing requires Discord verification.</p>
-
-        <div className="text-left text-xs text-surface-300 my-5 space-y-1.5">
-          {['Smart Vehicle Tuning', 'Handling Editor', 'Metadata Tools', 'Diagnostics & Repair', 'Vehicle Builder'].map((f) => (
-            <div key={f} className="flex items-center gap-2"><CheckCircle2 size={13} className="text-emerald-400 shrink-0" /> {f}</div>
-          ))}
-        </div>
-
-        {reasonBanner && <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300 text-xs px-3 py-2 mb-3">{reasonBanner}</div>}
-
-        <button onClick={verify} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-[#5865F2] text-white hover:bg-[#6875f5] transition-all">
-          <Shield size={15} /> Verify with Discord
-        </button>
-
-        <p className="text-[11px] text-surface-500 mt-4 mb-1">Already have a code?</p>
-        <div className="flex gap-2">
-          <input value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setErr(null); }} onKeyDown={(e) => e.key === 'Enter' && redeem()}
-            placeholder="VST-____-____" spellCheck={false}
-            className="flex-1 bg-[#0d1117] border border-overlay-6 rounded-lg px-3 py-2 text-sm font-mono tracking-widest text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40" />
-          <button onClick={redeem} disabled={busy || !code.trim()} className="btn-primary text-xs px-4">{busy ? <Loader2 size={13} className="animate-spin" /> : 'Unlock'}</button>
-        </div>
-        {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
-
-        <button onClick={check} className="text-[11px] text-surface-500 hover:text-surface-300 mt-4 flex items-center gap-1.5 mx-auto"><RefreshCw size={11} /> Check again</button>
-      </motion.div>
     </div>
   );
 }

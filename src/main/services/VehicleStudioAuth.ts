@@ -1,30 +1,33 @@
-// Desktop-side client for the Vehicle Studio auth backend.
+// Desktop-side client for the app auth backend (shared by the whole app).
 //
 // IMPORTANT: this file contains NO Discord secrets. It only talks to the backend
 // API over HTTPS. The session token lives in the MAIN process (userData), never
 // in the renderer — so changing localStorage / React state / dev-console values
-// cannot unlock Vehicle Studio. Authorization is decided by the backend's
-// /session check, not by the client.
-//
-// Until a backend URL is configured, verification is DISABLED and Vehicle Studio
-// stays open exactly as before (so shipping this never locks anyone out).
+// cannot unlock the app. Authorization is decided by the backend's /session
+// check, not by the client. The main-process IPC guard (main.ts) also calls
+// ensureAuthorized() before running protected operations, so a bypassed renderer
+// still cannot invoke protected functionality.
 import { shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
-// OWNER SETUP: set this to your deployed backend's public URL (or the env var
-// VST_AUTH_BACKEND_URL). Empty = verification disabled / Vehicle Studio open.
-const AUTH_BACKEND_URL = (process.env.VST_AUTH_BACKEND_URL || '').replace(/\/$/, '');
+// Production backend. VST_AUTH_BACKEND_URL is an optional dev override.
+const AUTH_BACKEND_URL = (process.env.VST_AUTH_BACKEND_URL || 'https://auth.tryautoscout.com').replace(/\/$/, '');
 
 // Offline grace: if the backend is briefly unreachable, a recently-validated
 // session keeps working for this long (revocation still applies once online).
 const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+// The main-process guard caches the last authorization decision this long to
+// avoid a network round-trip on every protected IPC call.
+const GUARD_CACHE_MS = 60 * 1000;
 
 interface Saved { token?: string; username?: string; lastAuthorizedAt?: number; }
-export interface VSAuthStatus { enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean; expiresAt?: number; }
+export interface VSAuthStatus { enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean; expiresAt?: number; entitlements?: string[]; }
 
 export class VehicleStudioAuth {
   private file: string;
+  // Last authorization decision, cached for the main-process IPC guard.
+  private guardCache: { authorized: boolean; at: number } | null = null;
   constructor(userDataPath: string) {
     const dir = path.join(userDataPath, 'data');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -60,15 +63,34 @@ export class VehicleStudioAuth {
       if (res.status === 200) {
         const j: any = await res.json();
         this.save({ ...s, username: j.username, lastAuthorizedAt: Date.now() });
-        return { enabled: true, authorized: true, username: j.username, expiresAt: j.expiresAt };
+        // entitlements is optional/future — passed through if the backend sends it.
+        const st: VSAuthStatus = { enabled: true, authorized: true, username: j.username, expiresAt: j.expiresAt, entitlements: Array.isArray(j.entitlements) ? j.entitlements : undefined };
+        this.setGuard(true);
+        return st;
       }
       if (res.status === 401) { // definitively invalid/revoked/expired
         const j: any = await res.json().catch(() => ({}));
         this.clear();
+        this.setGuard(false);
         return { enabled: true, authorized: false, reason: j.error || 'invalid_session' };
       }
-      return this.grace(s); // 5xx etc. — treat as temporary
-    } catch { return this.grace(s); }
+      const g = this.grace(s); this.setGuard(g.authorized); return g; // 5xx etc. — temporary
+    } catch { const g = this.grace(s); this.setGuard(g.authorized); return g; }
+  }
+
+  private setGuard(authorized: boolean) { this.guardCache = { authorized, at: Date.now() }; }
+
+  /**
+   * Server-side-backed authorization check for the main-process IPC guard.
+   * Cached briefly to avoid hammering the backend. Returns true when
+   * verification is disabled (dev override) or the backend confirms the session.
+   */
+  async ensureAuthorized(): Promise<boolean> {
+    if (!this.isEnabled()) return true;
+    const now = Date.now();
+    if (this.guardCache && now - this.guardCache.at < GUARD_CACHE_MS) return this.guardCache.authorized;
+    const st = await this.status(); // validates with backend + refreshes guardCache
+    return st.authorized;
   }
 
   /** Open the official Discord authorization flow in the system browser. */
@@ -86,6 +108,7 @@ export class VehicleStudioAuth {
       const j: any = await res.json().catch(() => ({}));
       if (res.status === 200 && j.session) {
         this.save({ token: j.session, username: j.username, lastAuthorizedAt: Date.now() });
+        this.setGuard(true);
         return { ok: true, username: j.username };
       }
       return { ok: false, error: j.error || 'invalid_code', message: j.message || 'Verification failed.' };
@@ -96,5 +119,6 @@ export class VehicleStudioAuth {
     const s = this.load();
     if (this.isEnabled() && s.token) { try { await this.api('/logout', { method: 'POST', headers: { Authorization: `Bearer ${s.token}` } }); } catch {} }
     this.clear();
+    this.setGuard(false);
   }
 }

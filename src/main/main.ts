@@ -92,7 +92,36 @@ function initializeServices() {
   healthScanner.setDatabaseManager(databaseManager);
 }
 
+// ── Main-process auth guard (Phase B) ────────────────────────────────────────
+// Protected IPC channels require a backend-validated session before they run,
+// so a bypassed/edited renderer still cannot invoke protected functionality.
+// Everything else (window controls, the auth channels themselves, system info,
+// dialogs, shell, updater) stays public. Authorization is decided by the
+// backend via VehicleStudioAuth.ensureAuthorized() — never trusted from the client.
+const PROTECTED_IPC_PREFIXES = [
+  'server:', 'resource:', 'health:', 'backup:', 'file:', 'import:',
+  'artifact:', 'vehicle:', 'vehicleStudio:', 'livery:', 'git:', 'bridge:',
+];
+let ipcGuardInstalled = false;
+function installIpcAuthGuard() {
+  if (ipcGuardInstalled) return;
+  ipcGuardInstalled = true;
+  const raw = ipcMain.handle.bind(ipcMain);
+  (ipcMain as any).handle = (channel: string, listener: (event: any, ...args: any[]) => any) => {
+    if (PROTECTED_IPC_PREFIXES.some((p) => channel.startsWith(p))) {
+      return raw(channel, async (event: any, ...args: any[]) => {
+        const ok = await vehicleStudioAuth.ensureAuthorized();
+        if (!ok) throw new Error('AUTH_REQUIRED'); // deny — renderer is already gated for legit use
+        return listener(event, ...args);
+      });
+    }
+    return raw(channel, listener);
+  };
+}
+
 function registerIpcHandlers() {
+  installIpcAuthGuard();
+
   // Window controls
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {

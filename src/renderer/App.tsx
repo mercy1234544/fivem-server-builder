@@ -24,13 +24,17 @@ import Settings from './pages/Settings';
 import AdminPanel from './pages/AdminPanel';
 import VehicleStudio from './pages/VehicleStudio';
 import { useAuth } from './stores/useAuth';
+import { useAppAuth } from './stores/useAppAuth';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const initAuth = useAuth((s) => s.init);
+  const initAppAuth = useAppAuth((s) => s.init);
 
   // Restore the account session (no-op until Supabase is configured).
   useEffect(() => { initAuth(); }, [initAuth]);
+  // Check backend-authorized app access + start periodic revalidation.
+  useEffect(() => { initAppAuth(); }, [initAppAuth]);
 
   const handleSplashComplete = useCallback(() => {
     setShowSplash(false);

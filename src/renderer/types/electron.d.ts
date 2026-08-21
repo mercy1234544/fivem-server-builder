@@ -197,7 +197,7 @@ interface ElectronAPI {
   };
 
   vsAuth: {
-    status: () => Promise<{ enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean; expiresAt?: number }>;
+    status: () => Promise<{ enabled: boolean; authorized: boolean; username?: string; reason?: string; stale?: boolean; expiresAt?: number; entitlements?: string[] }>;
     startLogin: () => Promise<{ ok: boolean; error?: string }>;
     redeem: (code: string) => Promise<{ ok: boolean; username?: string; error?: string; message?: string }>;
     logout: () => Promise<void>;

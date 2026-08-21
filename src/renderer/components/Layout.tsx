@@ -1,6 +1,7 @@
 import React from 'react';
 import TitleBar from './TitleBar';
 import UpdateBanner from './UpdateBanner';
+import AppAccessGate from './AppAccessGate';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,7 +22,8 @@ export default function Layout({ children }: LayoutProps) {
         <TitleBar />
         <UpdateBanner />
         <main className="flex-1 overflow-y-auto">
-          {children}
+          {/* App-wide Discord access gate — protects all routed pages. */}
+          <AppAccessGate>{children}</AppAccessGate>
         </main>
       </div>
     </div>
