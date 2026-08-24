@@ -290,6 +290,17 @@ function registerIpcHandlers() {
   ipcMain.handle('vehicleStudio:readMeta', (_, root: string, kind: any, key: string) => vehicleStudio.readMeta(root, kind, key));
   ipcMain.handle('vehicleStudio:writeMeta', (_, root: string, kind: any, key: string, changes: any[]) => vehicleStudio.writeMeta(root, kind, key, changes));
   ipcMain.handle('vehicleStudio:undoMeta', (_, root: string, kind: any, key: string) => vehicleStudio.undoMeta(root, kind, key));
+  // Tuning upgrade: original-baseline diff/reset, full-handling presets, smart tune.
+  ipcMain.handle('vehicleStudio:handlingDiff', (_, root: string, handlingId: string) => vehicleStudio.handlingDiff(root, handlingId));
+  ipcMain.handle('vehicleStudio:resetHandlingFields', (_, root: string, handlingId: string, names: string[]) => vehicleStudio.resetHandlingFields(root, handlingId, names));
+  ipcMain.handle('vehicleStudio:revertHandling', (_, root: string, handlingId: string) => vehicleStudio.revertHandling(root, handlingId));
+  ipcMain.handle('vehicleStudio:handlingPresets', () => vehicleStudio.handlingPresets());
+  ipcMain.handle('vehicleStudio:previewHandlingPreset', (_, root: string, handlingId: string, presetId: string) => vehicleStudio.previewHandlingPreset(root, handlingId, presetId));
+  ipcMain.handle('vehicleStudio:applyHandlingPreset', (_, root: string, handlingId: string, presetId: string) => vehicleStudio.applyHandlingPreset(root, handlingId, presetId));
+  ipcMain.handle('vehicleStudio:smartTunePreview', (_, root: string, handlingId: string, req: any) => vehicleStudio.smartTunePreview(root, handlingId, req));
+  ipcMain.handle('vehicleStudio:smartTuneApply', (_, root: string, handlingId: string, req: any) => vehicleStudio.smartTuneApply(root, handlingId, req));
+  ipcMain.handle('vehicleStudio:metaDiff', (_, root: string, kind: any, key: string) => vehicleStudio.metaDiff(root, kind, key));
+  ipcMain.handle('vehicleStudio:spawnReport', (_, root: string) => vehicleStudio.spawnReport(root));
 
   // Vehicle Studio access gate — talks to the auth backend (no secrets here).
   ipcMain.handle('vsAuth:status', () => vehicleStudioAuth.status());

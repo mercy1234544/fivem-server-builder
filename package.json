@@ -1,6 +1,6 @@
 {
   "name": "fivem-server-builder",
-  "version": "1.75.1",
+  "version": "1.76.0",
   "description": "Professional desktop application for creating, managing, and maintaining FiveM servers",
   "main": "dist/main/main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "dev:main": "npx tsc -p tsconfig.main.json && npx electron .",
     "dev:renderer": "npx vite",
     "build": "npx tsc -p tsconfig.main.json && npx vite build",
+    "test:vs": "npx tsc -p tsconfig.main.json && node test/vehicle-studio/meta.test.js && node test/vehicle-studio/service.test.js",
     "build:exe": "npm run build && npx electron-builder --win",
     "start": "npx electron .",
     "electron:dev": "npx concurrently -k \"npx vite\" \"npx tsc -p tsconfig.main.json -w\" \"npx wait-on http://localhost:5173 && npx electron .\""

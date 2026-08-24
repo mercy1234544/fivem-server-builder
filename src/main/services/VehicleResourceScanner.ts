@@ -25,7 +25,7 @@ export interface VehicleScanResult {
   };
 }
 
-const SKIP_DIRS = new Set(['node_modules', '.git', '.vscode', 'cache']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.vscode', 'cache', '.vehicle-studio-original', '.vehicle-studio-backups']);
 const MAX_DEPTH = 8;
 
 export class VehicleResourceScanner {

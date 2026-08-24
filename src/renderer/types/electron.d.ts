@@ -1,3 +1,5 @@
+import type { SmartTuneRequest } from '../../main/shared/handlingMeta';
+
 interface ElectronAPI {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
@@ -172,7 +174,7 @@ interface ElectronAPI {
     pickFolder: () => Promise<string | null>;
     pickZip: () => Promise<string | null>;
     scan: (inputPath: string, copy?: boolean) => Promise<{ ok: boolean; error?: string; data?: VSScan }>;
-    readHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string; filePath?: string; fields?: VSHandlingField[] }>;
+    readHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string; filePath?: string; fields?: VSHandlingField[]; original?: Record<string, string> }>;
     writeHandling: (root: string, handlingId: string, changes: VSHandlingChange[]) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
     undoHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string }>;
     recommend: (type: string) => Promise<{ recommended: string; alternatives: string[]; profiles: { id: string; name: string; desc: string }[] }>;
@@ -194,6 +196,16 @@ interface ElectronAPI {
     readMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string) => Promise<{ ok: boolean; error?: string; file?: string; fields?: VSMetaField[]; summary?: Record<string, any> }>;
     writeMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string, changes: { tag: string; value: string }[]) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
     undoMeta: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string) => Promise<{ ok: boolean; error?: string }>;
+    handlingDiff: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string; changes?: { name: string; original: string; current: string }[] }>;
+    resetHandlingFields: (root: string, handlingId: string, names: string[]) => Promise<{ ok: boolean; error?: string; applied?: number; backup?: string }>;
+    revertHandling: (root: string, handlingId: string) => Promise<{ ok: boolean; error?: string; applied?: number; backup?: string }>;
+    handlingPresets: () => Promise<{ id: string; name: string; desc: string; special?: string }[]>;
+    previewHandlingPreset: (root: string, handlingId: string, presetId: string) => Promise<{ ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[]; warnings?: string[] }>;
+    applyHandlingPreset: (root: string, handlingId: string, presetId: string) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
+    smartTunePreview: (root: string, handlingId: string, req: SmartTuneRequest) => Promise<{ ok: boolean; error?: string; changes?: { name: string; from: string; to: string }[]; warnings?: string[] }>;
+    smartTuneApply: (root: string, handlingId: string, req: SmartTuneRequest) => Promise<{ ok: boolean; error?: string; backup?: string; applied?: number }>;
+    metaDiff: (root: string, kind: 'vehicles' | 'carvariations' | 'carcols', key: string) => Promise<{ ok: boolean; error?: string; changes?: { tag: string; friendly: string; original: string; current: string }[] }>;
+    spawnReport: (root: string) => Promise<{ ok: boolean; vehicles: { modelName: string; spawnCode: string; hasModel: boolean; level: 'ok' | 'warn' | 'error'; issues: string[]; suggestion?: string }[]; modelFiles: string[] }>;
   };
 
   vsAuth: {

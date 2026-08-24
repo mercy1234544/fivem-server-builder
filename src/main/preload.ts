@@ -158,6 +158,16 @@ const electronAPI = {
     readMeta: (root: string, kind: string, key: string) => ipcRenderer.invoke('vehicleStudio:readMeta', root, kind, key),
     writeMeta: (root: string, kind: string, key: string, changes: { tag: string; value: string }[]) => ipcRenderer.invoke('vehicleStudio:writeMeta', root, kind, key, changes),
     undoMeta: (root: string, kind: string, key: string) => ipcRenderer.invoke('vehicleStudio:undoMeta', root, kind, key),
+    handlingDiff: (root: string, handlingId: string) => ipcRenderer.invoke('vehicleStudio:handlingDiff', root, handlingId),
+    resetHandlingFields: (root: string, handlingId: string, names: string[]) => ipcRenderer.invoke('vehicleStudio:resetHandlingFields', root, handlingId, names),
+    revertHandling: (root: string, handlingId: string) => ipcRenderer.invoke('vehicleStudio:revertHandling', root, handlingId),
+    handlingPresets: () => ipcRenderer.invoke('vehicleStudio:handlingPresets'),
+    previewHandlingPreset: (root: string, handlingId: string, presetId: string) => ipcRenderer.invoke('vehicleStudio:previewHandlingPreset', root, handlingId, presetId),
+    applyHandlingPreset: (root: string, handlingId: string, presetId: string) => ipcRenderer.invoke('vehicleStudio:applyHandlingPreset', root, handlingId, presetId),
+    smartTunePreview: (root: string, handlingId: string, req: any) => ipcRenderer.invoke('vehicleStudio:smartTunePreview', root, handlingId, req),
+    smartTuneApply: (root: string, handlingId: string, req: any) => ipcRenderer.invoke('vehicleStudio:smartTuneApply', root, handlingId, req),
+    metaDiff: (root: string, kind: string, key: string) => ipcRenderer.invoke('vehicleStudio:metaDiff', root, kind, key),
+    spawnReport: (root: string) => ipcRenderer.invoke('vehicleStudio:spawnReport', root),
   },
 
   // Vehicle Studio access gate (backend-authorized; no secrets in the client)

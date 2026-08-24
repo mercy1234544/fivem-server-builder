@@ -8,6 +8,7 @@ import path from 'path';
 import os from 'os';
 import extractZip from 'extract-zip';
 import { VehicleResourceScanner } from './VehicleResourceScanner';
+import * as HM from '../shared/handlingMeta';
 
 export type Severity = 'error' | 'warning' | 'info';
 
@@ -76,7 +77,7 @@ const CLASS_MAP: Record<string, string> = {
 
 // Never copy dev cruft or Vehicle Studio's own backup folders into a workspace
 // copy or an export/install (backups are internal, not part of the resource).
-const SKIP_COPY = new Set(['node_modules', '.git', '.vscode', '.vehicle-studio-backups']);
+const SKIP_COPY = new Set(['node_modules', '.git', '.vscode', '.vehicle-studio-backups', '.vehicle-studio-original']);
 
 // ── Smart Tuning: data-driven driving profiles ────────────────────────────────
 // Each profile computes ABSOLUTE target values (deterministic, some scaled by
@@ -485,6 +486,10 @@ export class VehicleStudio {
       info: diagnostics.filter((d) => d.severity === 'info').length,
     };
 
+    // Snapshot the pristine meta files ONCE per workspace so "original imported
+    // value", reset-to-original and the global Changes diff have a baseline.
+    this.ensureBaseline(root, scan);
+
     return {
       root, workspacePath, name: path.basename(inputPath).replace(/\.zip$/i, ''), isZip,
       manifest,
@@ -562,31 +567,74 @@ export class VehicleStudio {
   }
 
   /** Read the editable fields of a handling entry. */
-  readHandling(root: string, handlingId: string): { ok: boolean; error?: string; filePath?: string; fields?: VSHandlingField[] } {
-    const file = this.firstHandlingFile(root, handlingId);
-    if (!file) return { ok: false, error: `Handling "${handlingId}" not found in any handling.meta` };
-    const content = fs.readFileSync(file, 'utf-8');
-    const loc = this.locateHandlingBlock(content, handlingId)!;
-    const block = content.slice(loc.start, loc.end);
-
+  // Parse a handling <Item> block into its uniquely-addressable editable fields.
+  private parseHandlingBlock(block: string): VSHandlingField[] {
     const fields: VSHandlingField[] = [];
     const counts = new Map<string, number>();
-    const bump = (n: string) => counts.set(n, (counts.get(n) || 0) + 1);
-
-    // scalar/int: <fMass value="1800.0" /> or <nInitialDriveGears value="6" />
-    for (const m of block.matchAll(/<([fn][A-Za-z0-9_]+)\s+value="([^"]*)"\s*\/?>/g)) { bump(m[1]); }
+    for (const m of block.matchAll(/<([fn][A-Za-z0-9_]+)\s+value="([^"]*)"\s*\/?>/g)) counts.set(m[1], (counts.get(m[1]) || 0) + 1);
     for (const m of block.matchAll(/<([fn][A-Za-z0-9_]+)\s+value="([^"]*)"\s*\/?>/g)) {
       if ((counts.get(m[1]) || 0) !== 1) continue; // only uniquely-addressable fields are editable
       fields.push({ name: m[1], kind: m[1].startsWith('n') ? 'int' : 'scalar', value: m[2], editable: true });
     }
-    // vectors: <vecCentreOfMassOffset x="0" y="0" z="0" />
     const vcounts = new Map<string, number>();
     for (const m of block.matchAll(/<(vec[A-Za-z0-9_]+)\s+x="([^"]*)"\s+y="([^"]*)"\s+z="([^"]*)"\s*\/?>/g)) vcounts.set(m[1], (vcounts.get(m[1]) || 0) + 1);
     for (const m of block.matchAll(/<(vec[A-Za-z0-9_]+)\s+x="([^"]*)"\s+y="([^"]*)"\s+z="([^"]*)"\s*\/?>/g)) {
       if ((vcounts.get(m[1]) || 0) !== 1) continue;
       fields.push({ name: m[1], kind: 'vector', x: m[2], y: m[3], z: m[4], editable: true });
     }
-    return { ok: true, filePath: file, fields };
+    return fields;
+  }
+  // Flatten fields into a { field: value, 'vec.x': value } map for diffing/reset.
+  private flatMap(fields: VSHandlingField[]): Record<string, string> {
+    const o: Record<string, string> = {};
+    for (const f of fields) {
+      if (f.kind === 'vector') { o[`${f.name}.x`] = f.x!; o[`${f.name}.y`] = f.y!; o[`${f.name}.z`] = f.z!; }
+      else if (f.value !== undefined) o[f.name] = f.value;
+    }
+    return o;
+  }
+
+  // ── Original-value baseline (pristine snapshot for reset / diff) ──────────────
+  private baselineDir(root: string): string { return path.join(root, '.vehicle-studio-original'); }
+  private baselineFileFor(root: string, file: string): string { return path.join(this.baselineDir(root), path.relative(root, file)); }
+  /** Snapshot the pristine meta files ONCE per workspace (never overwritten). */
+  private ensureBaseline(root: string, scan?: ReturnType<VehicleResourceScanner['scan']>) {
+    const dir = this.baselineDir(root);
+    if (fs.existsSync(dir)) return;
+    let s: ReturnType<VehicleResourceScanner['scan']>;
+    try { s = scan || this.scanner.scan(root); } catch { return; }
+    const files = [
+      ...s.meta.handling, ...s.meta.vehicles, ...s.meta.carvariations, ...s.meta.vehiclelayouts,
+      ...['carcols.meta', 'data/carcols.meta'].map((p) => path.join(root, p)).filter((p) => fs.existsSync(p)),
+    ];
+    for (const f of files) {
+      try { const dest = this.baselineFileFor(root, f); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(f, dest); } catch {}
+    }
+  }
+  /** Original (imported) flat value map for a handling entry, or null if no baseline. */
+  private originalHandlingMap(root: string, handlingId: string): Record<string, string> | null {
+    const file = this.firstHandlingFile(root, handlingId);
+    if (!file) return null;
+    const baseFile = this.baselineFileFor(root, file);
+    if (!fs.existsSync(baseFile)) return null;
+    try {
+      const content = fs.readFileSync(baseFile, 'utf-8');
+      const loc = this.locateHandlingBlock(content, handlingId);
+      if (!loc) return null;
+      return this.flatMap(this.parseHandlingBlock(content.slice(loc.start, loc.end)));
+    } catch { return null; }
+  }
+
+  readHandling(root: string, handlingId: string): { ok: boolean; error?: string; filePath?: string; fields?: VSHandlingField[]; original?: Record<string, string> } {
+    const file = this.firstHandlingFile(root, handlingId);
+    if (!file) return { ok: false, error: `Handling "${handlingId}" not found in any handling.meta` };
+    this.ensureBaseline(root);
+    const content = fs.readFileSync(file, 'utf-8');
+    const loc = this.locateHandlingBlock(content, handlingId)!;
+    const fields = this.parseHandlingBlock(content.slice(loc.start, loc.end));
+    // "original" = the imported baseline; falls back to current if no baseline exists.
+    const original = this.originalHandlingMap(root, handlingId) ?? this.flatMap(fields);
+    return { ok: true, filePath: file, fields, original };
   }
 
   private backup(file: string): string {
@@ -747,6 +795,145 @@ export class VehicleStudio {
     if (!prev.ok || !prev.changes) return { ok: false, error: prev.error };
     if (prev.changes.length === 0) return { ok: true, applied: 0 };
     return this.writeHandling(root, handlingId, prev.changes.map((c) => ({ name: c.name, value: c.to })));
+  }
+
+  // ── Original-baseline diff / reset / revert (requirements #3, #12) ───────────
+  /** Every editable handling field whose CURRENT value differs from the imported ORIGINAL. */
+  handlingDiff(root: string, handlingId: string): { ok: boolean; error?: string; changes?: { name: string; original: string; current: string }[] } {
+    const read = this.readHandling(root, handlingId);
+    if (!read.ok || !read.fields || !read.original) return { ok: false, error: read.error };
+    const cur = this.flatMap(read.fields);
+    const orig = read.original;
+    const changes: { name: string; original: string; current: string }[] = [];
+    for (const k of Object.keys(cur)) {
+      if (!(k in orig)) continue;
+      if (parseFloat(orig[k]).toFixed(6) === parseFloat(cur[k]).toFixed(6)) continue;
+      changes.push({ name: k, original: orig[k], current: cur[k] });
+    }
+    return { ok: true, changes };
+  }
+  /** Restore specific fields to their original imported values (surgical write + backup). */
+  resetHandlingFields(root: string, handlingId: string, names: string[]): { ok: boolean; error?: string; applied?: number; backup?: string } {
+    const read = this.readHandling(root, handlingId);
+    if (!read.ok || !read.original) return { ok: false, error: read.error };
+    const orig = read.original;
+    const changes: VSHandlingChange[] = [];
+    for (const name of names) {
+      if (!(name in orig)) continue;
+      const [base, axis] = name.split('.');
+      changes.push(axis ? { name: base, axis: axis as 'x' | 'y' | 'z', value: orig[name] } : { name: base, value: orig[name] });
+    }
+    if (!changes.length) return { ok: false, error: 'Nothing to reset' };
+    return this.writeHandling(root, handlingId, changes);
+  }
+  /** Reset ALL changed handling fields back to their original imported values. */
+  revertHandling(root: string, handlingId: string): { ok: boolean; error?: string; applied?: number; backup?: string } {
+    const diff = this.handlingDiff(root, handlingId);
+    if (!diff.ok || !diff.changes) return { ok: false, error: diff.error };
+    if (!diff.changes.length) return { ok: true, applied: 0 };
+    return this.resetHandlingFields(root, handlingId, diff.changes.map((c) => c.name));
+  }
+
+  // ── Full-handling presets (requirements #5, #8) ──────────────────────────────
+  private warnFor(changes: { name: string; to: string }[]): string[] {
+    const out: string[] = [];
+    for (const c of changes) {
+      const w = HM.fieldWarning(c.name, parseFloat(c.to));
+      if (w.level === 'extreme') out.push(`${HM.fieldLabel(c.name)}: ${w.message}`);
+    }
+    return out;
+  }
+  handlingPresets(): { id: string; name: string; desc: string; special?: string }[] {
+    return HM.HANDLING_PRESETS.map((p) => ({ id: p.id, name: p.name, desc: p.desc, special: p.special }));
+  }
+  previewHandlingPreset(root: string, handlingId: string, presetId: string): { ok: boolean; error?: string; name?: string; changes?: { name: string; from: string; to: string }[]; warnings?: string[] } {
+    const preset = HM.getPreset(presetId);
+    if (!preset) return { ok: false, error: 'Unknown preset' };
+    if (preset.special === 'stock') {
+      // Stock = revert to imported original: preview shows current → original.
+      const diff = this.handlingDiff(root, handlingId);
+      if (!diff.ok || !diff.changes) return { ok: false, error: diff.error };
+      return { ok: true, name: preset.name, changes: diff.changes.map((c) => ({ name: c.name, from: c.current, to: c.original })), warnings: [] };
+    }
+    const r = this.computeChanges(root, handlingId, (f) => preset.compute(f));
+    if (!r.ok || !r.changes) return { ok: false, error: r.error };
+    return { ok: true, name: preset.name, changes: r.changes, warnings: this.warnFor(r.changes) };
+  }
+  applyHandlingPreset(root: string, handlingId: string, presetId: string): { ok: boolean; error?: string; backup?: string; applied?: number } {
+    const preset = HM.getPreset(presetId);
+    if (!preset) return { ok: false, error: 'Unknown preset' };
+    if (preset.special === 'stock') return this.revertHandling(root, handlingId);
+    const prev = this.previewHandlingPreset(root, handlingId, presetId);
+    if (!prev.ok || !prev.changes) return { ok: false, error: prev.error };
+    if (!prev.changes.length) return { ok: true, applied: 0 };
+    return this.writeHandling(root, handlingId, prev.changes.map((c) => ({ name: c.name, value: c.to })));
+  }
+
+  // ── Vehicle-aware Smart Tune (requirements #6, #7, #8) ───────────────────────
+  smartTunePreview(root: string, handlingId: string, req: HM.SmartTuneRequest): { ok: boolean; error?: string; changes?: { name: string; from: string; to: string }[]; warnings?: string[] } {
+    const r = this.computeChanges(root, handlingId, (f) => HM.smartTuneCompute(f, req));
+    if (!r.ok || !r.changes) return { ok: false, error: r.error };
+    return { ok: true, changes: r.changes, warnings: this.warnFor(r.changes) };
+  }
+  smartTuneApply(root: string, handlingId: string, req: HM.SmartTuneRequest): { ok: boolean; error?: string; backup?: string; applied?: number } {
+    const prev = this.smartTunePreview(root, handlingId, req);
+    if (!prev.ok || !prev.changes) return { ok: false, error: prev.error };
+    if (!prev.changes.length) return { ok: true, applied: 0 };
+    return this.writeHandling(root, handlingId, prev.changes.map((c) => ({ name: c.name, value: c.to })));
+  }
+
+  // ── Metadata diff vs imported baseline (Changes view, #12) ───────────────────
+  metaDiff(root: string, kind: MetaKind, key: string): { ok: boolean; error?: string; changes?: { tag: string; friendly: string; original: string; current: string }[] } {
+    this.ensureBaseline(root);
+    const cur = this.readMeta(root, kind, key);
+    if (!cur.ok || !cur.fields) return { ok: true, changes: [] };
+    const orig = this.readMeta(this.baselineDir(root), kind, key);
+    const om = new Map<string, string>();
+    if (orig.ok && orig.fields) for (const f of orig.fields) om.set(f.tag, f.value);
+    const changes: { tag: string; friendly: string; original: string; current: string }[] = [];
+    for (const f of cur.fields) {
+      if (!f.editable) continue;
+      const o = om.get(f.tag);
+      if (o !== undefined && o !== f.value) changes.push({ tag: f.tag, friendly: f.friendly, original: o, current: f.value });
+    }
+    return { ok: true, changes };
+  }
+
+  // ── Spawn-name (spawn code) identification & validation (export safety) ───────
+  /** Identify the real in-game spawn code (modelName) for each vehicle and flag
+   *  the classic "wrong vehicle name" problem: a modelName with no matching .yft. */
+  spawnReport(root: string): { ok: boolean; vehicles: { modelName: string; spawnCode: string; hasModel: boolean; level: 'ok' | 'warn' | 'error'; issues: string[]; suggestion?: string }[]; modelFiles: string[] } {
+    const scan = this.scanner.scan(root);
+    const yftBases = new Set<string>(scan.vehicles.map((v) => v.name.toLowerCase()));
+    const modelFiles = Array.from(yftBases).sort();
+    const out: { modelName: string; spawnCode: string; hasModel: boolean; level: 'ok' | 'warn' | 'error'; issues: string[]; suggestion?: string }[] = [];
+    const seen = new Map<string, number>();
+    for (const vp of scan.meta.vehicles) {
+      let raw = ''; try { raw = fs.readFileSync(vp, 'utf-8'); } catch { continue; }
+      for (const block of raw.split(/<Item[\s>]/i).slice(1)) {
+        const modelName = this.firstTag(block, 'modelName');
+        if (!modelName) continue;
+        const ml = modelName.toLowerCase();
+        seen.set(ml, (seen.get(ml) || 0) + 1);
+        const hasModel = yftBases.has(ml);
+        const issues: string[] = [];
+        let level: 'ok' | 'warn' | 'error' = 'ok';
+        let suggestion: string | undefined;
+        if (!hasModel) {
+          level = 'error';
+          issues.push(`No model file "${modelName}.yft" in the resource — spawning "${modelName}" in-game will fail.`);
+          let best: string | null = null, bestS = 0;
+          for (const b of yftBases) { const s = similarity(ml, b); if (s > bestS) { bestS = s; best = b; } }
+          if (best && bestS >= 55) { suggestion = best; issues.push(`Closest model file is "${best}.yft" — either rename it to "${modelName}.yft" or set modelName to "${best}".`); }
+        } else if (modelName !== ml) {
+          level = 'warn';
+          issues.push('modelName contains uppercase letters — FiveM spawn codes are lowercase; players spawn it as the lowercase form.');
+        }
+        out.push({ modelName, spawnCode: ml, hasModel, level, issues, suggestion });
+      }
+    }
+    for (const o of out) if ((seen.get(o.modelName.toLowerCase()) || 0) > 1) { o.issues.push('Duplicate modelName — only one entry will load in-game.'); o.level = 'error'; }
+    return { ok: true, vehicles: out, modelFiles };
   }
 
   /** Export the workspace as a plain folder into a chosen destination. */
