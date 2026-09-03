@@ -1,14 +1,21 @@
 // App-wide access gate. Wraps all routed pages (mounted inside Layout, so the
-// TitleBar + window controls stay usable while unauthenticated). Authorization
+// Sidebar + window controls stay usable while unauthenticated). Authorization
 // is decided by the backend; this only reflects it and drives the login UI.
+// This file is a visual layer only — every hook, handler, and error mapping
+// below is unchanged from the working authentication flow.
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Loader2, Shield, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Loader2, MessageSquare, RefreshCw, ChevronDown, Server, Package, Car, ShieldCheck } from 'lucide-react';
 import { useAppAuth } from '../stores/useAppAuth';
 import MercyLogo from './MercyLogo';
 
-const FEATURES = ['Server management & console', 'Resource store & installs', 'Vehicle Studio', 'Backups, tools & diagnostics'];
+const FEATURES = [
+  { icon: Server, label: 'Server management & console' },
+  { icon: Package, label: 'Resource store & installs' },
+  { icon: Car, label: 'Vehicle Studio' },
+  { icon: ShieldCheck, label: 'Backups, tools & diagnostics' },
+];
 
 // The backend returns a bare { error: <code> } on /verify with no human text, so
 // the client owns the wording. Codes observed from the live backend: expired,
@@ -28,17 +35,34 @@ const REDEEM_ERRORS: Record<string, string> = {
   not_configured: 'Verification is not configured.',
 };
 
+// Ambient glow behind the panel — same visual language as Home's hero cards
+// and the sidebar, so login feels like part of the same product.
+function AuthBackdrop() {
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] rounded-full bg-primary-600/10 blur-[140px]" />
+      <div className="absolute -top-[20%] -right-[10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px]" />
+      <div className="absolute -bottom-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+    </div>
+  );
+}
+
 export default function AppAccessGate({ children }: { children: React.ReactNode }) {
   const { status, loading, startLogin, redeem, refresh } = useAppAuth();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showCode, setShowCode] = useState(false);
 
   // Checking access — never flash protected content before we know.
   if (loading || !status) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="flex items-center gap-2 text-surface-500 text-sm"><Loader2 size={18} className="animate-spin" /> Checking access…</div>
+      <div className="h-full flex items-center justify-center relative">
+        <AuthBackdrop />
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative flex flex-col items-center gap-4">
+          <MercyLogo size={48} glow />
+          <div className="flex items-center gap-2 text-surface-400 text-sm"><Loader2 size={16} className="animate-spin" /> Checking access…</div>
+        </motion.div>
       </div>
     );
   }
@@ -57,44 +81,69 @@ export default function AppAccessGate({ children }: { children: React.ReactNode 
 
   const reasonBanner = status.reason === 'revoked' ? 'Your access has been revoked.'
     : status.reason === 'offline' ? "Couldn't reach the verification server — check your connection and try again."
-    : (status.reason === 'expired' || status.reason === 'expired_session') ? 'Your session has expired — verify with Discord again.'
-    : (status.reason === 'invalid' || status.reason === 'invalid_session') ? 'Your session is no longer valid — verify with Discord again.'
+    : (status.reason === 'expired' || status.reason === 'expired_session') ? 'Your session has expired — sign in with Discord again.'
+    : (status.reason === 'invalid' || status.reason === 'invalid_session') ? 'Your session is no longer valid — sign in with Discord again.'
     : null;
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card max-w-md mx-auto mt-8 p-7 text-center">
-        <div className="mx-auto mb-4"><MercyLogo size={56} glow /></div>
-        <h1 className="text-xl font-extrabold text-surface-100">Mercy Launcher</h1>
-        <p className="text-[10px] font-bold text-primary-400 tracking-[0.22em] uppercase mt-0.5">Game Management Hub</p>
-        <p className="text-sm text-surface-400 mt-2">This application requires Discord verification.</p>
+    <div className="h-full overflow-y-auto relative flex items-center justify-center p-6">
+      <AuthBackdrop />
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+        className="relative w-full max-w-sm my-8">
+        <div className="rounded-3xl border border-overlay-6 bg-surface-900/60 backdrop-blur-xl shadow-2xl p-8 text-center">
+          <div className="mx-auto mb-5 flex flex-col items-center gap-3">
+            <MercyLogo size={64} glow />
+            <div className="leading-none">
+              <p className="text-lg font-extrabold text-surface-100 tracking-[0.14em]">MERCY</p>
+              <p className="text-[11px] font-bold text-primary-400 tracking-[0.28em] uppercase">Launcher</p>
+            </div>
+          </div>
 
-        <div className="text-left text-xs text-surface-300 my-5 space-y-1.5">
-          {FEATURES.map((f) => (
-            <div key={f} className="flex items-center gap-2"><CheckCircle2 size={13} className="text-emerald-400 shrink-0" /> {f}</div>
-          ))}
+          <h1 className="text-lg font-extrabold text-surface-100">Welcome to Mercy Launcher</h1>
+          <p className="text-sm text-surface-400 mt-1.5">Sign in with Discord to continue.</p>
+          <p className="text-xs text-surface-500 mt-2 leading-relaxed">Mercy Launcher uses Discord to verify access — no separate password to remember.</p>
+
+          <div className="grid grid-cols-2 gap-2 my-6 text-left">
+            {FEATURES.map((f) => (
+              <div key={f.label} className="flex items-center gap-2 rounded-xl border border-overlay-6 bg-overlay-3 px-2.5 py-2">
+                <f.icon size={13} className="text-primary-300 shrink-0" />
+                <span className="text-[11px] text-surface-300 leading-tight">{f.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {reasonBanner && <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300 text-xs px-3 py-2 mb-4">{reasonBanner}</div>}
+
+          <button onClick={startLogin}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold bg-[#5865F2] text-white hover:bg-[#6875f5] shadow-lg shadow-[#5865F2]/20 hover:shadow-[#5865F2]/30 transition-all">
+            <MessageSquare size={16} /> Continue with Discord
+          </button>
+
+          <button onClick={() => setShowCode((s) => !s)}
+            className="w-full flex items-center justify-center gap-1 text-[11px] text-surface-500 hover:text-surface-300 mt-4 transition-all">
+            Already have a code? <ChevronDown size={12} className={`transition-transform ${showCode ? 'rotate-180' : ''}`} />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {showCode && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                <div className="flex gap-2 mt-3">
+                  <input
+                    value={code}
+                    onChange={(e) => { setCode(e.target.value.toUpperCase()); setErr(null); }}
+                    onKeyDown={(e) => e.key === 'Enter' && doRedeem()}
+                    placeholder="PGMQND54Y2" spellCheck={false}
+                    className="flex-1 bg-overlay-3 border border-overlay-6 rounded-lg px-3 py-2 text-sm font-mono tracking-widest text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40"
+                  />
+                  <button onClick={doRedeem} disabled={busy || !code.trim()} className="btn-primary text-xs px-4">{busy ? <Loader2 size={13} className="animate-spin" /> : 'Unlock'}</button>
+                </div>
+                {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <button onClick={refresh} className="text-[11px] text-surface-600 hover:text-surface-400 mt-5 flex items-center gap-1.5 mx-auto transition-all"><RefreshCw size={11} /> Check again</button>
         </div>
-
-        {reasonBanner && <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300 text-xs px-3 py-2 mb-3">{reasonBanner}</div>}
-
-        <button onClick={startLogin} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-[#5865F2] text-white hover:bg-[#6875f5] transition-all">
-          <Shield size={15} /> Verify with Discord
-        </button>
-
-        <p className="text-[11px] text-surface-500 mt-4 mb-1">Already have a code?</p>
-        <div className="flex gap-2">
-          <input
-            value={code}
-            onChange={(e) => { setCode(e.target.value.toUpperCase()); setErr(null); }}
-            onKeyDown={(e) => e.key === 'Enter' && doRedeem()}
-            placeholder="PGMQND54Y2" spellCheck={false}
-            className="flex-1 bg-[#0d1117] border border-overlay-6 rounded-lg px-3 py-2 text-sm font-mono tracking-widest text-surface-100 placeholder-surface-600 focus:outline-none focus:border-primary-500/40"
-          />
-          <button onClick={doRedeem} disabled={busy || !code.trim()} className="btn-primary text-xs px-4">{busy ? <Loader2 size={13} className="animate-spin" /> : 'Unlock'}</button>
-        </div>
-        {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
-
-        <button onClick={refresh} className="text-[11px] text-surface-500 hover:text-surface-300 mt-4 flex items-center gap-1.5 mx-auto"><RefreshCw size={11} /> Check again</button>
       </motion.div>
     </div>
   );

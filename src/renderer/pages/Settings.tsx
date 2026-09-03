@@ -7,8 +7,11 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { useLocalAccess } from '../stores/useLocalAccess';
+import { useAppAuth } from '../stores/useAppAuth';
 import { isSupabaseConfigured } from '../lib/supabase';
 import MercyLogo from '../components/MercyLogo';
+import toast from 'react-hot-toast';
+import { UserCircle2 } from 'lucide-react';
 
 interface SysInfo {
   cpuModel: string; cpuCores: number; cpuUsage: number;
@@ -36,6 +39,11 @@ export default function Settings() {
   const adminUnlocked = useLocalAccess((s) => s.unlocked);
   const adminHasPin = useLocalAccess((s) => s.hasPin);
   const adminLock = useLocalAccess((s) => s.lock);
+  const authStatus = useAppAuth((s) => s.status);
+  const signOut = useAppAuth((s) => s.signOut);
+  const showAccount = !!authStatus?.enabled && !!authStatus?.authorized;
+  const [signingOut, setSigningOut] = useState(false);
+  const handleSignOut = async () => { setSigningOut(true); await signOut(); setSigningOut(false); toast('Signed out'); };
 
   useEffect(() => {
     const poll = () => window.electronAPI?.system?.getInfo().then(setSys).catch(() => {});
@@ -55,6 +63,27 @@ export default function Settings() {
         <h1 className="text-2xl font-extrabold text-surface-100">Settings</h1>
         <p className="text-sm text-surface-400 mt-1">Manage your storage, system resources, and configuration</p>
       </div>
+
+      {/* ═══ Account (Discord) ═══ */}
+      {showAccount && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-bold text-surface-200">Account</h2>
+          <div className="rounded-2xl border border-overlay-6 bg-surface-900/40 p-5 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-primary-600/20 border border-primary-500/25 flex items-center justify-center shrink-0">
+              <UserCircle2 size={17} className="text-primary-300" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-surface-100 truncate">{authStatus?.username || 'Verified'}</p>
+              <p className="text-xs text-surface-500 mt-0.5 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> {authStatus?.stale ? 'Offline' : 'Signed in with Discord'}
+              </p>
+            </div>
+            <button onClick={handleSignOut} disabled={signingOut} className="flex items-center gap-1.5 btn-secondary text-xs py-2 shrink-0">
+              <LogOut size={13} /> {signingOut ? 'Signing out…' : 'Sign out'}
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ═══ Storage Management ═══ */}
       <section className="space-y-3">

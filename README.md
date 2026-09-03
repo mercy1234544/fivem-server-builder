@@ -1,31 +1,38 @@
-# FiveM Server Builder
-discord  for help https://discord.gg/FkwnmdZx6m
-A professional desktop application for creating, managing, organizing, maintaining, updating, and troubleshooting FiveM servers.
+# Mercy Launcher
 
-## Features
+**A modern game-management hub for FiveM, Minecraft, Assetto Corsa, BeamNG.drive, servers, mods, resources, and more.**
 
-- **Server Creation Wizard** - Step-by-step server setup with framework selection, artifact downloads, and automatic configuration
-- **Resource Manager** - Scan, enable/disable, and manage all server resources
-- **Resource Organizer** - Automatically categorize resources with vendor protection
-- **Startup Order Manager** - Visual drag-and-drop startup order management
-- **Health Scanner** - Detect missing dependencies, broken manifests, and configuration issues
-- **Backup System** - Full, resource, and config backups with restore capability
-- **File Explorer** - Built-in file browser for server files
-- **Server.cfg Editor** - Dedicated editor with validation and auto-backup
-- **Marketplace** - One-click installation of popular resources
-- **Multi-Server Support** - Manage multiple development/production/testing servers
+[Join the Discord](https://discord.gg/FkwnmdZx6m) for help and support.
 
-## Tech Stack
+Mercy Launcher is a desktop application that brings game management into one place. FiveM is the first fully functional hub — everything the original FiveM Server Builder project did (server creation, resource management, backups, diagnostics, Vehicle Studio, and more) is still here, now living inside the Mercy Launcher shell rather than as a standalone app. Minecraft, Assetto Corsa, and BeamNG.drive are part of the platform today as dedicated hubs, with their management features being built out over time.
 
-- Electron
-- React 18
-- TypeScript
-- Tailwind CSS
-- Framer Motion
-- React Query
-- Zustand
+## What's inside today
 
-## Getting Started
+**Mercy Launcher shell**
+- A modern, dark, purple-accented desktop interface — Home, Library, Downloads, and Settings
+- Home dashboard with a game card per platform, Latest News, and Quick Actions
+- Discord authentication gates access to the app; your session and username are shown throughout
+- Automatic updates — the app checks for and installs new releases on its own
+
+**FiveM Hub** (fully functional)
+- Browse Servers / My Servers as the two primary entry points
+- Create and manage FiveM servers — start, stop, restart, console, configuration
+- Resource management: scan, enable/disable, organize, and update resources
+- Vehicle Studio — a full vehicle handling/metadata editor with Smart Tune, presets, diagnostics, and spawn-name validation
+- Health Scanner, backups, file explorer, server.cfg editor, and a resource Store
+- Multi-server support for development, staging, and production servers
+
+**Minecraft, Assetto Corsa, BeamNG.drive**
+- Present today as their own hubs on Home, with a clear "coming soon" state inside
+- Being expanded over time into full management hubs alongside FiveM
+
+## Tech stack
+
+- Electron 28, React 18, TypeScript, Vite
+- Tailwind CSS, Framer Motion, Zustand
+- electron-updater (auto-updates), electron-builder (Windows NSIS installer)
+
+## Getting started
 
 ```bash
 # Install dependencies
@@ -36,22 +43,27 @@ npm run electron:dev
 
 # Build for production
 npm run build
+
+# Build the Windows installer
+npm run build:exe
 ```
 
-## Project Structure
+## Project structure
 
 ```
 src/
 ├── main/              # Electron main process
 │   ├── main.ts        # App entry point
 │   ├── preload.ts     # Context bridge
-│   └── services/      # Backend services
+│   ├── shared/         # Pure logic shared with the renderer (e.g. Vehicle Studio's handling engine)
+│   └── services/      # Backend services (server management, resources, Vehicle Studio, auth, etc.)
 ├── renderer/          # React frontend
-│   ├── components/    # Shared components
-│   ├── pages/         # Page components
+│   ├── components/    # Shared components (sidebar, game cards, tuning UI, ...)
+│   ├── pages/         # Page components (Home, FiveM Hub, Library, Downloads, Settings, ...)
 │   ├── stores/        # Zustand stores
-│   ├── styles/        # CSS
 │   └── types/         # TypeScript declarations
+services/
+└── vehicle-studio-auth/  # Standalone Discord OAuth + session backend
 ```
 
 ## Safety

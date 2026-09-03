@@ -168,7 +168,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
 
         {/* Center content */}
         <div className="relative flex flex-col items-center">
-          {/* Hexagon logo */}
+          {/* Mercy logo */}
           <motion.div
             initial={{ scale: 0, rotate: -180, opacity: 0 }}
             animate={{ scale: 1, rotate: 0, opacity: 1 }}
