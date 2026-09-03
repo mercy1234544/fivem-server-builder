@@ -878,7 +878,7 @@ export class ServerManager {
     lines.push(
       `sv_hostname "${config.name}"`,
       `sets sv_projectName "${config.name}"`,
-      `sets sv_projectDesc "Powered by FiveM Server Builder"`,
+      `sets sv_projectDesc "Powered by Mercy Launcher"`,
       `sets locale "en-US"`,
       `set onesync on`,
       ``,
@@ -887,7 +887,7 @@ export class ServerManager {
     // Database connection — set up automatically by the builder
     if (dbName && config.framework !== 'blank') {
       lines.push(
-        `# Database (managed by FiveM Server Builder)`,
+        `# Database (managed by Mercy Launcher)`,
         `set mysql_connection_string "mysql://root@localhost:3306/${dbName}?charset=utf8mb4"`,
         ``,
       );
@@ -1532,7 +1532,7 @@ export class ServerManager {
         for (let i = 0; i < lines.length; i++) {
           const t = lines[i].trim();
           if (/^(set|sets|setr)\s+\S+\s+""\s*$/.test(t)) {
-            lines[i] = `# ${t}  # auto-fixed by FiveM Server Builder — empty "" value causes "Argument count mismatch"`;
+            lines[i] = `# ${t}  # auto-fixed by Mercy Launcher — empty "" value causes "Argument count mismatch"`;
             fixes.push(`${f}: commented out "${t}" (empty value breaks the cfg parser)`);
             changed = true;
           }
@@ -1550,7 +1550,7 @@ export class ServerManager {
         if (!/^\s*sets\s+sv_projectName/m.test(c) && /^\s*sv_hostname\s/m.test(c)) {
           c = c.replace(
             /^(\s*sv_hostname[^\n]*\n)/m,
-            `$1sets sv_projectName "${server.name}"\nsets sv_projectDesc "Powered by FiveM Server Builder"\n`
+            `$1sets sv_projectName "${server.name}"\nsets sv_projectDesc "Powered by Mercy Launcher"\n`
           );
           fs.writeFileSync(cfgPath, c, 'utf-8');
           fixes.push('server.cfg: added sv_projectName / sv_projectDesc (server-list name fix)');

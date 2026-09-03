@@ -53,7 +53,7 @@ interface StoredAuth {
   lastResult?: { inGuild: boolean; hasAccess: boolean };
 }
 
-const CLOSE_PAGE = `<!doctype html><html><body style="margin:0;background:#0b0e14;color:#dbe2ee;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div style="font-size:42px">✅</div><h2 style="margin:8px 0 4px">Verified with Discord</h2><p style="color:#8b94a7;margin:0">You can close this tab and return to FiveM Server Builder.</p></div></body></html>`;
+const CLOSE_PAGE = `<!doctype html><html><body style="margin:0;background:#0b0e14;color:#dbe2ee;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div style="font-size:42px">✅</div><h2 style="margin:8px 0 4px">Verified with Discord</h2><p style="color:#8b94a7;margin:0">You can close this tab and return to Mercy Launcher.</p></div></body></html>`;
 
 export class AccessManager {
   private file: string;
