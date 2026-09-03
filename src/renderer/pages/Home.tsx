@@ -51,12 +51,13 @@ export default function Home() {
   }, []);
 
   const notConfigured = (what: string) => toast(`${what} isn't configured yet.`, { icon: '🔗' });
+  const DISCORD_INVITE_URL = 'https://discord.gg/FkwnmdZx6m';
 
   const quickActions = [
     { icon: Compass, label: 'Browse Servers', sub: 'Find and join FiveM servers.', onClick: () => navigate('/fivem') },
     { icon: Server, label: 'My Servers', sub: 'Manage your configured servers.', onClick: () => navigate('/servers') },
     { icon: PlusCircle, label: 'Create Server', sub: 'Set up a new FiveM server.', onClick: () => navigate('/create') },
-    { icon: MessageCircle, label: 'Join Discord', sub: 'Join the Mercy community.', onClick: () => notConfigured('The Discord invite link') },
+    { icon: MessageCircle, label: 'Join Discord', sub: 'Join the Mercy community.', onClick: () => window.electronAPI?.openExternal(DISCORD_INVITE_URL) },
     { icon: LifeBuoy, label: 'Support', sub: 'Get help and view documentation.', onClick: () => notConfigured('Support') },
   ];
 
