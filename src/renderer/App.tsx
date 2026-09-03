@@ -4,7 +4,12 @@ import { Toaster } from 'react-hot-toast';
 import { AnimatePresence } from 'framer-motion';
 import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
-import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
+import FiveMHub from './pages/FiveMHub';
+import BrowseServers from './pages/BrowseServers';
+import ComingSoon from './pages/ComingSoon';
+import Library from './pages/Library';
+import Downloads from './pages/Downloads';
 import ServerWizard from './pages/ServerWizard';
 import ResourceManager from './pages/ResourceManager';
 import ResourceOrganizer from './pages/ResourceOrganizer';
@@ -61,7 +66,14 @@ export default function App() {
         <Layout>
           <AnimatePresence mode="wait">
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Home />} />
+              <Route path="/fivem" element={<FiveMHub />} />
+              <Route path="/browse-servers" element={<BrowseServers />} />
+              <Route path="/minecraft" element={<ComingSoon />} />
+              <Route path="/assetto-corsa" element={<ComingSoon />} />
+              <Route path="/beamng" element={<ComingSoon />} />
+              <Route path="/library" element={<Library />} />
+              <Route path="/downloads" element={<Downloads />} />
               <Route path="/servers" element={<ServerPanel />} />
               <Route path="/server/:id" element={<ServerPanel />} />
               <Route path="/create" element={<ServerWizard />} />

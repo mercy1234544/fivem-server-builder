@@ -4,8 +4,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Loader2, Shield, CheckCircle2, RefreshCw, Hexagon } from 'lucide-react';
+import { Loader2, Shield, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAppAuth } from '../stores/useAppAuth';
+import MercyLogo from './MercyLogo';
 
 const FEATURES = ['Server management & console', 'Resource store & installs', 'Vehicle Studio', 'Backups, tools & diagnostics'];
 
@@ -63,11 +64,10 @@ export default function AppAccessGate({ children }: { children: React.ReactNode 
   return (
     <div className="h-full overflow-y-auto p-6">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card max-w-md mx-auto mt-8 p-7 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center mx-auto mb-4 shadow-glow-sm">
-          <Hexagon size={26} className="text-white" strokeWidth={2.5} />
-        </div>
-        <h1 className="text-xl font-extrabold text-surface-100">FiveM Server Builder</h1>
-        <p className="text-sm text-surface-400 mt-1">This application requires Discord verification.</p>
+        <div className="mx-auto mb-4"><MercyLogo size={56} glow /></div>
+        <h1 className="text-xl font-extrabold text-surface-100">Mercy Launcher</h1>
+        <p className="text-[10px] font-bold text-primary-400 tracking-[0.22em] uppercase mt-0.5">Game Management Hub</p>
+        <p className="text-sm text-surface-400 mt-2">This application requires Discord verification.</p>
 
         <div className="text-left text-xs text-surface-300 my-5 space-y-1.5">
           {FEATURES.map((f) => (

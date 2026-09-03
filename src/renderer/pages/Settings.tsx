@@ -8,6 +8,7 @@ import {
 import { useAppStore } from '../stores/useAppStore';
 import { useLocalAccess } from '../stores/useLocalAccess';
 import { isSupabaseConfigured } from '../lib/supabase';
+import MercyLogo from '../components/MercyLogo';
 
 interface SysInfo {
   cpuModel: string; cpuCores: number; cpuUsage: number;
@@ -208,12 +209,10 @@ export default function Settings() {
         <h2 className="text-sm font-bold text-surface-200">About</h2>
         <div className="rounded-2xl border border-overlay-6 bg-surface-900/40 p-5">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-primary-600/25 border border-primary-500/25 flex items-center justify-center">
-              <Server size={17} className="text-primary-300" />
-            </div>
+            <MercyLogo size={40} />
             <div>
-              <p className="text-sm font-bold text-surface-100">FiveM Server Builder</p>
-              <p className="text-xs text-surface-500">Local Game Server Management</p>
+              <p className="text-sm font-bold text-surface-100">Mercy Launcher</p>
+              <p className="text-xs text-surface-500">Game Management Hub</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">

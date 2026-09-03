@@ -189,9 +189,9 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
               <svg viewBox="0 0 80 80" className="w-full h-full">
                 <defs>
                   <linearGradient id="splash-hex-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#818cf8" />
-                    <stop offset="50%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#4f46e5" />
+                    <stop offset="0%" stopColor="#c4b0ff" />
+                    <stop offset="50%" stopColor="#9d7bff" />
+                    <stop offset="100%" stopColor="#5b3ee0" />
                   </linearGradient>
                   <filter id="splash-glow">
                     <feGaussianBlur stdDeviation="3" result="blur" />
@@ -204,7 +204,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
                 <motion.polygon
                   points="40,4 74,22 74,58 40,76 6,58 6,22"
                   fill="url(#splash-hex-grad)"
-                  stroke="rgba(129, 140, 248, 0.5)"
+                  stroke="rgba(157, 123, 255, 0.5)"
                   strokeWidth="1.5"
                   filter="url(#splash-glow)"
                   initial={{ pathLength: 0 }}
@@ -216,12 +216,10 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: 0.6 }}
                 >
-                  <rect x="28" y="26" width="24" height="6" rx="1.5" fill="white" opacity="0.9" />
-                  <circle cx="34" cy="29" r="1.2" fill="#6366f1" />
-                  <rect x="28" y="35" width="24" height="6" rx="1.5" fill="white" opacity="0.7" />
-                  <circle cx="34" cy="38" r="1.2" fill="#6366f1" />
-                  <rect x="28" y="44" width="24" height="6" rx="1.5" fill="white" opacity="0.5" />
-                  <circle cx="34" cy="47" r="1.2" fill="#6366f1" />
+                  <path
+                    d="M22 52V27a2.5 2.5 0 0 1 4.5-1.5L38 40.5l11.5-15A2.5 2.5 0 0 1 54 27v25"
+                    fill="none" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"
+                  />
                 </motion.g>
               </svg>
             </div>
@@ -235,7 +233,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
               transition={{ duration: 0.6, delay: 0.3, ease: [0.4, 0, 0.2, 1] }}
               className="flex items-center justify-center gap-1"
             >
-              {'FIVEM'.split('').map((char, i) => (
+              {'MERCY'.split('').map((char, i) => (
                 <motion.span
                   key={i}
                   initial={{ y: 20, opacity: 0 }}
@@ -243,7 +241,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
                   transition={{ duration: 0.4, delay: 0.4 + i * 0.06, ease: [0.4, 0, 0.2, 1] }}
                   className="text-4xl font-black tracking-wider"
                   style={{
-                    background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 30%, #818cf8 70%, #6366f1 100%)',
+                    background: 'linear-gradient(135deg, #ede9ff 0%, #dcd0ff 30%, #b09aff 70%, #9d7bff 100%)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     textShadow: 'none',
@@ -261,7 +259,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
               className="text-center text-sm font-medium tracking-[0.35em] uppercase mt-2"
               style={{ color: 'rgba(148, 163, 184, 0.8)' }}
             >
-              Server Builder
+              Launcher
             </motion.p>
 
             <motion.div
