@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import extractZip from 'extract-zip';
@@ -14,10 +14,13 @@ import { AccessManager } from './services/AccessManager';
 import { VehicleResourceScanner } from './services/VehicleResourceScanner';
 import { VehicleStudio } from './services/VehicleStudio';
 import { VehicleStudioAuth } from './services/VehicleStudioAuth';
+import { SettingsManager } from './services/SettingsManager';
 import axios from 'axios';
 import { autoUpdater } from 'electron-updater';
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 let serverManager: ServerManager;
 let resourceScanner: ResourceScanner;
 let backupManager: BackupManager;
@@ -29,7 +32,27 @@ let databaseManager: DatabaseManager;
 let accessManager: AccessManager;
 let vehicleStudio: VehicleStudio;
 let vehicleStudioAuth: VehicleStudioAuth;
+let settingsManager: SettingsManager;
 const vehicleResourceScanner = new VehicleResourceScanner();
+
+// Tray icon only exists while "Minimize to tray" is enabled — off by default,
+// so nothing changes for anyone who doesn't opt in via Settings > General.
+function createTray() {
+  if (tray) return;
+  tray = new Tray(path.join(__dirname, '../../src/assets/icon.ico'));
+  tray.setToolTip('Mercy Launcher');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Mercy Launcher', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
+  ]));
+  tray.on('click', () => { mainWindow?.show(); mainWindow?.focus(); });
+}
+
+function destroyTray() {
+  tray?.destroy();
+  tray = null;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -70,6 +93,15 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Minimize-to-tray is opt-in (Settings > General); when off, closing the
+  // window behaves exactly as it always has.
+  mainWindow.on('close', (event) => {
+    if (settingsManager?.get('minimizeToTray') && !isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -88,6 +120,7 @@ function initializeServices() {
   accessManager = new AccessManager(userDataPath);
   vehicleStudio = new VehicleStudio(userDataPath);
   vehicleStudioAuth = new VehicleStudioAuth(userDataPath);
+  settingsManager = new SettingsManager();
   serverManager.setDatabaseManager(databaseManager);
   healthScanner.setDatabaseManager(databaseManager);
 }
@@ -132,6 +165,21 @@ function registerIpcHandlers() {
     }
   });
   ipcMain.handle('window:close', () => mainWindow?.close());
+
+  // App settings (main-process-backed: tray, auto-update, download location)
+  ipcMain.handle('settings:get', (_, key) => settingsManager.get(key));
+  ipcMain.handle('settings:getAll', () => settingsManager.getAll());
+  ipcMain.handle('settings:set', (_, key, value) => {
+    settingsManager.set(key, value);
+    if (key === 'minimizeToTray') { if (value) createTray(); else destroyTray(); }
+    if (key === 'autoUpdate') { autoUpdater.autoDownload = value; }
+    return true;
+  });
+  ipcMain.handle('settings:getLoginItem', () => app.getLoginItemSettings().openAtLogin);
+  ipcMain.handle('settings:setLoginItem', (_, enabled: boolean) => {
+    app.setLoginItemSettings({ openAtLogin: enabled });
+    return true;
+  });
 
   // Dialog
   ipcMain.handle('dialog:openDirectory', async () => {
@@ -1187,7 +1235,7 @@ async function importVehiclePack(opts: { sourcePath: string; serverPath: string;
 
 // ─── Auto Updater Setup ─────────────────────────────────────────────────────
 function setupAutoUpdater() {
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = settingsManager.get('autoUpdate');
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.logger = require('electron-log');
@@ -1257,6 +1305,7 @@ app.whenReady().then(() => {
   initializeServices();
   registerIpcHandlers();
   createWindow();
+  if (settingsManager.get('minimizeToTray')) createTray();
 
   // Apply maintenance fixes shipped with this app version to every registered
   // server — updates land on already-built servers without a reinstall.
@@ -1318,5 +1367,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   try { databaseManager?.shutdown(); } catch {}
 });

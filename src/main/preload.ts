@@ -6,6 +6,15 @@ const electronAPI = {
   maximize: () => ipcRenderer.invoke('window:maximize'),
   close: () => ipcRenderer.invoke('window:close'),
 
+  // App settings (main-process-backed: tray, auto-update, download location)
+  settings: {
+    get: (key: string) => ipcRenderer.invoke('settings:get', key),
+    getAll: () => ipcRenderer.invoke('settings:getAll'),
+    set: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
+    getLoginItem: () => ipcRenderer.invoke('settings:getLoginItem'),
+    setLoginItem: (enabled: boolean) => ipcRenderer.invoke('settings:setLoginItem', enabled),
+  },
+
   // Dialog
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   openFile: (filters?: any) => ipcRenderer.invoke('dialog:openFile', filters),

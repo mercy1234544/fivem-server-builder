@@ -11,16 +11,18 @@ import toast from 'react-hot-toast';
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const itemVariants = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] } } };
 
-// Every card looks equally "real" on Home — clicking any of them opens that
-// game's section inside Mercy Launcher. FiveM's section is fully functional;
-// the other three land on an honest Coming Soon state once you're inside
-// (see ComingSoon.tsx) rather than being pre-badged here. `id` matches the
-// folder name under src/renderer/assets/games/ for the drop-in asset system.
+// Every card offers two distinct actions (see GameCard.tsx): "Manage /
+// Create Servers" opens the game's own hub for a server the USER runs
+// (real today for FiveM; an honest Coming Soon page for the others), and
+// "Mercy's Servers" opens a Coming Soon page for official servers MERCY
+// will eventually operate — a completely separate concept, never faked.
+// `id` matches the folder name under src/renderer/assets/games/ for the
+// drop-in asset system, and the game segment in /mercy-servers/:game.
 const GAMES = [
-  { id: 'fivem', label: 'FiveM', path: '/fivem', Art: FiveMArt, tagline: 'Play on the best RP servers.' },
-  { id: 'minecraft', label: 'Minecraft', path: '/minecraft', Art: MinecraftArt, tagline: 'Explore. Build. Survive.' },
-  { id: 'assettocorsa', label: 'Assetto Corsa', path: '/assetto-corsa', Art: AssettoCorsaArt, tagline: 'Drive. Race. Compete.' },
-  { id: 'beamng', label: 'BeamNG.drive', path: '/beamng', Art: BeamNGArt, tagline: 'Crash. Build. Experiment.' },
+  { id: 'fivem', label: 'FiveM', path: '/fivem', Art: FiveMArt, tagline: 'Manage your FiveM servers.' },
+  { id: 'minecraft', label: 'Minecraft', path: '/minecraft', Art: MinecraftArt, tagline: 'Manage your Minecraft servers.' },
+  { id: 'assettocorsa', label: 'Assetto Corsa', path: '/assetto-corsa', Art: AssettoCorsaArt, tagline: 'Manage your Assetto Corsa servers.' },
+  { id: 'beamng', label: 'BeamNG.drive', path: '/beamng', Art: BeamNGArt, tagline: 'Manage your BeamNG.drive servers.' },
 ];
 
 export default function Home() {

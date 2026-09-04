@@ -4,6 +4,15 @@ interface ElectronAPI {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+
+  settings: {
+    get: (key: 'minimizeToTray' | 'autoUpdate' | 'downloadPath') => Promise<any>;
+    getAll: () => Promise<{ minimizeToTray: boolean; autoUpdate: boolean; downloadPath: string | null }>;
+    set: (key: 'minimizeToTray' | 'autoUpdate' | 'downloadPath', value: any) => Promise<boolean>;
+    getLoginItem: () => Promise<boolean>;
+    setLoginItem: (enabled: boolean) => Promise<boolean>;
+  };
+
   openDirectory: () => Promise<string | null>;
   openFile: (filters?: any) => Promise<string | null>;
   openPath: (path: string) => Promise<void>;

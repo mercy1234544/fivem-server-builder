@@ -7,6 +7,7 @@ import SplashScreen from './components/SplashScreen';
 import Home from './pages/Home';
 import FiveMHub from './pages/FiveMHub';
 import BrowseServers from './pages/BrowseServers';
+import MercyServers from './pages/MercyServers';
 import ComingSoon from './pages/ComingSoon';
 import Library from './pages/Library';
 import Downloads from './pages/Downloads';
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/fivem" element={<FiveMHub />} />
               <Route path="/browse-servers" element={<BrowseServers />} />
+              <Route path="/mercy-servers/:game" element={<MercyServers />} />
               <Route path="/minecraft" element={<ComingSoon />} />
               <Route path="/assetto-corsa" element={<ComingSoon />} />
               <Route path="/beamng" element={<ComingSoon />} />

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Minus, Square, X, Settings } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 
 // Slim top bar over the content column (Sidebar owns navigation + window-width
 // to its left, including the account card). This bar is just the current
@@ -11,6 +12,7 @@ const SECTION_TITLES: { test: (p: string) => boolean; title: string; subtitle: s
   { test: (p) => p === '/', title: 'Home', subtitle: 'Your games, in one place' },
   { test: (p) => p === '/fivem', title: 'FiveM', subtitle: 'FiveM Management' },
   { test: (p) => p === '/browse-servers', title: 'FiveM', subtitle: 'Browse Servers' },
+  { test: (p) => p.startsWith('/mercy-servers'), title: "Mercy's Servers", subtitle: 'Official Mercy servers' },
   { test: (p) => p.startsWith('/servers') || p.startsWith('/server/'), title: 'FiveM', subtitle: 'My Servers' },
   { test: (p) => p === '/create', title: 'FiveM', subtitle: 'Create Server' },
   { test: (p) => p === '/resources', title: 'FiveM', subtitle: 'Resources' },
@@ -58,9 +60,10 @@ export default function TitleBar() {
         {subtitle && <p className="text-[11px] text-surface-500 leading-tight truncate">{subtitle}</p>}
       </div>
 
-      <div className="flex items-center shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <div className="flex items-center gap-1 shrink-0 mr-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <NotificationBell />
         <button onClick={() => navigate('/settings')} title="Settings"
-          className="w-9 h-9 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 rounded-lg transition-all mr-1">
+          className="w-9 h-9 flex items-center justify-center text-surface-500 hover:text-surface-200 hover:bg-overlay-6 rounded-lg transition-all">
           <Settings size={15} />
         </button>
       </div>
