@@ -1,4 +1,5 @@
-// Embeds the real app icon + version metadata into the packaged Windows exe.
+// Embeds the real app icon + version metadata into the packaged Windows exe,
+// and writes the app-update.yml the packaged app's autoUpdater needs.
 //
 // Why this exists: electron-builder normally does this itself via its
 // "signAndEditExecutable" step (rcedit under the hood), but that step also
@@ -46,4 +47,22 @@ const args = [
 
 console.log(`patch-windows-exe: setting icon + version info (${productName} ${version}) on ${exePath}`);
 execFileSync(rcedit, args, { stdio: 'inherit' });
+
+// electron-builder writes resources/app-update.yml (which autoUpdater.
+// checkForUpdates() needs at runtime) only while packaging a real installer
+// target in one shot. Our --dir step is a plain directory target (so this
+// script has something to run rcedit against) and never writes it, and the
+// later `--prepackaged` NSIS pass reuses this directory as-is without
+// repeating that part of packaging — so it was silently missing from every
+// installed build produced by this two-step flow, and autoUpdater has been
+// throwing ENOENT on it ever since (confirmed present in the already-published
+// v1.78.0 installer too, so this predates this fix). Content matches exactly
+// what electron-builder itself generates from the "publish" config, and is
+// stable across builds/versions.
+const publishCfg = Array.isArray(pkg.build.publish) ? pkg.build.publish[0] : pkg.build.publish;
+const appUpdateYml = `owner: ${publishCfg.owner}\nrepo: ${publishCfg.repo}\nprovider: ${publishCfg.provider}\nupdaterCacheDirName: ${pkg.name}-updater\n`;
+const resourcesDir = path.join(root, 'releases', 'win-unpacked', 'resources');
+fs.writeFileSync(path.join(resourcesDir, 'app-update.yml'), appUpdateYml, 'utf-8');
+console.log(`patch-windows-exe: wrote app-update.yml (${publishCfg.provider}/${publishCfg.owner}/${publishCfg.repo})`);
+
 console.log('patch-windows-exe: done.');
